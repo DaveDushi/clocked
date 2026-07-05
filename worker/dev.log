@@ -1,0 +1,17 @@
+
+> clocked-worker@0.1.0 dev
+> vite dev
+
+Using secrets defined in .dev.vars
+
+  [32m[1mVITE[22m v7.3.6[39m  [2mready in [0m[1m1398[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m8787[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://169.254.83.107:[1m8787[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://10.0.0.142:[1m8787[22m/[39m
+  [32m➜[39m  [1mDebug[22m:   [2m[33mhttp://localhost:[1m8787[22m[2m/__debug[39m[22m
+[2m[32m  ➜[39m[22m[2m  press [22m[1mb + enter[22m[2m to list configured Cloudflare bindings[22m
+[2m[32m  ➜[39m[22m[2m  press [22m[1me + enter[22m[2m to open local explorer[22m
+[2m[32m  ➜[39m[22m[2m  press [22m[1mt + enter[22m[2m to start tunnel[22m
+[2m[32m  ➜[39m[22m[2m  press [22m[1mh + enter[22m[2m to show help[22m
+2026-07-05T17:12:26.950Z WARN [Better Auth]: Rate limiting could not determine a client IP and is falling back to a single shared per-path bucket. Ensure your runtime forwards a trusted client IP header, then set `advanced.ipAddress.ipAddressHeaders` or `advanced.ipAddress.trustedProxies` so the address can be resolved.

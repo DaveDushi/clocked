@@ -3,6 +3,8 @@
   "name": "clocked-worker",
   "main": "src/index.ts",
   "compatibility_date": "2026-07-01",
+  // better-auth imports node:crypto / node:async_hooks at load, so enable Node compat.
+  "compatibility_flags": ["nodejs_compat"],
 
   // Fires daily at 06:00 UTC; the handler only acts on the 1st (in REPORT_TZ).
   "triggers": { "crons": ["0 6 * * *"] },
@@ -16,17 +18,21 @@
     }
   ],
 
-  // Native email binding. destination_address must be a verified Email Routing
-  // address on your Cloudflare account.
-  "send_email": [
-    { "name": "SEND_EMAIL", "destination_address": "REPLACE_WITH_YOUR_EMAIL" }
-  ],
+  // Email Sending binding (object API). No destination_address: with the sending
+  // domain onboarded (`wrangler email sending enable <MAIL_FROM domain>`), this
+  // delivers to any recipient — including the address set in the dashboard.
+  // For local `wrangler dev` real sends, add "remote": true.
+  "send_email": [{ "name": "SEND_EMAIL" }],
 
   "vars": {
     "REPORT_TZ": "America/New_York",
     "MAIL_TO": "REPLACE_WITH_YOUR_EMAIL",
-    "MAIL_FROM": "clocked@REPLACE_WITH_YOUR_DOMAIN"
+    "MAIL_FROM": "clocked@REPLACE_WITH_YOUR_DOMAIN",
+    // Public base URL of this worker (used by better-auth for the dashboard login).
+    "BETTER_AUTH_URL": "https://clocked-worker.REPLACE_WITH_SUBDOMAIN.workers.dev"
   }
 
-  // Secret (do NOT put in vars):  wrangler secret put BEARER_TOKEN
+  // Secrets (do NOT put in vars):
+  //   wrangler secret put BEARER_TOKEN
+  //   wrangler secret put BETTER_AUTH_SECRET   # 32+ random chars
 }
