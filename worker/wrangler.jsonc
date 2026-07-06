@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "clocked-worker",
+  "name": "clocked",
+  "account_id": "972f8c0c21865ac5fa34b14cfb73479e",
   "main": "src/index.ts",
   "compatibility_date": "2026-07-01",
   // better-auth imports node:crypto / node:async_hooks at load, so enable Node compat.
@@ -8,12 +9,17 @@
 
   // Fires daily at 06:00 UTC; the handler only acts on the 1st (in REPORT_TZ).
   "triggers": { "crons": ["0 6 * * *"] },
+  "routes": [
+    { "pattern": "clocked.daviddusi.com", "custom_domain": true },
+    { "pattern": "clocked.daviddusi.com/*", "zone_name": "daviddusi.com" }
+  ],
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
 
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "clocked",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "75d62c93-4892-46e8-a1aa-e11b6cf0941d",
       "migrations_dir": "migrations"
     }
   ],
@@ -26,10 +32,10 @@
 
   "vars": {
     "REPORT_TZ": "America/New_York",
-    "MAIL_TO": "REPLACE_WITH_YOUR_EMAIL",
-    "MAIL_FROM": "clocked@REPLACE_WITH_YOUR_DOMAIN",
+    "MAIL_TO": "ddushey101@gmail.com",
+    "MAIL_FROM": "clocked@daviddusi.com",
     // Public base URL of this worker (used by better-auth for the dashboard login).
-    "BETTER_AUTH_URL": "https://clocked-worker.REPLACE_WITH_SUBDOMAIN.workers.dev"
+    "BETTER_AUTH_URL": "https://clocked.daviddusi.com"
   }
 
   // Secrets (do NOT put in vars):
