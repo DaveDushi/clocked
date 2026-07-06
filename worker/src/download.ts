@@ -1,6 +1,10 @@
 export const DOWNLOAD_URL =
   "https://github.com/DaveDushi/clocked/releases/latest/download/clocked-setup-0.1.0.exe";
 
+export function isDownloadMethod(method: string): boolean {
+  return method === "GET" || method === "HEAD";
+}
+
 export function downloadResponse(): Response {
   return new Response(null, {
     status: 302,
