@@ -121,21 +121,24 @@ const HTML = /* html */ `<!doctype html>
   .row { display:flex; gap:10px; align-items:flex-end; }
   .row > div { flex:1; }
 
-  button {
+  button, a.btn {
+    display:inline-flex; align-items:center; justify-content:center; text-decoration:none;
     padding:10px 18px; border:0; border-radius:10px; font:inherit; font-weight:700; cursor:pointer;
     color:#221503; background:linear-gradient(180deg, var(--amber), var(--amber2));
     box-shadow:0 2px 10px rgba(242,169,80,.25);
     transition:transform .12s, box-shadow .12s, opacity .12s; white-space:nowrap;
   }
-  button:hover { transform:translateY(-1px); box-shadow:0 4px 16px rgba(242,169,80,.35); }
-  button:active { transform:translateY(0); }
+  button:hover, a.btn:hover { transform:translateY(-1px); box-shadow:0 4px 16px rgba(242,169,80,.35); }
+  button:active, a.btn:active { transform:translateY(0); }
   button:disabled { opacity:.5; cursor:default; transform:none; }
-  button.ghost {
+  button.ghost, a.btn.ghost {
     background:transparent; border:1px solid var(--border); color:var(--muted);
     font-weight:500; box-shadow:none;
   }
-  button.ghost:hover { color:var(--fg); border-color:var(--faint); box-shadow:none; }
+  button.ghost:hover, a.btn.ghost:hover { color:var(--fg); border-color:var(--faint); box-shadow:none; }
   button.nav { width:42px; padding:10px 0; font-family:var(--mono); font-size:16px; line-height:1.2; }
+  .downloadCta { margin-top:18px; gap:10px; flex-wrap:wrap; justify-content:center; }
+  .downloadCta .hintline { flex-basis:100%; color:var(--muted); font-size:12px; }
   :focus-visible { outline:2px solid var(--amber); outline-offset:2px; }
 
   /* ---------- hours table ---------- */
@@ -210,6 +213,8 @@ const HTML = /* html */ `<!doctype html>
   code.inline { font-family:var(--mono); font-size:13px; color:var(--fg); background:#0b0d13; border:1px solid var(--border); border-radius:6px; padding:1px 6px; }
   .steps { margin:12px 0 0; padding-left:18px; color:var(--muted); font-size:13px; line-height:1.6; }
   .steps code { color:var(--fg); }
+  .setupbox { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .setupbox .muted { font-size:13px; flex:1; min-width:220px; }
 
   .top.bare .logo, .top.bare .wordmark { display:none; }
 
@@ -242,6 +247,11 @@ const HTML = /* html */ `<!doctype html>
       <p>A tiny Windows tray app clocks you in and out from real machine
         activity, then syncs to your account here. Sign up and you get a token —
         paste it into the app and your timesheet builds itself.</p>
+      <div class="downloadCta row">
+        <a class="btn" href="/download">Download for Windows</a>
+        <a class="btn ghost" href="https://github.com/DaveDushi/clocked" target="_blank" rel="noopener">View source</a>
+        <div class="hintline">Installer: clocked-setup-0.1.0.exe</div>
+      </div>
     </div>
 
     <div class="features">
@@ -308,6 +318,10 @@ const HTML = /* html */ `<!doctype html>
     <div class="card">
       <h3>Desktop sync token</h3>
       <p class="hint">Your account's Bearer token. The desktop app sends it with every sync.</p>
+      <div class="setupbox">
+        <a class="btn" href="/download">Download for Windows</a>
+        <span class="muted">Install Clocked, then paste this token into the tray app Settings.</span>
+      </div>
       <div class="tokenbox">
         <div id="token" class="token" title="Your Bearer token">&middot;&middot;&middot;&middot;&middot;&middot;&middot;&middot;</div>
         <button id="copyToken" class="ghost">Copy</button>

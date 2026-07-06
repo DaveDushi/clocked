@@ -1,6 +1,7 @@
 import { checkAuth } from "./auth";
 import { makeAuth } from "./auth-server";
 import { dashboardResponse } from "./dashboard";
+import { downloadResponse } from "./download";
 import { faviconResponse } from "./favicon";
 import { buildAndSendReport, sendMonthlyReports } from "./email";
 import { handleIngest } from "./ingest";
@@ -16,6 +17,7 @@ export default {
 
     // Landing page + dashboard (single self-contained app) and health check.
     if (req.method === "GET" && url.pathname === "/") return dashboardResponse();
+    if (req.method === "GET" && url.pathname === "/download") return downloadResponse();
     if (req.method === "GET" && (url.pathname === "/favicon.ico" || url.pathname === "/favicon.png")) {
       return faviconResponse();
     }

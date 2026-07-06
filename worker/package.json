@@ -9,7 +9,7 @@
     "build": "vite build",
     "preview": "vite build && vite preview",
     "deploy": "vite build && wrangler deploy",
-    "test": "tsc --target es2022 --module es2022 --moduleResolution bundler --strict --skipLibCheck --outDir .tmp-test --noEmit false src/calendar-days.ts && node --test test/calendar-days.test.mjs",
+    "test": "tsc --target es2022 --module es2022 --moduleResolution bundler --strict --skipLibCheck --types @cloudflare/workers-types --outDir .tmp-test --noEmit false src/calendar-days.ts src/dashboard.ts src/download.ts && node --test test/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "migrate:local": "wrangler d1 migrations apply clocked --local",
     "migrate:remote": "wrangler d1 migrations apply clocked --remote"
