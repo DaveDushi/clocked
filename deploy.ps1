@@ -121,12 +121,24 @@ try {
     $existingTag = & git tag --list $tag | Select-Object -First 1
     if (-not $existingTag) {
         Run-Native git @('tag', '-a', $tag, '-m', "clocked $tag")
+    } else {
+        $tagCommit = (& git rev-list -n 1 $tag).Trim()
+        $headCommit = (& git rev-parse HEAD).Trim()
+        if ($tagCommit -ne $headCommit) {
+            throw "Tag $tag already points at $tagCommit, but HEAD is $headCommit. Move/delete the tag intentionally before deploying."
+        }
     }
     Run-Native git @('push', 'origin', $tag)
 
     Write-Host "Publishing GitHub Release $tag..." -ForegroundColor Cyan
-    & $gh release view $tag --repo $Repo *> $null
-    if ($LASTEXITCODE -eq 0) {
+    $releaseExists = $false
+    try {
+        & $gh release view $tag --repo $Repo *> $null
+        $releaseExists = $LASTEXITCODE -eq 0
+    } catch {
+        $releaseExists = $false
+    }
+    if ($releaseExists) {
         Run-Native $gh @('release', 'upload', $tag, $installer, $stableInstaller, '--repo', $Repo, '--clobber')
     } else {
         Run-Native $gh @('release', 'create', $tag, $installer, $stableInstaller, '--repo', $Repo, '--title', "clocked $tag", '--notes', "Release $tag")
