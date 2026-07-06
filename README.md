@@ -54,6 +54,19 @@ cargo build --release
 # binary: target/release/clocked.exe  (no console window)
 ```
 
+### Deploy a desktop release
+
+After committing your changes, run:
+
+```powershell
+.\deploy.ps1
+```
+
+The script reads the version from `Cargo.toml`, runs tests, builds the Inno Setup
+installer, pushes the current branch, creates/pushes tag `v<version>` if needed,
+and creates or updates the matching GitHub Release with the installer asset.
+Bump `Cargo.toml` first when you want installed apps to detect a new update.
+
 Run `clocked.exe`. It creates `%APPDATA%\clocked\data\` containing:
 
 - `clocked.db` — sessions
