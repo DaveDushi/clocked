@@ -1,6 +1,10 @@
-// Self-contained dashboard page (HTML + inline CSS/JS, no build step, no assets).
-// Auth is better-auth (cookies, same-origin fetch); data comes from /api/hours
-// and /api/settings. Served at GET /.
+// Self-contained landing page + dashboard (HTML + inline CSS/JS, no build step,
+// no assets). Auth is better-auth (cookies, same-origin fetch); data comes from
+// /api/hours, /api/settings, and /api/token. Served at GET /.
+//
+// Logged-out visitors see a marketing landing page with sign-up / sign-in.
+// On sign-up the account is created and its per-account Bearer token is shown so
+// the desktop app can be pointed at this Worker.
 //
 // NOTE: the inline <script> lives inside this template literal — it must not
 // contain backticks or "${", so it sticks to string concatenation.
@@ -9,7 +13,7 @@ const HTML = /* html */ `<!doctype html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>clocked</title>
+<title>clocked — your hours, on the record</title>
 <link rel="icon" type="image/png" href="/favicon.ico" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -90,6 +94,8 @@ const HTML = /* html */ `<!doctype html>
     border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:16px;
     box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 8px 24px rgba(0,0,0,.35);
   }
+  .card h3 { margin:0 0 4px; font-size:15px; letter-spacing:.02em; }
+  .card .hint { color:var(--muted); font-size:13px; margin:0 0 14px; }
 
   /* ---------- stat tiles ---------- */
   .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px; }
@@ -158,20 +164,49 @@ const HTML = /* html */ `<!doctype html>
   .total { display:flex; justify-content:space-between; align-items:baseline; margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
   .total b { font-family:var(--mono); font-size:26px; font-weight:600; color:var(--amber); text-shadow:0 0 22px rgba(242,169,80,.4); font-variant-numeric:tabular-nums; }
 
-  /* ---------- login ---------- */
-  .hero { text-align:center; margin:9vh auto 26px; }
+  /* ---------- landing / auth ---------- */
+  .hero { text-align:center; margin:7vh auto 24px; max-width:560px; }
   .hero .logo { width:58px; height:58px; margin:0 auto 18px; border-width:3px; }
   .hero .logo::before { height:14px; }
   .hero .logo::after { height:21px; }
-  .hero h1 { font-size:30px; margin:0 0 6px; letter-spacing:.04em; }
+  .hero h1 { font-size:34px; line-height:1.15; margin:0 0 10px; letter-spacing:.02em; }
   .hero h1 small { color:var(--amber); }
-  .hero p { color:var(--muted); margin:0; font-size:14px; }
-  #login { max-width:380px; margin:0 auto; }
+  .hero p { color:var(--muted); margin:0; font-size:16px; }
+
+  .features { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; max-width:640px; margin:0 auto 26px; }
+  .feature { background:linear-gradient(180deg, var(--panel), var(--panel2)); border:1px solid var(--border); border-radius:14px; padding:14px 15px; box-shadow:inset 0 1px 0 rgba(255,255,255,.04); }
+  .feature .k { font-family:var(--mono); font-size:12px; color:var(--amber); letter-spacing:.08em; text-transform:uppercase; margin-bottom:6px; }
+  .feature .v { font-size:13px; color:var(--muted); line-height:1.45; }
+  @media (max-width:560px) { .features { grid-template-columns:1fr; } }
+
+  #auth { max-width:400px; margin:0 auto; }
+  .tabs { display:flex; gap:6px; margin-bottom:18px; background:#0b0d13; border:1px solid var(--border); border-radius:12px; padding:4px; }
+  .tabs button { flex:1; background:transparent; color:var(--muted); box-shadow:none; font-weight:500; padding:9px 0; border-radius:9px; }
+  .tabs button.active { background:linear-gradient(180deg, var(--amber), var(--amber2)); color:#221503; font-weight:700; box-shadow:0 2px 10px rgba(242,169,80,.25); }
+  .field { margin-bottom:14px; }
+
+  /* ---------- token card ---------- */
+  .tokenbox { display:flex; gap:10px; align-items:stretch; }
+  .token {
+    flex:1; min-width:0; font-family:var(--mono); font-size:14px; color:var(--amber);
+    background:#0b0d13; border:1px solid var(--border); border-radius:10px;
+    padding:11px 12px; overflow-x:auto; white-space:nowrap; user-select:all;
+    font-variant-ligatures:none;
+  }
+  .token.reveal { color:var(--amber); }
+  .banner {
+    border:1px solid rgba(91,214,162,.4); background:rgba(91,214,162,.08);
+    border-radius:12px; padding:12px 14px; margin-bottom:16px; font-size:14px; color:var(--fg);
+  }
+  .banner b { color:var(--ok); }
+  code.inline { font-family:var(--mono); font-size:13px; color:var(--fg); background:#0b0d13; border:1px solid var(--border); border-radius:6px; padding:1px 6px; }
+  .steps { margin:12px 0 0; padding-left:18px; color:var(--muted); font-size:13px; line-height:1.6; }
+  .steps code { color:var(--fg); }
 
   .top.bare .logo, .top.bare .wordmark { display:none; }
 
   .muted { color:var(--muted); }
-  .msg { font-size:13px; margin-top:8px; min-height:18px; }
+  .msg { font-size:13px; margin-top:10px; min-height:18px; }
   .msg.err { color:var(--err); } .msg.ok { color:var(--ok); }
   .hidden { display:none; }
 
@@ -191,27 +226,52 @@ const HTML = /* html */ `<!doctype html>
   </div>
   <div class="ruler" aria-hidden="true"></div>
 
-  <!-- Login -->
-  <div id="loginView" class="hidden">
+  <!-- Landing (logged out) -->
+  <div id="landingView" class="hidden">
     <div class="hero">
       <div class="logo" aria-hidden="true"></div>
-      <h1>clocked<small>.</small></h1>
-      <p>Your hours, on the record.</p>
+      <h1>Your hours,<br /><small>on the record.</small></h1>
+      <p>A tiny Windows tray app clocks you in and out from real machine
+        activity, then syncs to your account here. Sign up and you get a token —
+        paste it into the app and your timesheet builds itself.</p>
     </div>
-    <div id="login" class="card">
-      <label for="email">Email</label>
-      <input id="email" type="email" autocomplete="username" />
-      <div style="height:14px"></div>
-      <label for="password">Password</label>
-      <input id="password" type="password" autocomplete="current-password" />
-      <div style="height:16px"></div>
-      <button id="loginBtn" style="width:100%">Sign in</button>
-      <div id="loginMsg" class="msg" role="status"></div>
+
+    <div class="features">
+      <div class="feature"><div class="k">Automatic</div><div class="v">Wake, unlock, and activity clock you in; sleep, lock, and idle clock you out.</div></div>
+      <div class="feature"><div class="k">Private</div><div class="v">Your own account, your own sync token, your own hours — nobody else's.</div></div>
+      <div class="feature"><div class="k">Monthly report</div><div class="v">A tidy timesheet emailed to you on the 1st, awake or not.</div></div>
+    </div>
+
+    <div id="auth" class="card">
+      <div class="tabs">
+        <button id="tabSignup" class="active">Create account</button>
+        <button id="tabSignin">Sign in</button>
+      </div>
+
+      <div id="nameField" class="field">
+        <label for="name">Name <span class="muted" style="text-transform:none;letter-spacing:0">(optional)</span></label>
+        <input id="name" type="text" autocomplete="name" />
+      </div>
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="new-password" />
+      </div>
+      <button id="authBtn" style="width:100%">Create account</button>
+      <div id="authMsg" class="msg" role="status"></div>
     </div>
   </div>
 
-  <!-- Dashboard -->
+  <!-- Dashboard (logged in) -->
   <div id="app" class="hidden">
+    <div id="freshBanner" class="banner hidden">
+      <b>Account created.</b> Your desktop sync token is below — copy it now and
+      paste it into the app. You can always find it again here.
+    </div>
+
     <div class="stats">
       <div class="tile big"><label>Total</label><b id="total">–</b></div>
       <div class="tile"><label>Days</label><b id="statDays">–</b></div>
@@ -236,7 +296,24 @@ const HTML = /* html */ `<!doctype html>
     </div>
 
     <div class="card">
-      <label for="mailTo">Send timesheet to</label>
+      <h3>Desktop sync token</h3>
+      <p class="hint">Your account's Bearer token. The desktop app sends it with every sync.</p>
+      <div class="tokenbox">
+        <div id="token" class="token" title="Your Bearer token">&middot;&middot;&middot;&middot;&middot;&middot;&middot;&middot;</div>
+        <button id="copyToken" class="ghost">Copy</button>
+        <button id="regenToken" class="ghost" title="Revoke this token and issue a new one">Regenerate</button>
+      </div>
+      <ol class="steps">
+        <li>Right-click the clocked tray icon &rarr; <b>Settings&hellip;</b></li>
+        <li>Set <b>Worker URL</b> to this site and paste the token above into <b>Bearer token</b>.</li>
+        <li>Click <b>Save</b> &mdash; syncing starts automatically.</li>
+      </ol>
+      <div id="tokenMsg" class="msg" role="status"></div>
+    </div>
+
+    <div class="card">
+      <h3>Monthly timesheet</h3>
+      <p class="hint">Where your month-end report is emailed.</p>
       <div class="row">
         <div><input id="mailTo" type="email" placeholder="you@example.com" /></div>
         <button id="saveEmail">Save</button>
@@ -260,23 +337,103 @@ setInterval(tick, 1000); tick();
 
 function show(loggedIn) {
   $("topbar").classList.toggle("bare", !loggedIn);
-  $("loginView").classList.toggle("hidden", loggedIn);
+  $("landingView").classList.toggle("hidden", loggedIn);
   $("app").classList.toggle("hidden", !loggedIn);
   $("signout").classList.toggle("hidden", !loggedIn);
 }
 
+// ---- auth mode (sign up / sign in) ----
+let mode = "signup";
+function setMode(m) {
+  mode = m;
+  const up = m === "signup";
+  $("tabSignup").classList.toggle("active", up);
+  $("tabSignin").classList.toggle("active", !up);
+  $("nameField").classList.toggle("hidden", !up);
+  $("password").setAttribute("autocomplete", up ? "new-password" : "current-password");
+  $("authBtn").textContent = up ? "Create account" : "Sign in";
+  $("authMsg").textContent = ""; $("authMsg").className = "msg";
+}
+$("tabSignup").onclick = () => setMode("signup");
+$("tabSignin").onclick = () => setMode("signin");
+
+async function submitAuth() {
+  const email = $("email").value.trim();
+  const password = $("password").value;
+  $("authMsg").textContent = ""; $("authMsg").className = "msg";
+  if (!email || !password) { $("authMsg").textContent = "Email and password required."; $("authMsg").className = "msg err"; return; }
+  if (mode === "signup" && password.length < 8) { $("authMsg").textContent = "Password must be at least 8 characters."; $("authMsg").className = "msg err"; return; }
+
+  $("authBtn").disabled = true;
+  let r, body;
+  if (mode === "signup") {
+    body = { email, password, name: ($("name").value.trim() || email) };
+    r = await api("/api/auth/sign-up/email", { method:"POST", body: JSON.stringify(body) });
+  } else {
+    r = await api("/api/auth/sign-in/email", { method:"POST", body: JSON.stringify({ email, password }) });
+  }
+  $("authBtn").disabled = false;
+
+  if (r.ok) {
+    $("password").value = "";
+    const fresh = mode === "signup";
+    show(true);
+    await afterLogin(fresh);
+  } else {
+    const e = await r.json().catch(()=>({}));
+    $("authMsg").textContent = e.message || (mode === "signup" ? "Sign up failed." : "Sign in failed.");
+    $("authMsg").className = "msg err";
+  }
+}
+$("authBtn").onclick = submitAuth;
+$("password").addEventListener("keydown", (e) => { if (e.key === "Enter") submitAuth(); });
+
+// ---- session bootstrap ----
 async function init() {
   const r = await api("/api/auth/get-session");
   const data = r.ok ? await r.json() : null;
-  if (data && data.user) { show(true); await afterLogin(); } else { show(false); $("email").focus(); }
+  if (data && data.user) { show(true); await afterLogin(false); }
+  else { show(false); setMode("signup"); $("email").focus(); }
 }
 
-async function afterLogin() {
+async function afterLogin(fresh) {
+  $("freshBanner").classList.toggle("hidden", !fresh);
   const now = new Date();
   $("month").value = now.getFullYear() + "-" + pad(now.getMonth()+1);
-  await Promise.all([loadHours(), loadEmail()]);
+  await Promise.all([loadHours(), loadEmail(), loadToken()]);
 }
 
+// ---- token ----
+function setToken(t) {
+  $("token").textContent = t;
+  $("token").classList.add("reveal");
+}
+async function loadToken() {
+  const r = await api("/api/token");
+  if (r.ok) { const d = await r.json(); setToken(d.token); }
+}
+$("copyToken").onclick = async () => {
+  const t = $("token").textContent;
+  try { await navigator.clipboard.writeText(t); $("tokenMsg").textContent = "Copied to clipboard."; $("tokenMsg").className = "msg ok"; }
+  catch { $("tokenMsg").textContent = "Select the token and copy manually."; $("tokenMsg").className = "msg err"; }
+};
+let regenArmed = false;
+$("regenToken").onclick = async () => {
+  if (!regenArmed) {
+    regenArmed = true;
+    $("regenToken").textContent = "Confirm?";
+    $("tokenMsg").textContent = "This revokes your current token — the app will need the new one."; $("tokenMsg").className = "msg";
+    setTimeout(() => { regenArmed = false; $("regenToken").textContent = "Regenerate"; }, 4000);
+    return;
+  }
+  regenArmed = false; $("regenToken").textContent = "Regenerate"; $("regenToken").disabled = true;
+  const r = await api("/api/token/regenerate", { method:"POST" });
+  $("regenToken").disabled = false;
+  if (r.ok) { const d = await r.json(); setToken(d.token); $("tokenMsg").textContent = "New token issued — paste it into the app's Settings."; $("tokenMsg").className = "msg ok"; }
+  else { $("tokenMsg").textContent = "Could not regenerate."; $("tokenMsg").className = "msg err"; }
+};
+
+// ---- hours ----
 function rowHtml(x, max, i) {
   const dt = new Date(x.date + "T00:00:00");
   const wk = dt.getDay() === 0 || dt.getDay() === 6;
@@ -303,7 +460,7 @@ async function loadHours() {
   const max = d.days.reduce((a,x) => Math.max(a, x.minutes), 0) || 1;
   $("rows").innerHTML = d.days.length
     ? d.days.map((x,i) => rowHtml(x, max, i)).join("")
-    : "<tr class='empty'><td colspan='3'>No hours logged this month.</td></tr>";
+    : "<tr class='empty'><td colspan='3'>No hours logged this month yet.</td></tr>";
   $("total").textContent = fmt(d.totalMinutes);
   $("totalRow").textContent = fmt(d.totalMinutes);
   $("statDays").textContent = String(d.days.length);
@@ -324,15 +481,7 @@ async function loadEmail() {
   if (r.ok) { const d = await r.json(); $("mailTo").value = d.mailTo || ""; }
 }
 
-$("loginBtn").onclick = async () => {
-  $("loginBtn").disabled = true; $("loginMsg").textContent = ""; $("loginMsg").className = "msg";
-  const r = await api("/api/auth/sign-in/email", { method:"POST", body: JSON.stringify({ email:$("email").value.trim(), password:$("password").value }) });
-  $("loginBtn").disabled = false;
-  if (r.ok) { $("password").value = ""; show(true); await afterLogin(); }
-  else { const e = await r.json().catch(()=>({})); $("loginMsg").textContent = e.message || "Sign in failed."; $("loginMsg").className = "msg err"; }
-};
-
-$("signout").onclick = async () => { await api("/api/auth/sign-out", { method:"POST" }); show(false); };
+$("signout").onclick = async () => { await api("/api/auth/sign-out", { method:"POST" }); show(false); setMode("signin"); };
 $("month").addEventListener("change", loadHours);
 $("prev").onclick = () => shiftMonth(-1);
 $("next").onclick = () => shiftMonth(1);
@@ -342,10 +491,9 @@ $("saveEmail").onclick = async () => {
   const r = await api("/api/settings", { method:"POST", body: JSON.stringify({ mailTo:$("mailTo").value.trim() }) });
   $("saveEmail").disabled = false;
   if (r.ok) { $("emailMsg").textContent = "Saved."; $("emailMsg").className = "msg ok"; }
-  else { $("emailMsg").textContent = "Save failed."; $("emailMsg").className = "msg err"; }
+  else { const e = await r.json().catch(()=>({})); $("emailMsg").textContent = e.error || "Save failed."; $("emailMsg").className = "msg err"; }
 };
 
-$("password").addEventListener("keydown", (e) => { if (e.key === "Enter") $("loginBtn").click(); });
 init();
 </script>
 </body>

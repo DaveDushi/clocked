@@ -4,7 +4,7 @@
 use chrono::{DateTime, Datelike, Local, NaiveTime, Weekday};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub worker_url: String,
@@ -80,31 +80,13 @@ fn parse_weekday(s: &str) -> Option<Weekday> {
     }
 }
 
-const TEMPLATE: &str = "\
-# clocked configuration
-# Fill these in to enable syncing sessions to your Cloudflare Worker.
-# Leave blank to run in local-only mode (no sync, no monthly email).
-
-worker_url   = \"\"   # e.g. https://clocked-worker.<subdomain>.workers.dev
-bearer_token = \"\"   # must match the BEARER_TOKEN secret set on the Worker
-
-# Auto clock-out after this many idle seconds (no keyboard/mouse). 0 disables.
-idle_timeout_secs = 900
-
-# Daily goal in hours, shown in the tray. 0 hides it. Fractions allowed (e.g. 7.5).
-target_hours = 8
-
-# Working hours. If you open the computer (wake/unlock/launch) outside these,
-# clocked asks whether you're working before it starts tracking. Blank
-# work_start/work_end (or empty work_days) disables the prompt. Overnight
-# windows are allowed (e.g. work_start = \"22:00\", work_end = \"06:00\").
-work_start = \"09:00\"
-work_end   = \"17:00\"
-work_days  = [\"Mon\", \"Tue\", \"Wed\", \"Thu\", \"Fri\"]
-";
+/// Escape a value for a TOML basic (double-quoted) string.
+fn escape_toml(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
 
 impl Config {
-    /// Load config, writing a commented template on first run if none exists.
+    /// Load config, writing a commented default on first run if none exists.
     pub fn load() -> Config {
         let Some(path) = crate::paths::config_file() else {
             return Config::default();
@@ -112,10 +94,57 @@ impl Config {
         match std::fs::read_to_string(&path) {
             Ok(text) => toml::from_str(&text).unwrap_or_default(),
             Err(_) => {
-                let _ = std::fs::write(&path, TEMPLATE);
-                Config::default()
+                let cfg = Config::default();
+                let _ = std::fs::write(&path, cfg.to_toml());
+                cfg
             }
         }
+    }
+
+    /// Render the config as a commented `config.toml` (the on-disk format the
+    /// Settings page writes; still hand-editable).
+    pub fn to_toml(&self) -> String {
+        let days = self
+            .work_days
+            .iter()
+            .map(|d| format!("\"{}\"", escape_toml(d)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "# clocked configuration\n\
+             # Managed by the tray Settings page, but safe to edit by hand.\n\
+             # Leave worker_url/bearer_token blank for local-only mode (no sync).\n\
+             \n\
+             worker_url   = \"{worker_url}\"\n\
+             bearer_token = \"{bearer_token}\"\n\
+             \n\
+             # Auto clock-out after this many idle seconds (no keyboard/mouse). 0 disables.\n\
+             idle_timeout_secs = {idle}\n\
+             \n\
+             # Daily goal in hours, shown in the tray. 0 hides it. Fractions allowed.\n\
+             target_hours = {target}\n\
+             \n\
+             # Working hours. Opening the computer outside these prompts \"Are you working?\".\n\
+             # Blank work_start/work_end (or no work_days) disables the prompt. Overnight OK.\n\
+             work_start = \"{work_start}\"\n\
+             work_end   = \"{work_end}\"\n\
+             work_days  = [{days}]\n",
+            worker_url = escape_toml(&self.worker_url),
+            bearer_token = escape_toml(&self.bearer_token),
+            idle = self.idle_timeout_secs,
+            target = self.target_hours,
+            work_start = escape_toml(&self.work_start),
+            work_end = escape_toml(&self.work_end),
+            days = days,
+        )
+    }
+
+    /// Write the config to `config.toml`.
+    pub fn save(&self) -> std::io::Result<()> {
+        let path = crate::paths::config_file().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "no data dir")
+        })?;
+        std::fs::write(path, self.to_toml())
     }
 
     /// True once both the endpoint and token are set.
@@ -183,5 +212,20 @@ mod tests {
         assert_eq!(c.within_working_hours(local(2024, 1, 1, 23, 0)), Some(true));
         assert_eq!(c.within_working_hours(local(2024, 1, 1, 5, 0)), Some(true));
         assert_eq!(c.within_working_hours(local(2024, 1, 1, 12, 0)), Some(false));
+    }
+
+    #[test]
+    fn to_toml_round_trips_through_parser() {
+        let c = Config {
+            worker_url: "https://ex.workers.dev".to_string(),
+            bearer_token: "s3cr3t".to_string(),
+            idle_timeout_secs: 600,
+            target_hours: 7.5,
+            work_start: "08:30".to_string(),
+            work_end: "16:30".to_string(),
+            work_days: vec!["Mon".into(), "Wed".into(), "Fri".into()],
+        };
+        let reloaded: Config = toml::from_str(&c.to_toml()).unwrap();
+        assert_eq!(c, reloaded);
     }
 }

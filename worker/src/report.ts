@@ -30,16 +30,20 @@ export interface HoursReport {
  * query and split-at-local-midnight logic as `buildReportTsv`. Days with no
  * time are omitted; `days` is ordered ascending by date.
  */
-export async function buildHoursReport(env: Env, period: string): Promise<HoursReport> {
+export async function buildHoursReport(
+  env: Env,
+  period: string,
+  userId: string,
+): Promise<HoursReport> {
   const tz = env.REPORT_TZ;
   const { start, end } = monthBoundsUtc(period, tz);
 
   const res = await env.DB.prepare(
     `SELECT start_utc, end_utc FROM sessions
-      WHERE end_utc > ? AND start_utc < ?
+      WHERE user_id = ? AND end_utc > ? AND start_utc < ?
       ORDER BY start_utc`,
   )
-    .bind(start.toISOString(), end.toISOString())
+    .bind(userId, start.toISOString(), end.toISOString())
     .all<Row>();
 
   const byDay = new Map<string, DayHours>();
@@ -71,16 +75,16 @@ export async function buildHoursReport(env: Env, period: string): Promise<HoursR
  * start. Sessions are clamped to the month and split at every local midnight
  * so each row stays within a single local day.
  */
-export async function buildReportTsv(env: Env, period: string): Promise<string> {
+export async function buildReportTsv(env: Env, period: string, userId: string): Promise<string> {
   const tz = env.REPORT_TZ;
   const { start, end } = monthBoundsUtc(period, tz);
 
   const res = await env.DB.prepare(
     `SELECT start_utc, end_utc FROM sessions
-      WHERE end_utc > ? AND start_utc < ?
+      WHERE user_id = ? AND end_utc > ? AND start_utc < ?
       ORDER BY start_utc`,
   )
-    .bind(start.toISOString(), end.toISOString())
+    .bind(userId, start.toISOString(), end.toISOString())
     .all<Row>();
 
   const lines: string[] = [];

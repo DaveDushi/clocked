@@ -61,18 +61,30 @@ Run `clocked.exe`. It creates `%APPDATA%\clocked\data\` containing:
 - `clocked.log` — diagnostics
 
 Right-click the tray icon for: status, today's total (vs. your `target_hours`
-goal), **Pause / Resume tracking**, **Sync now**, **Start at login** (toggles the
-`HKCU\...\Run` entry), **Open data folder**, **Quit**.
+goal), **Pause / Resume tracking**, **Sync now**, **Open data folder**,
+**Settings…**, **Quit**. The **Settings…** window edits `config.toml` (sync,
+idle, goal, working hours) plus two launch options:
+
+- **Start at login** — a per-user `HKCU\...\Run` entry; runs clocked at each
+  Windows **sign-in** (not on lock/unlock).
+- **Keep clocked running** — a per-user Scheduled Task (`clocked-keepalive`) that
+  relaunches clocked at **logon and on workstation unlock**. Combined with the
+  single-instance guard, unlocking after a quit brings it back.
 
 Local-only mode works with no config — it just won't sync or email.
 
 ### Enable syncing
 
-Edit `%APPDATA%\clocked\data\config.toml`:
+Open the Worker's URL in a browser, **Create account**, and copy the
+per-account **sync token** it shows you (starts with `clk_`). Then right-click
+the tray icon → **Settings…**, set **Worker URL** to the Worker's address, paste
+the token into **Bearer token**, and click **Save** — syncing starts
+automatically (no restart needed). This writes the same
+`%APPDATA%\clocked\data\config.toml`:
 
 ```toml
 worker_url   = "https://clocked-worker.<subdomain>.workers.dev"
-bearer_token = "<same random secret you set on the Worker>"
+bearer_token = "<the clk_… token from your account's dashboard>"
 
 # Optional behavior tuning (defaults shown):
 idle_timeout_secs = 900   # auto clock-out after 15 min idle; 0 disables
@@ -103,13 +115,16 @@ npx wrangler d1 create clocked
 # 2. Apply schema to the remote DB.
 npx wrangler d1 migrations apply clocked --remote
 
-# 3. Set the shared secret (must match the app's config.toml).
-npx wrangler secret put BEARER_TOKEN
+# 3. Set the better-auth signing secret (any long random string) and, optionally,
+#    a legacy global BEARER_TOKEN fallback for pre-account single-user syncing.
+npx wrangler secret put BETTER_AUTH_SECRET
+npx wrangler secret put BEARER_TOKEN   # optional; per-account clk_ tokens are preferred
 
 # 4. Edit wrangler.jsonc:
-#      REPORT_TZ  -> your IANA timezone, e.g. "America/New_York"
-#      MAIL_TO / send_email.destination_address -> your recipient address
-#      MAIL_FROM  -> an address on your Cloudflare-managed sending domain
+#      REPORT_TZ       -> your IANA timezone, e.g. "America/New_York"
+#      BETTER_AUTH_URL -> this Worker's public URL (used for sign-up/session cookies)
+#      MAIL_FROM       -> an address on your Cloudflare-managed sending domain
+#      MAIL_TO         -> default recipient (each account can override it in the dashboard)
 #
 #    Prerequisites for the send_email binding:
 #      - Email Routing enabled on the account
@@ -121,19 +136,31 @@ npx wrangler deploy
 
 ### Endpoints
 
-| Method | Path                    | Auth   | Purpose                                  |
-|--------|-------------------------|--------|------------------------------------------|
-| GET    | `/`                     | –      | health check                             |
-| POST   | `/sessions`             | Bearer | ingest synced sessions (upsert by id)    |
-| GET    | `/preview?period=YYYY-MM` | Bearer | return the report body (no email)        |
-| POST   | `/send-test?period=YYYY-MM` | Bearer | build **and email** now (bypasses gate)  |
+| Method | Path                        | Auth    | Purpose                                          |
+|--------|-----------------------------|---------|--------------------------------------------------|
+| GET    | `/`                         | –       | landing page + dashboard (single self-contained app) |
+| GET    | `/health`                   | –       | health check                                     |
+| POST   | `/api/auth/sign-up/email`   | –       | create an account (better-auth)                  |
+| POST   | `/api/auth/sign-in/email`   | –       | sign in (better-auth)                            |
+| GET    | `/api/token`                | Cookie  | this account's `clk_` sync token (created on first read) |
+| POST   | `/api/token/regenerate`     | Cookie  | revoke + reissue this account's token            |
+| GET    | `/api/hours?period=YYYY-MM` | Cookie  | this account's per-day hours (dashboard)         |
+| POST   | `/sessions`                 | Bearer  | ingest synced sessions for the token's account (upsert by id) |
+| GET    | `/preview?period=YYYY-MM`   | Cookie  | this account's report body (no email)            |
+| POST   | `/send-test?period=YYYY-MM` | Cookie  | build **and email** this account's report now (bypasses gate) |
+
+Sign-up is public: each new account gets its own `clk_` Bearer token and only
+ever sees its own sessions. The desktop app authenticates its sync with that
+token; a global `BEARER_TOKEN` secret, if set, still works as a legacy fallback
+(those sessions land unattributed to any account).
 
 ### Monthly send
 
 A cron runs daily at 06:00 UTC; the handler only acts when it's the **1st in
-`REPORT_TZ`**, emailing the **previous full calendar month** exactly once
-(tracked in the `sent_reports` table). It sends on the 1st and ignores any
-late-arriving data for that month.
+`REPORT_TZ`**, emailing **every account** its own **previous full calendar
+month** exactly once (tracked per account in the `sent_reports` table). Each
+account's recipient is the address it set in the dashboard, falling back to its
+sign-up email. It sends on the 1st and ignores late-arriving data for that month.
 
 ---
 
@@ -148,11 +175,16 @@ late-arriving data for that month.
 ### Worker (locally, no email)
 ```sh
 cd worker
-echo 'BEARER_TOKEN="devtoken"' > .dev.vars
+printf 'BEARER_TOKEN="devtoken"\nBETTER_AUTH_SECRET="dev-only-secret-change-me"\nBETTER_AUTH_URL="http://localhost:8787"\n' > .dev.vars
 npx wrangler d1 migrations apply clocked --local
-npx wrangler d1 execute clocked --local --command \
-  "INSERT INTO sessions VALUES ('t1','2026-06-30T02:00:00Z','2026-06-30T05:00:00Z','unlock','suspend')"
-npx wrangler dev --local
-# in another shell:
-curl -H "Authorization: Bearer devtoken" "http://127.0.0.1:8787/preview?period=2026-06"
+npm run dev   # serves the app + APIs on http://localhost:8787 (better-auth needs the vite build)
+
+# in another shell — sign up, grab the account's token, sync a session, read hours:
+BASE=http://localhost:8787
+curl -s -c cj.txt -X POST $BASE/api/auth/sign-up/email -H 'content-type: application/json' \
+  -d '{"email":"you@example.com","password":"supersecret1","name":"You"}'
+TOK=$(curl -s -b cj.txt $BASE/api/token | sed -n 's/.*"token":"\(clk_[^"]*\)".*/\1/p')
+curl -s -X POST $BASE/sessions -H "Authorization: Bearer $TOK" -H 'content-type: application/json' \
+  -d '{"sessions":[{"id":"t1","start_utc":"2026-06-30T02:00:00Z","end_utc":"2026-06-30T05:00:00Z","start_reason":"unlock","end_reason":"suspend"}]}'
+curl -s -b cj.txt "$BASE/api/hours?period=2026-06"
 ```

@@ -32,10 +32,3 @@ pub fn disable() -> std::io::Result<()> {
         Err(e) => Err(e),
     }
 }
-
-pub fn toggle() {
-    let r = if is_enabled() { disable() } else { enable() };
-    if let Err(e) = r {
-        crate::logln!("autostart toggle error: {e}");
-    }
-}

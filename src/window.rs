@@ -9,8 +9,11 @@
 use chrono::{Local, Utc};
 use rusqlite::Connection;
 use windows::core::{w, PCWSTR};
-use windows::Win32::Foundation::{HANDLE, HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows::Win32::Foundation::{
+    GetLastError, ERROR_ALREADY_EXISTS, HANDLE, HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM,
+};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::System::Power::RegisterSuspendResumeNotification;
 use windows::Win32::System::RemoteDesktop::{
     WTSRegisterSessionNotification, WTSUnRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION,
@@ -27,16 +30,17 @@ const CLASS_NAME: PCWSTR = w!("ClockedHiddenWindow");
 const WM_TRAY: u32 = WM_APP + 1;
 const WM_SYNC_DONE: u32 = WM_APP + 2;
 const WM_PROMPT_AFTER_HOURS: u32 = WM_APP + 3;
+const WM_SETTINGS_SAVED: u32 = WM_APP + 4;
 const TIMER_HEARTBEAT: usize = 1;
 const TIMER_SYNC: usize = 2;
 
 // Menu command ids.
 const IDM_SYNC_NOW: usize = 101;
-const IDM_AUTOSTART: usize = 102;
 const IDM_OPEN_FOLDER: usize = 103;
 const IDM_QUIT: usize = 104;
 const IDM_OPEN_TIMESHEET: usize = 105;
 const IDM_PAUSE: usize = 106;
+const IDM_SETTINGS: usize = 107;
 
 // Warn this many seconds before an idle auto-clock-out.
 const IDLE_WARN_LEAD_SECS: u64 = 120;
@@ -282,6 +286,11 @@ impl AppState {
         self.syncing = true;
         crate::sync::spawn(self.hwnd.0 as isize, WM_SYNC_DONE, self.config.clone());
     }
+
+    /// Open the native settings window (or focus it if already open).
+    fn open_settings(&mut self) {
+        crate::settings::open(self.hwnd.0 as isize, WM_SETTINGS_SAVED);
+    }
 }
 
 fn to_wide(s: &str) -> Vec<u16> {
@@ -337,12 +346,11 @@ fn open_url(url: &str) {
 /// Build and show the tray context menu. Uses `TPM_RETURNCMD` and holds no
 /// borrow of `AppState` while `TrackPopupMenu` pumps its own modal loop.
 unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
-    let (status, today, autostart_on, worker_url, clocked_in) = {
+    let (status, today, worker_url, clocked_in) = {
         let app = &*ptr;
         (
             app.status_line(),
             app.today_line(),
-            crate::autostart::is_enabled(),
             app.config.worker_url.clone(),
             app.is_clocked_in(),
         )
@@ -371,13 +379,8 @@ unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
     };
     let _ = AppendMenuW(menu, timesheet_flags, IDM_OPEN_TIMESHEET, w!("Open timesheet"));
     let _ = AppendMenuW(menu, MF_STRING, IDM_SYNC_NOW, w!("Sync now"));
-    let autostart_flags = if autostart_on {
-        MF_STRING | MF_CHECKED
-    } else {
-        MF_STRING
-    };
-    let _ = AppendMenuW(menu, autostart_flags, IDM_AUTOSTART, w!("Start at login"));
     let _ = AppendMenuW(menu, MF_STRING, IDM_OPEN_FOLDER, w!("Open data folder"));
+    let _ = AppendMenuW(menu, MF_STRING, IDM_SETTINGS, w!("Settings…"));
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
     let _ = AppendMenuW(menu, MF_STRING, IDM_QUIT, w!("Quit"));
 
@@ -399,9 +402,9 @@ unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
 
     match cmd.0 as usize {
         IDM_PAUSE => (*ptr).toggle_pause(),
+        IDM_SETTINGS => (*ptr).open_settings(),
         IDM_OPEN_TIMESHEET => open_url(&worker_url),
         IDM_SYNC_NOW => (*ptr).do_sync(),
-        IDM_AUTOSTART => crate::autostart::toggle(),
         IDM_OPEN_FOLDER => open_data_folder(),
         IDM_QUIT => {
             let _ = DestroyWindow(hwnd);
@@ -451,6 +454,13 @@ unsafe extern "system" fn wndproc(
             (*ptr).resolve_after_hours();
             LRESULT(0)
         }
+        WM_SETTINGS_SAVED => {
+            let app = &mut *ptr;
+            app.config = Config::load();
+            app.update_tooltip();
+            app.do_sync();
+            LRESULT(0)
+        }
         WM_QUERYENDSESSION => {
             (*ptr).clock_out("shutdown");
             LRESULT(1)
@@ -496,6 +506,18 @@ unsafe extern "system" fn wndproc(
 /// Create the window, wire up notifications/tray/timers, and run the loop.
 pub fn run() -> windows::core::Result<()> {
     unsafe {
+        // Single-instance guard: bail out if another clocked is already running in
+        // this user session. CreateMutexW still returns a valid handle when the named
+        // mutex already exists, but sets the last error to ERROR_ALREADY_EXISTS. The
+        // kernel releases the mutex automatically when the process exits (even on a
+        // crash), so there is no stale lock to clean up. `_mutex` is held for the whole
+        // process lifetime — dropping it early would release the guard.
+        let _mutex = CreateMutexW(None, true, w!("Local\\ClockedSingleInstance"))?;
+        if GetLastError() == ERROR_ALREADY_EXISTS {
+            logln!("another instance is already running; exiting");
+            return Ok(());
+        }
+
         let hinstance = HINSTANCE(GetModuleHandleW(None)?.0);
         let wc = WNDCLASSW {
             lpfnWndProc: Some(wndproc),

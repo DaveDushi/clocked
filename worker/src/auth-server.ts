@@ -49,8 +49,9 @@ async function verifyPassword({ hash, password }: { hash: string; password: stri
 
 // --- better-auth instance --------------------------------------------------
 // Bindings only exist inside `fetch`, so build a fresh instance per request.
-// `allowSignUp` is only enabled by the one-time /api/seed route.
-export function makeAuth(env: Env, allowSignUp = false) {
+// Public sign-up is enabled: each new account gets its own per-account API token
+// (see tokens.ts) that the desktop app uses to sync.
+export function makeAuth(env: Env, allowSignUp = true) {
   return betterAuth({
     database: env.DB, // native D1 (better-auth >= 1.5), no adapter
     secret: env.BETTER_AUTH_SECRET,
@@ -58,7 +59,7 @@ export function makeAuth(env: Env, allowSignUp = false) {
     trustedOrigins: [env.BETTER_AUTH_URL],
     emailAndPassword: {
       enabled: true,
-      disableSignUp: !allowSignUp, // single user: no public registration
+      disableSignUp: !allowSignUp, // public multi-account registration
       password: { hash: hashPassword, verify: verifyPassword },
     },
     session: {
@@ -69,7 +70,7 @@ export function makeAuth(env: Env, allowSignUp = false) {
     rateLimit: {
       enabled: true,
       window: 60,
-      max: 100, // in-memory is fine for a single user
+      max: 100, // in-memory per-isolate limiter; fine at this scale
       customRules: { "/sign-in/email": { window: 10, max: 3 } }, // throttle password verify
     },
   });

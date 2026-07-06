@@ -17,3 +17,21 @@ export async function setSetting(env: Env, key: string, value: string): Promise<
     .bind(key, value)
     .run();
 }
+
+/** Per-user timesheet recipient override (null if the user hasn't set one). */
+export async function getMailTo(env: Env, userId: string): Promise<string | null> {
+  const row = await env.DB.prepare("SELECT mail_to FROM user_settings WHERE userId = ?")
+    .bind(userId)
+    .first<{ mail_to: string | null }>();
+  return row?.mail_to ?? null;
+}
+
+/** Upsert a user's timesheet recipient. */
+export async function setMailTo(env: Env, userId: string, value: string): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO user_settings (userId, mail_to) VALUES (?, ?)
+     ON CONFLICT(userId) DO UPDATE SET mail_to = excluded.mail_to`,
+  )
+    .bind(userId, value)
+    .run();
+}

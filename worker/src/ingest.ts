@@ -1,7 +1,15 @@
 import type { Env, SessionIn } from "./types";
 
-/** POST /sessions — validate and upsert synced sessions (idempotent by id). */
-export async function handleIngest(req: Request, env: Env): Promise<Response> {
+/**
+ * POST /sessions — validate and upsert synced sessions (idempotent by id).
+ * `userId` is the account resolved from the Bearer token; sessions are attributed
+ * to it (null only for the legacy global-token path).
+ */
+export async function handleIngest(
+  req: Request,
+  env: Env,
+  userId: string | null,
+): Promise<Response> {
   let body: unknown;
   try {
     body = await req.json();
@@ -17,17 +25,18 @@ export async function handleIngest(req: Request, env: Env): Promise<Response> {
   }
 
   const stmt = env.DB.prepare(
-    `INSERT INTO sessions (id, start_utc, end_utc, start_reason, end_reason)
-     VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO sessions (id, start_utc, end_utc, start_reason, end_reason, user_id)
+     VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        start_utc    = excluded.start_utc,
        end_utc      = excluded.end_utc,
        start_reason = excluded.start_reason,
-       end_reason   = excluded.end_reason`,
+       end_reason   = excluded.end_reason,
+       user_id      = excluded.user_id`,
   );
   await env.DB.batch(
     valid.map((s) =>
-      stmt.bind(s.id, s.start_utc, s.end_utc, s.start_reason ?? null, s.end_reason ?? null),
+      stmt.bind(s.id, s.start_utc, s.end_utc, s.start_reason ?? null, s.end_reason ?? null, userId),
     ),
   );
 
