@@ -25,6 +25,7 @@ use crate::config::Config;
 use crate::events::{map_power, map_session, Action};
 
 const CLASS_NAME: PCWSTR = w!("ClockedHiddenWindow");
+const LATEST_UPDATE_URL: &str = "https://clocked.daviddusi.com/download";
 
 // Custom + timer identifiers.
 const WM_TRAY: u32 = WM_APP + 1;
@@ -41,6 +42,7 @@ const IDM_QUIT: usize = 104;
 const IDM_OPEN_TIMESHEET: usize = 105;
 const IDM_PAUSE: usize = 106;
 const IDM_SETTINGS: usize = 107;
+const IDM_DOWNLOAD_UPDATE: usize = 108;
 
 // Warn this many seconds before an idle auto-clock-out.
 const IDLE_WARN_LEAD_SECS: u64 = 120;
@@ -343,6 +345,10 @@ fn open_url(url: &str) {
     }
 }
 
+fn latest_update_url() -> &'static str {
+    LATEST_UPDATE_URL
+}
+
 /// Build and show the tray context menu. Uses `TPM_RETURNCMD` and holds no
 /// borrow of `AppState` while `TrackPopupMenu` pumps its own modal loop.
 unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
@@ -351,7 +357,7 @@ unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
         (
             app.status_line(),
             app.today_line(),
-            app.config.worker_url.clone(),
+            app.config.effective_worker_url().to_string(),
             app.is_clocked_in(),
         )
     };
@@ -381,6 +387,12 @@ unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
     let _ = AppendMenuW(menu, MF_STRING, IDM_SYNC_NOW, w!("Sync now"));
     let _ = AppendMenuW(menu, MF_STRING, IDM_OPEN_FOLDER, w!("Open data folder"));
     let _ = AppendMenuW(menu, MF_STRING, IDM_SETTINGS, w!("Settings…"));
+    let _ = AppendMenuW(
+        menu,
+        MF_STRING,
+        IDM_DOWNLOAD_UPDATE,
+        w!("Check for updates / download latest"),
+    );
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
     let _ = AppendMenuW(menu, MF_STRING, IDM_QUIT, w!("Quit"));
 
@@ -406,6 +418,7 @@ unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
         IDM_OPEN_TIMESHEET => open_url(&worker_url),
         IDM_SYNC_NOW => (*ptr).do_sync(),
         IDM_OPEN_FOLDER => open_data_folder(),
+        IDM_DOWNLOAD_UPDATE => open_url(latest_update_url()),
         IDM_QUIT => {
             let _ = DestroyWindow(hwnd);
         }
@@ -592,4 +605,17 @@ pub fn run() -> windows::core::Result<()> {
         drop(Box::from_raw(ptr));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn latest_update_url_uses_public_download_endpoint() {
+        assert_eq!(
+            latest_update_url(),
+            "https://clocked.daviddusi.com/download"
+        );
+    }
 }
