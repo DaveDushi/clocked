@@ -29,7 +29,7 @@ export interface HoursReport {
 
 /**
  * Structured per-local-day totals for `period` ("YYYY-MM"), reusing the same
- * query and split-at-local-midnight logic as `buildReportTsv`. Dashboard rows
+ * query and split-at-local-midnight logic as `buildReportCsv`. Dashboard rows
  * are expanded to calendar days: past months include every day, current month
  * includes day 1 through today, and future months stay empty.
  */
@@ -73,13 +73,19 @@ export async function buildHoursReport(
   return { period, tz, days: expanded.days, activeDays: expanded.activeDays, totalMinutes };
 }
 
+/** Quote a CSV field when it contains a comma, quote, or newline (the date
+ * label "Monday, June 29, 2026" always needs it), doubling embedded quotes. */
+function csvField(s: string): string {
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
 /**
- * Build the tab-separated report body for `period` ("YYYY-MM").
- * One row per session, `Weekday, Month D, YYYY\tHH:MM\tHH:MM`, ordered by
- * start. Sessions are clamped to the month and split at every local midnight
- * so each row stays within a single local day.
+ * Build the comma-separated report body for `period` ("YYYY-MM").
+ * One row per session, `Weekday, Month D, YYYY,HH:MM,HH:MM` (date label quoted),
+ * ordered by start. Sessions are clamped to the month and split at every local
+ * midnight so each row stays within a single local day.
  */
-export async function buildReportTsv(env: Env, period: string, userId: string): Promise<string> {
+export async function buildReportCsv(env: Env, period: string, userId: string): Promise<string> {
   const tz = env.REPORT_TZ;
   const { start, end } = monthBoundsUtc(period, tz);
 
@@ -100,7 +106,7 @@ export async function buildReportTsv(env: Env, period: string, userId: string): 
       const midnight = nextLocalMidnightUtc(segStart, tz);
       const segEnd = midnight < sessEnd ? midnight : sessEnd;
       lines.push(
-        `${formatDateLabel(segStart, tz)}\t${formatHM(segStart, tz)}\t${formatHM(segEnd, tz)}`,
+        `${csvField(formatDateLabel(segStart, tz))},${formatHM(segStart, tz)},${formatHM(segEnd, tz)}`,
       );
       segStart = segEnd;
     }

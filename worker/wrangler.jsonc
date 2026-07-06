@@ -24,16 +24,10 @@
     }
   ],
 
-  // Email Sending binding (object API). No destination_address: with the sending
-  // domain onboarded (`wrangler email sending enable <MAIL_FROM domain>`), this
-  // delivers to any recipient — including the address set in the dashboard.
-  // For local `wrangler dev` real sends, add "remote": true.
-  "send_email": [{ "name": "SEND_EMAIL" }],
-
   "vars": {
     "REPORT_TZ": "America/New_York",
     "MAIL_TO": "ddushey101@gmail.com",
-    "MAIL_FROM": "clocked@daviddusi.com",
+    "MAIL_FROM": "timesheet@clocked.daviddusi.com",
     // Public base URL of this worker (used by better-auth for the dashboard login).
     "BETTER_AUTH_URL": "https://clocked.daviddusi.com"
   }
@@ -41,4 +35,5 @@
   // Secrets (do NOT put in vars):
   //   wrangler secret put BEARER_TOKEN
   //   wrangler secret put BETTER_AUTH_SECRET   # 32+ random chars
+  //   wrangler secret put RESEND_API_KEY       # Resend API key (timesheet emails)
 }

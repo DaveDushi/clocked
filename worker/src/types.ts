@@ -1,8 +1,9 @@
-// D1Database, SendEmail, and the Workers runtime types are ambient globals
+// D1Database and the Workers runtime types are ambient globals
 // provided by @cloudflare/workers-types (see tsconfig "types").
 export interface Env {
   DB: D1Database;
-  SEND_EMAIL: SendEmail;
+  /** Resend API key for sending timesheet emails (wrangler secret). */
+  RESEND_API_KEY: string;
   /** Shared secret matching the desktop app's config (wrangler secret). */
   BEARER_TOKEN: string;
   /** IANA timezone used for day names, day boundaries, and the cron gate. */

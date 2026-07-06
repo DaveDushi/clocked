@@ -120,6 +120,10 @@ const HTML = /* html */ `<!doctype html>
   ::-webkit-calendar-picker-indicator { filter:invert(.75); cursor:pointer; }
   .row { display:flex; gap:10px; align-items:flex-end; }
   .row > div { flex:1; }
+  .recipients { display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
+  .recipient { display:flex; gap:8px; align-items:center; }
+  .recipient input { flex:1; }
+  .recipient .del { width:42px; padding:10px 0; font-size:18px; line-height:1; }
 
   button, a.btn {
     display:inline-flex; align-items:center; justify-content:center; text-decoration:none;
@@ -329,7 +333,7 @@ const HTML = /* html */ `<!doctype html>
       </div>
       <ol class="steps">
         <li>Right-click the clocked tray icon &rarr; <b>Settings&hellip;</b></li>
-        <li>Set <b>Worker URL</b> to this site and paste the token above into <b>Bearer token</b>.</li>
+        <li>Paste the token above into <b>Bearer token</b>.</li>
         <li>Click <b>Save</b> &mdash; syncing starts automatically.</li>
       </ol>
       <div id="tokenMsg" class="msg" role="status"></div>
@@ -337,10 +341,12 @@ const HTML = /* html */ `<!doctype html>
 
     <div class="card">
       <h3>Monthly timesheet</h3>
-      <p class="hint">Where your month-end report is emailed.</p>
+      <p class="hint">Where your report is emailed. Add as many recipients as you like.</p>
+      <div id="recipients" class="recipients"></div>
       <div class="row">
-        <div><input id="mailTo" type="email" placeholder="you@example.com" /></div>
+        <button id="addRecipient" class="ghost">+ Add recipient</button>
         <button id="saveEmail">Save</button>
+        <button id="sendNow">Send now</button>
       </div>
       <div id="emailMsg" class="msg" role="status"></div>
     </div>
@@ -424,7 +430,7 @@ async function afterLogin(fresh) {
   $("freshBanner").classList.toggle("hidden", !fresh);
   const now = new Date();
   $("month").value = now.getFullYear() + "-" + pad(now.getMonth()+1);
-  await Promise.all([loadHours(), loadEmail(), loadToken()]);
+  await Promise.all([loadHours(), loadRecipients(), loadToken()]);
 }
 
 // ---- token ----
@@ -509,9 +515,29 @@ function shiftMonth(delta) {
   loadHours();
 }
 
-async function loadEmail() {
+// ---- recipients ----
+function addRecipientRow(value) {
+  const row = document.createElement("div");
+  row.className = "recipient";
+  const input = document.createElement("input");
+  input.type = "email"; input.placeholder = "you@example.com"; input.value = value || "";
+  const del = document.createElement("button");
+  del.type = "button"; del.className = "ghost del"; del.textContent = "×"; del.title = "Remove";
+  del.onclick = () => { row.remove(); if (!$("recipients").children.length) addRecipientRow(""); };
+  row.appendChild(input); row.appendChild(del);
+  $("recipients").appendChild(row);
+}
+function renderRecipients(list) {
+  $("recipients").innerHTML = "";
+  const arr = (list && list.length) ? list : [""];
+  arr.forEach(addRecipientRow);
+}
+function recipientValues() {
+  return [...$("recipients").querySelectorAll("input")].map((i) => i.value.trim()).filter(Boolean);
+}
+async function loadRecipients() {
   const r = await api("/api/settings");
-  if (r.ok) { const d = await r.json(); $("mailTo").value = d.mailTo || ""; }
+  renderRecipients(r.ok ? (await r.json()).recipients : []);
 }
 
 $("signout").onclick = async () => { await api("/api/auth/sign-out", { method:"POST" }); show(false); setMode("signin"); };
@@ -519,12 +545,27 @@ $("month").addEventListener("change", loadHours);
 $("prev").onclick = () => shiftMonth(-1);
 $("next").onclick = () => shiftMonth(1);
 
+$("addRecipient").onclick = () => addRecipientRow("");
+
 $("saveEmail").onclick = async () => {
-  $("saveEmail").disabled = true; $("emailMsg").textContent = ""; $("emailMsg").className = "msg";
-  const r = await api("/api/settings", { method:"POST", body: JSON.stringify({ mailTo:$("mailTo").value.trim() }) });
+  const recipients = recipientValues();
+  $("emailMsg").textContent = ""; $("emailMsg").className = "msg";
+  if (!recipients.length) { $("emailMsg").textContent = "Add at least one recipient."; $("emailMsg").className = "msg err"; return; }
+  $("saveEmail").disabled = true;
+  const r = await api("/api/settings", { method:"POST", body: JSON.stringify({ recipients }) });
   $("saveEmail").disabled = false;
   if (r.ok) { $("emailMsg").textContent = "Saved."; $("emailMsg").className = "msg ok"; }
   else { const e = await r.json().catch(()=>({})); $("emailMsg").textContent = e.error || "Save failed."; $("emailMsg").className = "msg err"; }
+};
+
+$("sendNow").onclick = async () => {
+  $("emailMsg").textContent = ""; $("emailMsg").className = "msg";
+  $("sendNow").disabled = true; $("sendNow").textContent = "Sending…";
+  const r = await api("/api/send?period=" + $("month").value, { method:"POST" });
+  $("sendNow").disabled = false; $("sendNow").textContent = "Send now";
+  const d = await r.json().catch(()=>({}));
+  if (r.ok) { $("emailMsg").textContent = "Sent " + d.rows + " row(s) to " + d.recipients + " recipient(s)."; $("emailMsg").className = "msg ok"; }
+  else { $("emailMsg").textContent = d.error || "Send failed."; $("emailMsg").className = "msg err"; }
 };
 
 init();

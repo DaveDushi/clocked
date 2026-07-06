@@ -26,7 +26,7 @@ export async function getMailTo(env: Env, userId: string): Promise<string | null
   return row?.mail_to ?? null;
 }
 
-/** Upsert a user's timesheet recipient. */
+/** Upsert a user's timesheet recipient(s). Stores the raw (newline-joined) string. */
 export async function setMailTo(env: Env, userId: string, value: string): Promise<void> {
   await env.DB.prepare(
     `INSERT INTO user_settings (userId, mail_to) VALUES (?, ?)
@@ -34,4 +34,26 @@ export async function setMailTo(env: Env, userId: string, value: string): Promis
   )
     .bind(userId, value)
     .run();
+}
+
+/** Split a stored `mail_to` value into individual addresses (newline/comma separated,
+ * trimmed, de-duplicated, empties dropped). */
+export function parseRecipients(raw: string | null): string[] {
+  if (!raw) return [];
+  const seen = new Set<string>();
+  for (const addr of raw.split(/[\n,]/)) {
+    const t = addr.trim();
+    if (t) seen.add(t);
+  }
+  return [...seen];
+}
+
+/** The user's timesheet recipients, falling back to their account email when none set. */
+export async function getRecipients(
+  env: Env,
+  userId: string,
+  fallbackEmail: string,
+): Promise<string[]> {
+  const list = parseRecipients(await getMailTo(env, userId));
+  return list.length > 0 ? list : [fallbackEmail];
 }

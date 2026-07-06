@@ -1,6 +1,11 @@
 import type { Env } from "./types";
-import { buildReportTsv } from "./report";
-import { getMailTo } from "./settings";
+import { buildReportCsv } from "./report";
+import { getRecipients } from "./settings";
+
+/** UTF-8-safe base64 (btoa alone mangles non-ASCII in session labels). */
+function toBase64(s: string): string {
+  return btoa(String.fromCharCode(...new TextEncoder().encode(s)));
+}
 
 export interface SendResult {
   ok: boolean;
@@ -16,14 +21,13 @@ export interface SendResult {
  * and records success there for exactly-once monthly delivery. Recipient is the
  * user's `mail_to` override, falling back to their account email.
  *
- * Uses the Cloudflare Email Sending object API (`env.SEND_EMAIL.send({...})`),
- * which delivers to any recipient once the MAIL_FROM domain is onboarded via
- * `wrangler email sending enable <domain>`.
+ * Sends via the Resend REST API (`POST https://api.resend.com/emails`) from the
+ * verified MAIL_FROM domain; `to` may hold several recipients (one email each).
  */
 export async function buildAndSendReport(
   env: Env,
   period: string,
-  opts: { force: boolean; userId: string; to: string },
+  opts: { force: boolean; userId: string; to: string[] },
 ): Promise<SendResult> {
   const { userId, to } = opts;
 
@@ -36,27 +40,35 @@ export async function buildAndSendReport(
     if (existing) return { ok: true, period, rows: 0, skipped: true };
   }
 
-  const tsv = await buildReportTsv(env, period, userId);
-  const rows = tsv ? tsv.trimEnd().split("\n").length : 0;
+  const csv = await buildReportCsv(env, period, userId);
+  const rows = csv ? csv.trimEnd().split("\n").length : 0;
 
   try {
-    await env.SEND_EMAIL.send({
-      to,
-      from: { email: env.MAIL_FROM, name: "clocked" },
-      subject: `Hours — ${period}`,
-      text: rows > 0 ? tsv : "No sessions recorded for this month.",
-      attachments:
-        rows > 0
-          ? [
-              {
-                content: tsv, // Workers binding: raw string, not base64
-                filename: `clocked-${period}.tsv`,
-                type: "text/tab-separated-values",
-                disposition: "attachment",
-              },
-            ]
-          : undefined,
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        from: `clocked <${env.MAIL_FROM}>`,
+        to,
+        subject: `Hours — ${period}`,
+        text: rows > 0 ? csv : "No sessions recorded for this month.",
+        attachments:
+          rows > 0
+            ? [
+                {
+                  content: toBase64(csv), // Resend requires base64
+                  filename: `clocked-${period}.csv`,
+                },
+              ]
+            : undefined,
+      }),
     });
+    if (!res.ok) {
+      return { ok: false, period, rows, error: `resend ${res.status}: ${await res.text()}` };
+    }
   } catch (e) {
     return { ok: false, period, rows, error: String((e as Error)?.message ?? e) };
   }
@@ -74,7 +86,7 @@ export async function buildAndSendReport(
 
 /**
  * Monthly cron fan-out: email every account its own report for `period`.
- * Each user's recipient is their `mail_to` override or their account email.
+ * Each user's recipients are their `mail_to` override(s) or their account email.
  */
 export async function sendMonthlyReports(
   env: Env,
@@ -86,8 +98,8 @@ export async function sendMonthlyReports(
     email: string;
   }>();
   for (const u of users.results ?? []) {
-    const to = (await getMailTo(env, u.id)) ?? u.email;
-    if (!to) continue;
+    const to = await getRecipients(env, u.id, u.email);
+    if (to.length === 0) continue;
     await buildAndSendReport(env, period, { force: opts.force, userId: u.id, to });
   }
 }

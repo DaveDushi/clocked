@@ -31,6 +31,19 @@ pub fn spawn(hwnd_raw: isize, done_msg: u32, config: Config) {
 fn run(cfg: &Config) -> Result<usize, Box<dyn std::error::Error>> {
     let path = crate::paths::db_file().ok_or("no data dir")?;
     let conn = rusqlite::Connection::open(path)?;
+
+    // The `synced` flag doesn't record *which* Worker a session went to. If the
+    // endpoint changed (e.g. local dev -> the hosted domain), re-queue the whole
+    // history so the new Worker gets it. Ingest is idempotent (upsert by id).
+    let endpoint = cfg.effective_worker_url().trim_end_matches('/');
+    if crate::db::meta_get(&conn, "synced_endpoint")?.as_deref() != Some(endpoint) {
+        let n = crate::db::reset_synced(&conn)?;
+        crate::db::meta_set(&conn, "synced_endpoint", endpoint)?;
+        if n > 0 {
+            crate::logln!("sync endpoint changed -> re-queued {n} session(s) for {endpoint}");
+        }
+    }
+
     let pending = crate::db::unsynced(&conn)?;
     if pending.is_empty() {
         return Ok(0);
@@ -39,7 +52,7 @@ fn run(cfg: &Config) -> Result<usize, Box<dyn std::error::Error>> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()?;
-    let url = format!("{}/sessions", cfg.effective_worker_url().trim_end_matches('/'));
+    let url = format!("{endpoint}/sessions");
     let resp = client
         .post(url)
         .bearer_auth(&cfg.bearer_token)

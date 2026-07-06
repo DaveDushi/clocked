@@ -187,6 +187,31 @@ pub fn mark_synced(conn: &Connection, ids: &[String]) -> rusqlite::Result<()> {
     tx.commit()
 }
 
+/// Clear the synced flag on every session, re-queuing them all for upload.
+/// Returns the number of rows reset. Used when the sync endpoint changes so a
+/// new Worker receives the full history (the flag is endpoint-agnostic).
+pub fn reset_synced(conn: &Connection) -> rusqlite::Result<usize> {
+    Ok(conn.execute("UPDATE sessions SET synced = 0 WHERE synced = 1", [])?)
+}
+
+/// Read a value from the `meta` key/value table (None if unset).
+pub fn meta_get(conn: &Connection, key: &str) -> rusqlite::Result<Option<String>> {
+    conn.query_row("SELECT value FROM meta WHERE key = ?1", params![key], |r| {
+        r.get(0)
+    })
+    .optional()
+}
+
+/// Upsert a value into the `meta` key/value table.
+pub fn meta_set(conn: &Connection, key: &str, value: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = ?2",
+        params![key, value],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,5 +294,40 @@ mod tests {
         let ids: Vec<String> = pending.iter().map(|s| s.id.clone()).collect();
         mark_synced(&c, &ids).unwrap();
         assert_eq!(unsynced(&c).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn reset_synced_requeues_all_completed_sessions() {
+        let c = mem();
+        // Two completed sessions, both marked synced (as if pushed to a Worker).
+        clock_in(&c, "resume", t("2026-06-29T10:00:00Z")).unwrap();
+        clock_out(&c, "lock", t("2026-06-29T11:00:00Z")).unwrap();
+        clock_in(&c, "unlock", t("2026-06-29T12:00:00Z")).unwrap();
+        clock_out(&c, "lock", t("2026-06-29T13:00:00Z")).unwrap();
+        let ids: Vec<String> = unsynced(&c).unwrap().iter().map(|s| s.id.clone()).collect();
+        mark_synced(&c, &ids).unwrap();
+        assert_eq!(unsynced(&c).unwrap().len(), 0);
+
+        // Switching endpoints re-queues both for the new Worker.
+        assert_eq!(reset_synced(&c).unwrap(), 2);
+        assert_eq!(unsynced(&c).unwrap().len(), 2);
+        // Second reset is a no-op (nothing left marked synced).
+        assert_eq!(reset_synced(&c).unwrap(), 0);
+    }
+
+    #[test]
+    fn meta_get_set_round_trips_and_overwrites() {
+        let c = mem();
+        assert_eq!(meta_get(&c, "synced_endpoint").unwrap(), None);
+        meta_set(&c, "synced_endpoint", "https://a.example").unwrap();
+        assert_eq!(
+            meta_get(&c, "synced_endpoint").unwrap().as_deref(),
+            Some("https://a.example")
+        );
+        meta_set(&c, "synced_endpoint", "https://b.example").unwrap();
+        assert_eq!(
+            meta_get(&c, "synced_endpoint").unwrap().as_deref(),
+            Some("https://b.example")
+        );
     }
 }

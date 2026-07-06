@@ -5,8 +5,8 @@ import { downloadResponse, isDownloadMethod } from "./download";
 import { faviconResponse } from "./favicon";
 import { buildAndSendReport, sendMonthlyReports } from "./email";
 import { handleIngest } from "./ingest";
-import { buildHoursReport, buildReportTsv } from "./report";
-import { getMailTo, setMailTo } from "./settings";
+import { buildHoursReport, buildReportCsv } from "./report";
+import { getRecipients, setMailTo } from "./settings";
 import { getOrCreateToken, rotateToken, userIdForToken } from "./tokens";
 import { isFirstOfMonth, previousMonthPeriod } from "./time";
 import type { Env } from "./types";
@@ -53,14 +53,17 @@ export default {
       const user = await sessionUser(req, env);
       if (!user) return json({ error: "unauthorized" }, 401);
       if (req.method === "GET") {
-        return json({ mailTo: (await getMailTo(env, user.id)) ?? user.email });
+        return json({ recipients: await getRecipients(env, user.id, user.email) });
       }
       if (req.method === "POST") {
-        const body = (await req.json().catch(() => ({}))) as { mailTo?: unknown };
-        const mailTo = typeof body.mailTo === "string" ? body.mailTo.trim() : "";
-        if (!isEmail(mailTo)) return json({ error: "invalid email" }, 400);
-        await setMailTo(env, user.id, mailTo);
-        return json({ ok: true, mailTo });
+        const body = (await req.json().catch(() => ({}))) as { recipients?: unknown };
+        const recipients = Array.isArray(body.recipients)
+          ? body.recipients.map((r) => (typeof r === "string" ? r.trim() : "")).filter(Boolean)
+          : [];
+        if (recipients.length === 0) return json({ error: "at least one recipient required" }, 400);
+        if (!recipients.every(isEmail)) return json({ error: "invalid email" }, 400);
+        await setMailTo(env, user.id, recipients.join("\n"));
+        return json({ ok: true, recipients });
       }
     }
 
@@ -69,19 +72,19 @@ export default {
       const user = await sessionUser(req, env);
       if (!user) return json({ error: "unauthorized" }, 401);
       const period = url.searchParams.get("period") ?? previousMonthPeriod(new Date(), env.REPORT_TZ);
-      const tsv = await buildReportTsv(env, period, user.id);
-      return new Response(tsv, { status: 200, headers: { "content-type": "text/plain" } });
+      const csv = await buildReportCsv(env, period, user.id);
+      return new Response(csv, { status: 200, headers: { "content-type": "text/csv" } });
     }
 
-    // Manual test trigger: build + send this account's report now (bypasses the
-    // date gate and the once-a-month guard).
-    if (req.method === "POST" && url.pathname === "/send-test") {
+    // Manual send: build + email this account's report now (bypasses the date
+    // gate and the once-a-month guard). Sends the requested/selected month.
+    if (req.method === "POST" && url.pathname === "/api/send") {
       const user = await sessionUser(req, env);
       if (!user) return json({ error: "unauthorized" }, 401);
       const period = url.searchParams.get("period") ?? previousMonthPeriod(new Date(), env.REPORT_TZ);
-      const to = (await getMailTo(env, user.id)) ?? user.email;
+      const to = await getRecipients(env, user.id, user.email);
       const result = await buildAndSendReport(env, period, { force: true, userId: user.id, to });
-      return json(result, result.ok ? 200 : 500);
+      return json({ ...result, recipients: to.length }, result.ok ? 200 : 500);
     }
 
     // ---- Desktop-app (Bearer-token) API.
