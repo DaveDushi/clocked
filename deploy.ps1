@@ -38,12 +38,12 @@ $cargoToml = Join-Path $repoRoot 'Cargo.toml'
 function Run-Native {
     param(
         [Parameter(Mandatory = $true)][string]$File,
-        [Parameter(ValueFromRemainingArguments = $true)][string[]]$Args
+        [string[]]$CommandArgs = @()
     )
 
-    & $File @Args
+    & $File @CommandArgs
     if ($LASTEXITCODE -ne 0) {
-        throw "$File $($Args -join ' ') failed with exit code $LASTEXITCODE"
+        throw "$File $($CommandArgs -join ' ') failed with exit code $LASTEXITCODE"
     }
 }
 
@@ -98,7 +98,7 @@ try {
 
     if (-not $SkipTests) {
         Write-Host 'Running tests...' -ForegroundColor Cyan
-        Run-Native $cargo test
+        Run-Native $cargo @('test')
     }
 
     Write-Host 'Building installer...' -ForegroundColor Cyan
@@ -114,22 +114,22 @@ try {
     }
 
     Write-Host "Pushing branch $branch..." -ForegroundColor Cyan
-    Run-Native git push -u origin $branch
+    Run-Native git @('push', '-u', 'origin', $branch)
 
     Write-Host 'Syncing tags...' -ForegroundColor Cyan
-    Run-Native git fetch --tags origin
+    Run-Native git @('fetch', '--tags', 'origin')
     $existingTag = & git tag --list $tag | Select-Object -First 1
     if (-not $existingTag) {
-        Run-Native git tag -a $tag -m "clocked $tag"
+        Run-Native git @('tag', '-a', $tag, '-m', "clocked $tag")
     }
-    Run-Native git push origin $tag
+    Run-Native git @('push', 'origin', $tag)
 
     Write-Host "Publishing GitHub Release $tag..." -ForegroundColor Cyan
     & $gh release view $tag --repo $Repo *> $null
     if ($LASTEXITCODE -eq 0) {
-        Run-Native $gh release upload $tag $installer $stableInstaller --repo $Repo --clobber
+        Run-Native $gh @('release', 'upload', $tag, $installer, $stableInstaller, '--repo', $Repo, '--clobber')
     } else {
-        Run-Native $gh release create $tag $installer $stableInstaller --repo $Repo --title "clocked $tag" --notes "Release $tag"
+        Run-Native $gh @('release', 'create', $tag, $installer, $stableInstaller, '--repo', $Repo, '--title', "clocked $tag", '--notes', "Release $tag")
     }
 
     Write-Host ''
