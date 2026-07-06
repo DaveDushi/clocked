@@ -1,5 +1,5 @@
 export const DOWNLOAD_URL =
-  "https://github.com/DaveDushi/clocked/releases/latest/download/clocked-setup-0.1.0.exe";
+  "https://github.com/DaveDushi/clocked/releases/latest/download/clocked-setup.exe";
 
 export function isDownloadMethod(method: string): boolean {
   return method === "GET" || method === "HEAD";

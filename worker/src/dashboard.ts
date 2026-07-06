@@ -254,7 +254,7 @@ const HTML = /* html */ `<!doctype html>
       <div class="downloadCta row">
         <a class="btn" href="/download">Download for Windows</a>
         <a class="btn ghost" href="https://github.com/DaveDushi/clocked" target="_blank" rel="noopener">View source</a>
-        <div class="hintline">Installer: clocked-setup-0.1.0.exe</div>
+        <div class="hintline">Installer: clocked-setup.exe</div>
       </div>
     </div>
 

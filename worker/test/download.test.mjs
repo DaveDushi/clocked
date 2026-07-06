@@ -6,7 +6,7 @@ import { DOWNLOAD_URL, downloadResponse, isDownloadMethod } from "../.tmp-test/d
 test("download route redirects to the GitHub release installer", () => {
   assert.equal(
     DOWNLOAD_URL,
-    "https://github.com/DaveDushi/clocked/releases/latest/download/clocked-setup-0.1.0.exe",
+    "https://github.com/DaveDushi/clocked/releases/latest/download/clocked-setup.exe",
   );
 
   const response = downloadResponse();
@@ -27,5 +27,5 @@ test("dashboard advertises the Windows installer download", async () => {
 
   assert.match(html, /href="\/download"/);
   assert.match(html, /Download for Windows/);
-  assert.match(html, /clocked-setup-0\.1\.0\.exe/);
+  assert.match(html, /clocked-setup\.exe/);
 });

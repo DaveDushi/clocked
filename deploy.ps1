@@ -80,6 +80,7 @@ try {
 
     $tag = "v$version"
     $installer = Join-Path $repoRoot "installer\dist\clocked-setup-$version.exe"
+    $stableInstaller = Join-Path $repoRoot 'installer\dist\clocked-setup.exe'
     $cargo = Find-Cargo
     $gh = Find-GitHubCli
 
@@ -105,13 +106,19 @@ try {
     if (-not (Test-Path $installer)) {
         throw "Installer was not created: $installer"
     }
+    Copy-Item -LiteralPath $installer -Destination $stableInstaller -Force
+
+    $dirtyAfterBuild = & git status --porcelain
+    if ($dirtyAfterBuild) {
+        throw "Build/test changed the working tree. Commit these changes, then rerun deploy.`n$($dirtyAfterBuild -join "`n")"
+    }
 
     Write-Host "Pushing branch $branch..." -ForegroundColor Cyan
     Run-Native git push -u origin $branch
 
     Write-Host 'Syncing tags...' -ForegroundColor Cyan
     Run-Native git fetch --tags origin
-    $existingTag = (& git tag --list $tag).Trim()
+    $existingTag = & git tag --list $tag | Select-Object -First 1
     if (-not $existingTag) {
         Run-Native git tag -a $tag -m "clocked $tag"
     }
@@ -120,9 +127,9 @@ try {
     Write-Host "Publishing GitHub Release $tag..." -ForegroundColor Cyan
     & $gh release view $tag --repo $Repo *> $null
     if ($LASTEXITCODE -eq 0) {
-        Run-Native $gh release upload $tag $installer --repo $Repo --clobber
+        Run-Native $gh release upload $tag $installer $stableInstaller --repo $Repo --clobber
     } else {
-        Run-Native $gh release create $tag $installer --repo $Repo --title "clocked $tag" --notes "Release $tag"
+        Run-Native $gh release create $tag $installer $stableInstaller --repo $Repo --title "clocked $tag" --notes "Release $tag"
     }
 
     Write-Host ''
