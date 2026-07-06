@@ -38,7 +38,6 @@ const TIMER_UPDATE_CHECK: usize = 3;
 
 // Menu command ids.
 const IDM_SYNC_NOW: usize = 101;
-const IDM_OPEN_FOLDER: usize = 103;
 const IDM_QUIT: usize = 104;
 const IDM_OPEN_TIMESHEET: usize = 105;
 const IDM_PAUSE: usize = 106;
@@ -355,22 +354,6 @@ fn fmt_hours(h: f64) -> String {
     }
 }
 
-fn open_data_folder() {
-    if let Some(dir) = crate::paths::data_dir() {
-        let wide = to_wide(&dir.to_string_lossy());
-        unsafe {
-            ShellExecuteW(
-                None,
-                w!("open"),
-                PCWSTR(wide.as_ptr()),
-                PCWSTR::null(),
-                PCWSTR::null(),
-                SW_SHOWNORMAL,
-            );
-        }
-    }
-}
-
 /// Open a URL in the default browser. Used to launch the Worker dashboard,
 /// whose month picker defaults to the current month — i.e. this month's
 /// timesheet.
@@ -435,7 +418,6 @@ unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
         w!("Open timesheet"),
     );
     let _ = AppendMenuW(menu, MF_STRING, IDM_SYNC_NOW, w!("Sync now"));
-    let _ = AppendMenuW(menu, MF_STRING, IDM_OPEN_FOLDER, w!("Open data folder"));
     let _ = AppendMenuW(menu, MF_STRING, IDM_SETTINGS, w!("Settings…"));
     let update_flags = if update_enabled { MF_STRING } else { MF_GRAYED };
     let wupdate = to_wide(&update_label);
@@ -469,7 +451,6 @@ unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
         IDM_SETTINGS => (*ptr).open_settings(),
         IDM_OPEN_TIMESHEET => open_url(&worker_url),
         IDM_SYNC_NOW => (*ptr).do_sync(),
-        IDM_OPEN_FOLDER => open_data_folder(),
         IDM_DOWNLOAD_UPDATE => {
             let app = &mut *ptr;
             if let Some(url) = app.update_status.download_url() {

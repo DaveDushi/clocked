@@ -61,8 +61,8 @@ Run `clocked.exe`. It creates `%APPDATA%\clocked\data\` containing:
 - `clocked.log` — diagnostics
 
 Right-click the tray icon for: status, today's total (vs. your `target_hours`
-goal), **Pause / Resume tracking**, **Sync now**, **Open data folder**,
-**Settings…**, update status, **Quit**. The app checks for updates on startup
+goal), **Pause / Resume tracking**, **Sync now**, **Settings…**, update status,
+**Quit**. The app checks for updates on startup
 and periodically. Until that check finishes, the menu says **Check for updates •
 vX.Y.Z**; if a newer release exists it changes to **Download latest update •
 vX.Y.Z** and opens the latest installer download in your browser. The
