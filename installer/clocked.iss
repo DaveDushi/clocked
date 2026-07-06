@@ -44,6 +44,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "..\target\release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
+[Registry]
+; Default on: start Clocked automatically at Windows sign-in. The Settings
+; checkbox reflects this HKCU Run value and can disable it later.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "clocked"; ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletevalue
+
 [Icons]
 ; Start-menu shortcut - this is what Windows search indexes.
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -51,11 +56,6 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
-
-[UninstallRun]
-; The app registers its own autostart under HKCU\...\Run (tray toggle). Remove
-; it on uninstall so Windows doesn't try to launch a deleted exe at login.
-Filename: "{sys}\reg.exe"; Parameters: "delete ""HKCU\Software\Microsoft\Windows\CurrentVersion\Run"" /v clocked /f"; Flags: runhidden; RunOnceId: "DelClockedAutostart"
 
 ; Note: user data in %APPDATA%\clocked (db, config, log) is intentionally left
 ; in place on uninstall so a reinstall keeps history.

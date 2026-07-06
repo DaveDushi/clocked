@@ -65,8 +65,9 @@ goal), **Pause / Resume tracking**, **Sync now**, **Open data folder**,
 **Settings…**, **Quit**. The **Settings…** window edits `config.toml` (sync,
 idle, goal, working hours) plus two launch options:
 
-- **Start at login** — a per-user `HKCU\...\Run` entry; runs clocked at each
-  Windows **sign-in** (not on lock/unlock).
+- **Start at login** — enabled by default by the installer; a per-user
+  `HKCU\...\Run` entry runs clocked at each Windows **sign-in** (not on
+  lock/unlock).
 - **Keep clocked running** — a per-user Scheduled Task (`clocked-keepalive`) that
   relaunches clocked at **logon and on workstation unlock**. Combined with the
   single-instance guard, unlocking after a quit brings it back.
