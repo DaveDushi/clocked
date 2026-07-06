@@ -39,7 +39,7 @@ fn run(cfg: &Config) -> Result<usize, Box<dyn std::error::Error>> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()?;
-    let url = format!("{}/sessions", cfg.worker_url.trim_end_matches('/'));
+    let url = format!("{}/sessions", cfg.effective_worker_url().trim_end_matches('/'));
     let resp = client
         .post(url)
         .bearer_auth(&cfg.bearer_token)

@@ -77,13 +77,14 @@ Local-only mode works with no config — it just won't sync or email.
 
 Open the Worker's URL in a browser, **Create account**, and copy the
 per-account **sync token** it shows you (starts with `clk_`). Then right-click
-the tray icon → **Settings…**, set **Worker URL** to the Worker's address, paste
-the token into **Bearer token**, and click **Save** — syncing starts
-automatically (no restart needed). This writes the same
+the tray icon ? **Settings?**, paste the token into **Bearer token**, and click
+**Save** ? syncing starts automatically (no restart needed). The app defaults to
+`https://clocked.daviddusi.com`; changing the Worker URL is tucked under
+**Advanced settings** for self-hosted/dev installs. This writes the same
 `%APPDATA%\clocked\data\config.toml`:
 
 ```toml
-worker_url   = "https://clocked-worker.<subdomain>.workers.dev"
+worker_url   = "https://clocked.daviddusi.com"
 bearer_token = "<the clk_… token from your account's dashboard>"
 
 # Optional behavior tuning (defaults shown):

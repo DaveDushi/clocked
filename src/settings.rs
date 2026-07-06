@@ -36,7 +36,9 @@ const ID_START: i32 = 1005;
 const ID_END: i32 = 1006;
 const ID_AUTOSTART: i32 = 1007;
 const ID_KEEPALIVE: i32 = 1008;
+const ID_ADVANCED: i32 = 1009;
 const ID_DAY_BASE: i32 = 1010; // + weekday index
+const ID_WORKER_URL_LABEL: i32 = 1020;
 
 const DAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -87,7 +89,7 @@ pub fn open(main_hwnd_raw: isize, saved_msg: u32) {
             }
         }
 
-        let (w, h) = (468, 482);
+        let (w, h) = (468, 540);
         let x = (GetSystemMetrics(SM_CXSCREEN) - w) / 2;
         let y = (GetSystemMetrics(SM_CYSCREEN) - h) / 2;
         let ctx = Box::into_raw(Box::new(Ctx {
@@ -170,6 +172,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 ID_CANCEL => {
                     let _ = DestroyWindow(hwnd);
                 }
+                ID_ADVANCED => toggle_advanced(hwnd),
                 _ => return DefWindowProcW(hwnd, msg, wp, lp),
             }
             LRESULT(0)
@@ -217,37 +220,48 @@ unsafe fn build_controls(hwnd: HWND) {
     let eh = 26; // edit height
     let lh = 18; // label height
 
-    label(hwnd, "Worker URL   ·   blank = local only, no sync", m, 20, fw, lh, hinst, font);
-    edit(hwnd, ID_WORKER_URL, m, 42, fw, eh, WINDOW_STYLE(0), hinst, font);
+    label(hwnd, "Bearer token", m, 20, fw, lh, hinst, font);
+    edit(hwnd, ID_TOKEN, m, 42, fw, eh, WINDOW_STYLE(ES_PASSWORD as u32), hinst, font);
 
-    label(hwnd, "Bearer token", m, 82, fw, lh, hinst, font);
-    edit(hwnd, ID_TOKEN, m, 104, fw, eh, WINDOW_STYLE(ES_PASSWORD as u32), hinst, font);
+    label(hwnd, "Idle timeout   ?   minutes, 0 = off", m, 82, half, lh, hinst, font);
+    label(hwnd, "Daily goal   ?   hours, 0 = hide", right, 82, half, lh, hinst, font);
+    edit(hwnd, ID_IDLE, m, 104, half, eh, WINDOW_STYLE(ES_NUMBER as u32), hinst, font);
+    edit(hwnd, ID_TARGET, right, 104, half, eh, WINDOW_STYLE(0), hinst, font);
 
-    label(hwnd, "Idle timeout   ·   minutes, 0 = off", m, 144, half, lh, hinst, font);
-    label(hwnd, "Daily goal   ·   hours, 0 = hide", right, 144, half, lh, hinst, font);
-    edit(hwnd, ID_IDLE, m, 166, half, eh, WINDOW_STYLE(ES_NUMBER as u32), hinst, font);
-    edit(hwnd, ID_TARGET, right, 166, half, eh, WINDOW_STYLE(0), hinst, font);
+    label(hwnd, "Work start", m, 144, half, lh, hinst, font);
+    label(hwnd, "Work end", right, 144, half, lh, hinst, font);
+    time_picker(hwnd, ID_START, m, 166, half, eh, hinst, font);
+    time_picker(hwnd, ID_END, right, 166, half, eh, hinst, font);
 
-    label(hwnd, "Work start", m, 206, half, lh, hinst, font);
-    label(hwnd, "Work end", right, 206, half, lh, hinst, font);
-    time_picker(hwnd, ID_START, m, 228, half, eh, hinst, font);
-    time_picker(hwnd, ID_END, right, 228, half, eh, hinst, font);
-
-    label(hwnd, "Work days   ·   none = after-hours prompt off", m, 268, fw, lh, hinst, font);
+    label(hwnd, "Work days   ?   none = after-hours prompt off", m, 206, fw, lh, hinst, font);
     let dw = (fw + 6) / 7; // even column width across the row
     for (i, d) in DAYS.iter().enumerate() {
-        check(hwnd, ID_DAY_BASE + i as i32, d, m + i as i32 * dw, 292, dw - 6, hinst, font);
+        check(hwnd, ID_DAY_BASE + i as i32, d, m + i as i32 * dw, 230, dw - 6, hinst, font);
     }
 
-    check(hwnd, ID_AUTOSTART, "Start clocked automatically at login", m, 326, fw, hinst, font);
-    check(hwnd, ID_KEEPALIVE, "Keep clocked running (relaunch on unlock too)", m, 352, fw, hinst, font);
+    check(hwnd, ID_AUTOSTART, "Start clocked automatically at login", m, 264, fw, hinst, font);
+    check(hwnd, ID_KEEPALIVE, "Keep clocked running (relaunch on unlock too)", m, 290, fw, hinst, font);
 
-    button(hwnd, ID_CANCEL, "Cancel", m + fw - 104, 390, 104, hinst, font, false);
-    button(hwnd, ID_SAVE, "Save", m + fw - 104 - 116, 390, 104, hinst, font, true);
+    button(hwnd, ID_ADVANCED, "Advanced settings...", m, 326, 154, hinst, font, false);
+    label_id(
+        hwnd,
+        ID_WORKER_URL_LABEL,
+        "Worker URL   ?   defaults to clocked.daviddusi.com",
+        m,
+        366,
+        fw,
+        lh,
+        hinst,
+        font,
+    );
+    edit(hwnd, ID_WORKER_URL, m, 388, fw, eh, WINDOW_STYLE(0), hinst, font);
+
+    button(hwnd, ID_CANCEL, "Cancel", m + fw - 104, 456, 104, hinst, font, false);
+    button(hwnd, ID_SAVE, "Save", m + fw - 104 - 116, 456, 104, hinst, font, true);
 
     populate(hwnd);
+    show_advanced(hwnd, false);
 }
-
 unsafe fn mk(
     parent: HWND,
     class: PCWSTR,
@@ -281,8 +295,22 @@ unsafe fn mk(
 }
 
 unsafe fn label(p: HWND, text: &str, x: i32, y: i32, w: i32, h: i32, hinst: HINSTANCE, font: WPARAM) {
+    label_id(p, 0, text, x, y, w, h, hinst, font);
+}
+
+unsafe fn label_id(
+    p: HWND,
+    id: i32,
+    text: &str,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    hinst: HINSTANCE,
+    font: WPARAM,
+) {
     let t = wide(text);
-    mk(p, w!("STATIC"), PCWSTR(t.as_ptr()), WINDOW_STYLE(0), WINDOW_EX_STYLE(0), x, y, w, h, 0, hinst, font);
+    mk(p, w!("STATIC"), PCWSTR(t.as_ptr()), WINDOW_STYLE(0), WINDOW_EX_STYLE(0), x, y, w, h, id, hinst, font);
 }
 
 unsafe fn edit(
@@ -465,10 +493,36 @@ unsafe fn is_checked(parent: HWND, id: i32) -> bool {
     }
 }
 
+unsafe fn show_advanced(parent: HWND, show: bool) {
+    let cmd = if show { SW_SHOW } else { SW_HIDE };
+    if let Ok(h) = GetDlgItem(Some(parent), ID_WORKER_URL_LABEL) {
+        let _ = ShowWindow(h, cmd);
+    }
+    if let Ok(h) = GetDlgItem(Some(parent), ID_WORKER_URL) {
+        let _ = ShowWindow(h, cmd);
+    }
+    if let Ok(h) = GetDlgItem(Some(parent), ID_ADVANCED) {
+        let text = if show {
+            wide("Hide advanced")
+        } else {
+            wide("Advanced settings...")
+        };
+        let _ = SetWindowTextW(h, PCWSTR(text.as_ptr()));
+    }
+}
+
+unsafe fn toggle_advanced(parent: HWND) {
+    let visible = match GetDlgItem(Some(parent), ID_WORKER_URL) {
+        Ok(h) => IsWindowVisible(h).as_bool(),
+        Err(_) => false,
+    };
+    show_advanced(parent, !visible);
+}
+
 /// Fill controls from the current config.
 unsafe fn populate(hwnd: HWND) {
     let c = Config::load();
-    set_text(hwnd, ID_WORKER_URL, &c.worker_url);
+    set_text(hwnd, ID_WORKER_URL, c.effective_worker_url());
     set_text(hwnd, ID_TOKEN, &c.bearer_token);
     // Shown in minutes; stored in seconds.
     set_text(hwnd, ID_IDLE, &(c.idle_timeout_secs / 60).to_string());

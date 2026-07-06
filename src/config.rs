@@ -1,8 +1,10 @@
 //! User configuration: `%APPDATA%\clocked\config.toml`.
-//! Holds the Cloudflare Worker sync endpoint and the shared bearer token.
+//! Holds the Cloudflare Worker sync endpoint and bearer token.
 
 use chrono::{DateTime, Datelike, Local, NaiveTime, Weekday};
 use serde::{Deserialize, Serialize};
+
+pub const DEFAULT_WORKER_URL: &str = "https://clocked.daviddusi.com";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Config {
@@ -56,7 +58,7 @@ fn default_work_days() -> Vec<String> {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            worker_url: String::new(),
+            worker_url: DEFAULT_WORKER_URL.to_string(),
             bearer_token: String::new(),
             idle_timeout_secs: default_idle_timeout_secs(),
             target_hours: default_target_hours(),
@@ -113,7 +115,8 @@ impl Config {
         format!(
             "# clocked configuration\n\
              # Managed by the tray Settings page, but safe to edit by hand.\n\
-             # Leave worker_url/bearer_token blank for local-only mode (no sync).\n\
+             # Worker URL defaults to https://clocked.daviddusi.com and is usually hidden in Advanced settings.\n\
+             # Leave bearer_token blank for local-only mode (no sync).\n\
              \n\
              worker_url   = \"{worker_url}\"\n\
              bearer_token = \"{bearer_token}\"\n\
@@ -149,7 +152,19 @@ impl Config {
 
     /// True once both the endpoint and token are set.
     pub fn is_configured(&self) -> bool {
-        !self.worker_url.trim().is_empty() && !self.bearer_token.trim().is_empty()
+        !self.effective_worker_url().is_empty() && !self.bearer_token.trim().is_empty()
+    }
+
+    /// Sync endpoint to use. Empty configs and the old local-dev default fall
+    /// back to the hosted clocked domain; advanced settings can still override
+    /// this with another non-local URL.
+    pub fn effective_worker_url(&self) -> &str {
+        let url = self.worker_url.trim();
+        if url.is_empty() || is_local_dev_url(url) {
+            DEFAULT_WORKER_URL
+        } else {
+            url
+        }
     }
 
     /// Whether `now` falls inside the configured working hours.
@@ -171,6 +186,13 @@ impl Config {
         };
         Some(day_ok && time_ok)
     }
+}
+
+fn is_local_dev_url(url: &str) -> bool {
+    matches!(
+        url.trim_end_matches('/'),
+        "http://localhost:8787" | "http://127.0.0.1:8787" | "http://[::1]:8787"
+    )
 }
 
 #[cfg(test)]
@@ -227,5 +249,21 @@ mod tests {
         };
         let reloaded: Config = toml::from_str(&c.to_toml()).unwrap();
         assert_eq!(c, reloaded);
+    }
+
+    #[test]
+    fn default_worker_url_is_hosted_domain() {
+        assert_eq!(Config::default().worker_url, DEFAULT_WORKER_URL);
+        assert_eq!(Config::default().effective_worker_url(), DEFAULT_WORKER_URL);
+    }
+
+    #[test]
+    fn old_local_dev_url_falls_back_to_hosted_domain() {
+        let mut c = Config::default();
+        c.worker_url = "http://localhost:8787/".to_string();
+        c.bearer_token = "token".to_string();
+
+        assert_eq!(c.effective_worker_url(), DEFAULT_WORKER_URL);
+        assert!(c.is_configured());
     }
 }
