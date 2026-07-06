@@ -3,6 +3,7 @@ name = "clocked"
 version = "0.1.0"
 edition = "2021"
 description = "Automatic Windows time tracker driven by power/session events"
+license = "MIT"
 
 [[bin]]
 name = "clocked"

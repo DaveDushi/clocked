@@ -139,7 +139,15 @@ const HTML = /* html */ `<!doctype html>
   :focus-visible { outline:2px solid var(--amber); outline-offset:2px; }
 
   /* ---------- hours table ---------- */
-  table { width:100%; border-collapse:collapse; margin-top:16px; }
+  /* Show seven calendar days at a time. Current month auto-scrolls to today,
+     leaving the previous week visible and older days available by scrolling up. */
+  .tablewrap { margin-top:16px; max-height:318px; overflow-y:auto; overscroll-behavior:contain; }
+  .tablewrap::-webkit-scrollbar { width:9px; }
+  .tablewrap::-webkit-scrollbar-track { background:transparent; }
+  .tablewrap::-webkit-scrollbar-thumb { background:var(--border); border-radius:9px; }
+  .tablewrap { scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
+  table { width:100%; border-collapse:collapse; }
+  thead th { position:sticky; top:0; z-index:1; background:var(--panel2); }
   th,td { text-align:left; padding:9px 6px; border-bottom:1px solid var(--border); }
   tbody tr:last-child td { border-bottom:0; }
   tbody tr { transition:background .12s; }
@@ -287,10 +295,12 @@ const HTML = /* html */ `<!doctype html>
         </div>
         <button id="next" class="ghost nav" aria-label="Next month">&#8250;</button>
       </div>
-      <table>
-        <thead><tr><th>Day</th><th></th><th class="num">Hours</th></tr></thead>
-        <tbody id="rows"></tbody>
-      </table>
+      <div id="tablewrap" class="tablewrap">
+        <table>
+          <thead><tr><th>Day</th><th></th><th class="num">Hours</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
       <div class="total"><span class="muted">Total</span><b id="totalRow">0:00</b></div>
       <div id="hoursMsg" class="msg" role="status"></div>
     </div>
@@ -438,11 +448,17 @@ function rowHtml(x, max, i) {
   const dt = new Date(x.date + "T00:00:00");
   const wk = dt.getDay() === 0 || dt.getDay() === 6;
   const dow = dt.toLocaleDateString(undefined, { weekday:"short" });
-  const pct = Math.max(2, Math.round((x.minutes / max) * 100));
+  const pct = x.minutes > 0 ? Math.max(2, Math.round((x.minutes / max) * 100)) : 0;
+  const bar = x.minutes > 0 ? "<div class='bar' style='width:" + pct + "%; animation-delay:" + (i*30) + "ms'></div>" : "";
   return "<tr title='" + x.label + "'>" +
     "<td class='day'><span class='dow" + (wk ? " wk" : "") + "'>" + dow + "</span><b>" + Number(x.date.slice(8,10)) + "</b></td>" +
-    "<td class='barcell'><div class='track'><div class='bar' style='width:" + pct + "%; animation-delay:" + (i*30) + "ms'></div></div></td>" +
+    "<td class='barcell'><div class='track'>" + bar + "</div></td>" +
     "<td class='num'>" + fmt(x.minutes) + "</td></tr>";
+}
+
+function currentPeriod() {
+  const now = new Date();
+  return now.getFullYear() + "-" + pad(now.getMonth()+1);
 }
 
 async function loadHours() {
@@ -460,11 +476,14 @@ async function loadHours() {
   const max = d.days.reduce((a,x) => Math.max(a, x.minutes), 0) || 1;
   $("rows").innerHTML = d.days.length
     ? d.days.map((x,i) => rowHtml(x, max, i)).join("")
-    : "<tr class='empty'><td colspan='3'>No hours logged this month yet.</td></tr>";
+    : "<tr class='empty'><td colspan='3'>No days to show for this month.</td></tr>";
+  const tablewrap = $("tablewrap");
+  tablewrap.scrollTop = period === currentPeriod() ? tablewrap.scrollHeight : 0;
   $("total").textContent = fmt(d.totalMinutes);
   $("totalRow").textContent = fmt(d.totalMinutes);
-  $("statDays").textContent = String(d.days.length);
-  $("statAvg").textContent = d.days.length ? fmt(Math.round(d.totalMinutes / d.days.length)) : "0:00";
+  const activeDays = d.activeDays ?? d.days.filter((x) => x.minutes > 0).length;
+  $("statDays").textContent = String(activeDays);
+  $("statAvg").textContent = activeDays ? fmt(Math.round(d.totalMinutes / activeDays)) : "0:00";
 }
 
 function shiftMonth(delta) {

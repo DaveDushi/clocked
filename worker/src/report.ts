@@ -1,4 +1,5 @@
 import type { Env } from "./types";
+import { expandCalendarDays } from "./calendar-days";
 import {
   formatDateLabel,
   formatHM,
@@ -22,13 +23,15 @@ export interface HoursReport {
   period: string; // "YYYY-MM"
   tz: string;
   days: DayHours[];
+  activeDays: number;
   totalMinutes: number;
 }
 
 /**
  * Structured per-local-day totals for `period` ("YYYY-MM"), reusing the same
- * query and split-at-local-midnight logic as `buildReportTsv`. Days with no
- * time are omitted; `days` is ordered ascending by date.
+ * query and split-at-local-midnight logic as `buildReportTsv`. Dashboard rows
+ * are expanded to calendar days: past months include every day, current month
+ * includes day 1 through today, and future months stay empty.
  */
 export async function buildHoursReport(
   env: Env,
@@ -66,7 +69,8 @@ export async function buildHoursReport(
 
   const days = [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
   const totalMinutes = days.reduce((sum, d) => sum + d.minutes, 0);
-  return { period, tz, days, totalMinutes };
+  const expanded = expandCalendarDays(days, period, localYMD(new Date(), tz));
+  return { period, tz, days: expanded.days, activeDays: expanded.activeDays, totalMinutes };
 }
 
 /**
