@@ -14,9 +14,23 @@ Windows tray app (Rust)                     Cloudflare Worker (TypeScript)
 
 ## Clock rules
 
-- **Clock in:** system resume, session unlock, app start.
-- **Clock out:** system suspend, session lock, shutdown, quit.
-- No idle timeout. At most one open session at a time.
+- **Clock in:** system resume, session unlock, app start, activity after idle.
+- **Clock out:** system suspend, session lock, shutdown, quit, idle timeout.
+- **Idle:** after 15 min with no keyboard/mouse input the clock stops
+  (`end_reason = idle`), backdated to the last input so the idle stretch isn't
+  counted; the next input resumes it (`start_reason = active`). A balloon warns
+  ~2 min before. Tune with `idle_timeout_secs` in `config.toml` (seconds; `0`
+  disables).
+- **Manual pause:** the tray **Pause tracking** / **Resume tracking** toggle
+  stops the clock and keeps it stopped (`reason = manual`) — no event reopens a
+  session until you resume.
+- **After-hours prompt:** if you wake/unlock/launch the computer outside your
+  configured working hours, a Yes/No popup asks whether you're working. **No**
+  keeps you clocked out (nothing tracks until you say otherwise); the answer is
+  remembered for that evening and reset the next time you're active during work
+  hours. Set `work_start` / `work_end` / `work_days` in `config.toml` (blank
+  times disable it; overnight windows like `22:00`–`06:00` are supported).
+- At most one open session at a time.
 - If the app dies with a session open (crash / hard power-off), the next launch
   closes it at the last heartbeat (`end_reason = crash`).
 
@@ -46,8 +60,9 @@ Run `clocked.exe`. It creates `%APPDATA%\clocked\data\` containing:
 - `config.toml` — sync settings (written as a blank template on first run)
 - `clocked.log` — diagnostics
 
-Right-click the tray icon for: status, today's total, **Sync now**,
-**Start at login** (toggles the `HKCU\...\Run` entry), **Open data folder**, **Quit**.
+Right-click the tray icon for: status, today's total (vs. your `target_hours`
+goal), **Pause / Resume tracking**, **Sync now**, **Start at login** (toggles the
+`HKCU\...\Run` entry), **Open data folder**, **Quit**.
 
 Local-only mode works with no config — it just won't sync or email.
 
@@ -58,6 +73,16 @@ Edit `%APPDATA%\clocked\data\config.toml`:
 ```toml
 worker_url   = "https://clocked-worker.<subdomain>.workers.dev"
 bearer_token = "<same random secret you set on the Worker>"
+
+# Optional behavior tuning (defaults shown):
+idle_timeout_secs = 900   # auto clock-out after 15 min idle; 0 disables
+target_hours      = 8     # daily goal shown in the tray; 0 hides it
+
+# Working hours — outside these, opening the computer prompts "Are you working?".
+# Blank work_start/work_end (or empty work_days) disables the prompt.
+work_start = "09:00"
+work_end   = "17:00"
+work_days  = ["Mon", "Tue", "Wed", "Thu", "Fri"]
 ```
 
 The app pushes unsynced sessions on startup, on resume, hourly, and via **Sync now**.

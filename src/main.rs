@@ -7,6 +7,7 @@ mod autostart;
 mod config;
 mod db;
 mod events;
+mod idle;
 mod paths;
 mod sync;
 mod tray;

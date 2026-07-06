@@ -15,3 +15,33 @@ Using secrets defined in .dev.vars
 [2m[32m  ➜[39m[22m[2m  press [22m[1mt + enter[22m[2m to start tunnel[22m
 [2m[32m  ➜[39m[22m[2m  press [22m[1mh + enter[22m[2m to show help[22m
 2026-07-05T17:12:26.950Z WARN [Better Auth]: Rate limiting could not determine a client IP and is falling back to a single shared per-path bucket. Ensure your runtime forwards a trusted client IP header, then set `advanced.ipAddress.ipAddressHeaders` or `advanced.ipAddress.trustedProxies` so the address can be resolved.
+[2m6:41:15 PM[22m [36m[1m[vite][22m[39m [32m[2m(clocked_worker)[22m[39m [32mhmr update [39m[2m/@id/virtual:cloudflare/worker-entry[22m
+[vite] hot updated: virtual:cloudflare/worker-entry
+[2m6:41:30 PM[22m [36m[1m[vite][22m[39m [32m[2m(clocked_worker)[22m[39m [32mhmr update [39m[2m/@id/virtual:cloudflare/worker-entry[22m
+[vite] hot updated: virtual:cloudflare/worker-entry
+[2m6:41:40 PM[22m [36m[1m[vite][22m[39m [32m[2m(clocked_worker)[22m[39m [32mhmr update [39m[2m/@id/virtual:cloudflare/worker-entry[22m
+[vite] hot updated: virtual:cloudflare/worker-entry
+[2m6:41:41 PM[22m [36m[1m[vite][22m[39m [32m[2m(clocked_worker)[22m[39m [32mhmr update [39m[2m/@id/virtual:cloudflare/worker-entry[22m
+[vite] hot updated: virtual:cloudflare/worker-entry
+[2m6:42:24 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2m.preview.html[22m
+[2m6:44:40 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2m.preview-app.html[22m
+[2m6:45:00 PM[22m [36m[1m[vite][22m[39m [32m[2m(clocked_worker)[22m[39m [32mhmr update [39m[2m/@id/virtual:cloudflare/worker-entry[22m
+[vite] hot updated: virtual:cloudflare/worker-entry
+[2m6:45:01 PM[22m [36m[1m[vite][22m[39m [32m[2m(clocked_worker)[22m[39m [32mhmr update [39m[2m/@id/virtual:cloudflare/worker-entry[22m
+[vite] hot updated: virtual:cloudflare/worker-entry
+[2m6:45:02 PM[22m [36m[1m[vite][22m[39m [32m[2m(clocked_worker)[22m[39m [32mhmr update [39m[2m/@id/virtual:cloudflare/worker-entry[22m
+[vite] hot updated: virtual:cloudflare/worker-entry
+[2m6:45:04 PM[22m [36m[1m[vite][22m[39m [32m[2m(clocked_worker)[22m[39m [32mhmr update [39m[2m/@id/virtual:cloudflare/worker-entry[22m
+[vite] hot updated: virtual:cloudflare/worker-entry
+[2m6:45:13 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2m.preview.html[22m
+[2m6:45:13 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2m.preview-app.html[22m
+[2m6:45:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2m.preview.html[22m
+[2m6:45:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2m.preview-app.html[22m
+[2m1:00:19 PM[22m [36m[1m[vite][22m[39m [32m[2m(clocked_worker)[22m[39m [32mhmr update [39m[2m/@id/virtual:cloudflare/worker-entry[22m
+[vite] hot updated: virtual:cloudflare/worker-entry
+[2m1:08:07 PM[22m [36m[1m[vite][22m[39m [32m[2m(clocked_worker)[22m[39m [32mhmr update [39m[2m/@id/virtual:cloudflare/worker-entry[22m
+[vite] hot updated: virtual:cloudflare/worker-entry
+[2m1:08:13 PM[22m [36m[1m[vite][22m[39m [32m[2m(clocked_worker)[22m[39m [32mhmr update [39m[2m/@id/virtual:cloudflare/worker-entry[22m
+[vite] hot updated: virtual:cloudflare/worker-entry
+[2m1:08:45 PM[22m [36m[1m[vite][22m[39m [32m[2m(clocked_worker)[22m[39m [32mhmr update [39m[2m/@id/virtual:cloudflare/worker-entry[22m
+[vite] hot updated: virtual:cloudflare/worker-entry

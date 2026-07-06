@@ -16,6 +16,8 @@ windows = { version = "0.62", features = [
   "Win32_System_Power",
   "Win32_System_RemoteDesktop",
   "Win32_System_LibraryLoader",
+  "Win32_System_SystemInformation",
+  "Win32_UI_Input_KeyboardAndMouse",
   "Win32_Graphics_Gdi",
 ] }
 winreg      = "0.52"
@@ -27,6 +29,9 @@ uuid        = { version = "1", features = ["v4"] }
 chrono      = { version = "0.4", features = ["serde"] }
 toml        = "0.8"
 directories = "5"
+
+[build-dependencies]
+winresource = "0.1"
 
 [profile.release]
 opt-level = "z"

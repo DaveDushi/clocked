@@ -26,6 +26,7 @@ const CLASS_NAME: PCWSTR = w!("ClockedHiddenWindow");
 // Custom + timer identifiers.
 const WM_TRAY: u32 = WM_APP + 1;
 const WM_SYNC_DONE: u32 = WM_APP + 2;
+const WM_PROMPT_AFTER_HOURS: u32 = WM_APP + 3;
 const TIMER_HEARTBEAT: usize = 1;
 const TIMER_SYNC: usize = 2;
 
@@ -34,6 +35,11 @@ const IDM_SYNC_NOW: usize = 101;
 const IDM_AUTOSTART: usize = 102;
 const IDM_OPEN_FOLDER: usize = 103;
 const IDM_QUIT: usize = 104;
+const IDM_OPEN_TIMESHEET: usize = 105;
+const IDM_PAUSE: usize = 106;
+
+// Warn this many seconds before an idle auto-clock-out.
+const IDLE_WARN_LEAD_SECS: u64 = 120;
 
 struct AppState {
     conn: Connection,
@@ -42,10 +48,36 @@ struct AppState {
     nid: NOTIFYICONDATAW,
     taskbar_created: u32,
     syncing: bool,
+    /// True while we are auto-clocked-out for inactivity. Only this flag lets a
+    /// bare keypress resume tracking; lock/suspend clock-outs still require their
+    /// matching unlock/resume event.
+    idle_out: bool,
+    /// True while the user has manually paused tracking. Blocks every automatic
+    /// clock-in until they resume, so no event can reopen a session behind their
+    /// back.
+    paused: bool,
+    /// Whether the "clocking out soon" balloon has already fired for the current
+    /// idle stretch (so we warn once, not every heartbeat).
+    idle_warned: bool,
+    /// Remembered answer to the after-hours "are you working?" prompt for the
+    /// current after-hours stretch: `Some(true/false)` once answered, cleared
+    /// back to `None` on the next event inside working hours so each evening
+    /// asks fresh.
+    after_hours_answer: Option<bool>,
+    /// Clock-in reason awaiting an after-hours prompt (set just before the modal
+    /// is posted, consumed when it's answered).
+    pending_open: Option<&'static str>,
 }
 
 impl AppState {
     fn clock_in(&mut self, reason: &str) {
+        // While manually paused, ignore every automatic clock-in. The manual
+        // resume path clears `paused` before calling this.
+        if self.paused {
+            return;
+        }
+        // Any real clock-in clears the idle latch: we are present again.
+        self.idle_out = false;
         match crate::db::clock_in(&self.conn, reason, Utc::now()) {
             Ok(true) => {
                 crate::logln!("clock in ({reason})");
@@ -53,6 +85,151 @@ impl AppState {
             }
             Ok(false) => {}
             Err(e) => crate::logln!("clock_in error: {e}"),
+        }
+    }
+
+    fn is_clocked_in(&self) -> bool {
+        matches!(crate::db::open_session_start(&self.conn), Ok(Some(_)))
+    }
+
+    /// A "computer opened" moment (wake / unlock / app start). Inside working
+    /// hours we just clock in; outside them we ask once whether the user is
+    /// actually working before tracking anything.
+    fn open_event(&mut self, reason: &'static str) {
+        if self.paused {
+            return; // manual pause wins; nothing reopens until they resume
+        }
+        match self.config.within_working_hours(Local::now()) {
+            None | Some(true) => {
+                // Feature off, or inside hours: fresh slate for tonight.
+                self.after_hours_answer = None;
+                self.clock_in(reason);
+                self.do_sync();
+            }
+            Some(false) => match self.after_hours_answer {
+                Some(true) => {
+                    self.clock_in(reason);
+                    self.do_sync();
+                }
+                Some(false) => {} // already told us they're not working
+                None => {
+                    // Defer the modal out of the power/session callback.
+                    self.pending_open = Some(reason);
+                    let _ = unsafe {
+                        PostMessageW(Some(self.hwnd), WM_PROMPT_AFTER_HOURS, WPARAM(0), LPARAM(0))
+                    };
+                }
+            },
+        }
+    }
+
+    /// Ask, via a modal Yes/No box, whether the user is working right now.
+    fn prompt_are_you_working(&self) -> bool {
+        let text = to_wide("It's outside your working hours. Are you working?");
+        let title = to_wide("clocked");
+        let r = unsafe {
+            MessageBoxW(
+                Some(self.hwnd),
+                PCWSTR(text.as_ptr()),
+                PCWSTR(title.as_ptr()),
+                MB_YESNO | MB_ICONQUESTION | MB_SETFOREGROUND | MB_TOPMOST,
+            )
+        };
+        r == IDYES
+    }
+
+    /// Answer a deferred after-hours prompt: track if working, stay out if not,
+    /// and remember the choice for the rest of this after-hours stretch.
+    fn resolve_after_hours(&mut self) {
+        let Some(reason) = self.pending_open.take() else {
+            return;
+        };
+        let working = self.prompt_are_you_working();
+        self.after_hours_answer = Some(working);
+        if working {
+            self.clock_in(reason);
+            self.do_sync();
+        } else {
+            crate::logln!("after-hours: user not working");
+        }
+    }
+
+    /// Toggle tracking from the tray. Stops the clock when running (and latches
+    /// it off); otherwise resumes — clearing both the pause and any after-hours
+    /// "not working" decision so a fresh session opens.
+    fn toggle_pause(&mut self) {
+        if self.is_clocked_in() {
+            self.paused = true;
+            self.idle_out = false;
+            self.idle_warned = false;
+            match crate::db::clock_out(&self.conn, "manual", Utc::now()) {
+                Ok(_) => crate::logln!("paused"),
+                Err(e) => crate::logln!("pause clock_out error: {e}"),
+            }
+            self.update_tooltip();
+        } else {
+            self.paused = false;
+            self.idle_warned = false;
+            self.after_hours_answer = Some(true);
+            crate::logln!("resumed");
+            self.clock_in("manual");
+            self.do_sync();
+        }
+    }
+
+    /// Stop the clock after a stretch of inactivity, resume it on the first
+    /// input afterwards. Called from the heartbeat timer. Backdates the idle
+    /// clock-out to the last input so the dead time isn't counted.
+    fn check_idle(&mut self) {
+        if self.paused {
+            return; // manual pause overrides idle handling entirely
+        }
+        let timeout = self.config.idle_timeout_secs;
+        if timeout == 0 {
+            return; // idle detection disabled
+        }
+        let idle_secs = crate::idle::idle_duration().as_secs();
+
+        if idle_secs >= timeout {
+            let clocked_in = matches!(crate::db::open_session_start(&self.conn), Ok(Some(_)));
+            if clocked_in {
+                // Backdate to the last input so the idle stretch isn't counted.
+                let ago = chrono::Duration::seconds(idle_secs as i64);
+                let last_input = Utc::now() - ago;
+                match crate::db::clock_out(&self.conn, "idle", last_input) {
+                    Ok(true) => {
+                        crate::logln!("clock out (idle {idle_secs}s)");
+                        self.idle_out = true;
+                        self.idle_warned = false;
+                        self.update_tooltip();
+                    }
+                    Ok(false) => {}
+                    Err(e) => crate::logln!("idle clock_out error: {e}"),
+                }
+            }
+        } else if self.idle_out {
+            // Input returned after an idle auto-clock-out: resume tracking.
+            self.idle_warned = false;
+            self.clock_in("active");
+            self.do_sync();
+        } else {
+            // Still counting time: warn once as we approach the idle cutoff.
+            let warn_at = timeout.saturating_sub(IDLE_WARN_LEAD_SECS);
+            if idle_secs < warn_at {
+                self.idle_warned = false;
+            } else if warn_at > 0 && !self.idle_warned {
+                let clocked_in =
+                    matches!(crate::db::open_session_start(&self.conn), Ok(Some(_)));
+                if clocked_in {
+                    let mins = (timeout - idle_secs + 59) / 60;
+                    crate::tray::notify(
+                        &self.nid,
+                        "clocked",
+                        &format!("No activity — clocking out in ~{mins} min unless you return."),
+                    );
+                    self.idle_warned = true;
+                }
+            }
         }
     }
 
@@ -68,6 +245,9 @@ impl AppState {
     }
 
     fn status_line(&self) -> String {
+        if self.paused {
+            return "Paused".to_string();
+        }
         match crate::db::open_session_start(&self.conn) {
             Ok(Some(start)) => format!(
                 "Clocked in since {}",
@@ -79,7 +259,14 @@ impl AppState {
 
     fn today_line(&self) -> String {
         let secs = crate::db::today_total_secs(&self.conn, Utc::now()).unwrap_or(0);
-        format!("Today: {}h {:02}m", secs / 3600, (secs % 3600) / 60)
+        let base = format!("Today: {}h {:02}m", secs / 3600, (secs % 3600) / 60);
+        let target = self.config.target_hours;
+        if target > 0.0 {
+            let mark = if secs as f64 >= target * 3600.0 { " ✓" } else { "" };
+            format!("{base} / {}{mark}", fmt_hours(target))
+        } else {
+            base
+        }
     }
 
     fn update_tooltip(&mut self) {
@@ -101,6 +288,15 @@ fn to_wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
+/// Format a goal like `8h` or `7.5h`, dropping a trailing `.0`.
+fn fmt_hours(h: f64) -> String {
+    if (h.fract()).abs() < 1e-9 {
+        format!("{}h", h as i64)
+    } else {
+        format!("{h:.1}h")
+    }
+}
+
 fn open_data_folder() {
     if let Some(dir) = crate::paths::data_dir() {
         let wide = to_wide(&dir.to_string_lossy());
@@ -117,12 +313,39 @@ fn open_data_folder() {
     }
 }
 
+/// Open a URL in the default browser. Used to launch the Worker dashboard,
+/// whose month picker defaults to the current month — i.e. this month's
+/// timesheet.
+fn open_url(url: &str) {
+    let url = url.trim();
+    if url.is_empty() {
+        return;
+    }
+    let wide = to_wide(url);
+    unsafe {
+        ShellExecuteW(
+            None,
+            w!("open"),
+            PCWSTR(wide.as_ptr()),
+            PCWSTR::null(),
+            PCWSTR::null(),
+            SW_SHOWNORMAL,
+        );
+    }
+}
+
 /// Build and show the tray context menu. Uses `TPM_RETURNCMD` and holds no
 /// borrow of `AppState` while `TrackPopupMenu` pumps its own modal loop.
 unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
-    let (status, today, autostart_on) = {
+    let (status, today, autostart_on, worker_url, clocked_in) = {
         let app = &*ptr;
-        (app.status_line(), app.today_line(), crate::autostart::is_enabled())
+        (
+            app.status_line(),
+            app.today_line(),
+            crate::autostart::is_enabled(),
+            app.config.worker_url.clone(),
+            app.is_clocked_in(),
+        )
     };
 
     let Ok(menu) = CreatePopupMenu() else {
@@ -133,6 +356,20 @@ unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
     let _ = AppendMenuW(menu, MF_GRAYED, 0, PCWSTR(wstatus.as_ptr()));
     let _ = AppendMenuW(menu, MF_GRAYED, 0, PCWSTR(wtoday.as_ptr()));
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+    let pause_label = if clocked_in {
+        w!("Pause tracking")
+    } else {
+        w!("Resume tracking")
+    };
+    let _ = AppendMenuW(menu, MF_STRING, IDM_PAUSE, pause_label);
+    // Opens the Worker dashboard (defaults to the current month). Grayed when
+    // syncing isn't configured, since there's no dashboard to open.
+    let timesheet_flags = if worker_url.trim().is_empty() {
+        MF_GRAYED
+    } else {
+        MF_STRING
+    };
+    let _ = AppendMenuW(menu, timesheet_flags, IDM_OPEN_TIMESHEET, w!("Open timesheet"));
     let _ = AppendMenuW(menu, MF_STRING, IDM_SYNC_NOW, w!("Sync now"));
     let autostart_flags = if autostart_on {
         MF_STRING | MF_CHECKED
@@ -161,6 +398,8 @@ unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
     let _ = PostMessageW(Some(hwnd), WM_NULL, WPARAM(0), LPARAM(0));
 
     match cmd.0 as usize {
+        IDM_PAUSE => (*ptr).toggle_pause(),
+        IDM_OPEN_TIMESHEET => open_url(&worker_url),
         IDM_SYNC_NOW => (*ptr).do_sync(),
         IDM_AUTOSTART => crate::autostart::toggle(),
         IDM_OPEN_FOLDER => open_data_folder(),
@@ -194,10 +433,7 @@ unsafe extern "system" fn wndproc(
     match msg {
         WM_POWERBROADCAST => {
             match map_power(wparam.0 as u32) {
-                Action::ClockIn(r) => {
-                    (*ptr).clock_in(r);
-                    (*ptr).do_sync();
-                }
+                Action::ClockIn(r) => (*ptr).open_event(r),
                 Action::ClockOut(r) => (*ptr).clock_out(r),
                 Action::Ignore => {}
             }
@@ -205,10 +441,14 @@ unsafe extern "system" fn wndproc(
         }
         WM_WTSSESSION_CHANGE => {
             match map_session(wparam.0 as u32) {
-                Action::ClockIn(r) => (*ptr).clock_in(r),
+                Action::ClockIn(r) => (*ptr).open_event(r),
                 Action::ClockOut(r) => (*ptr).clock_out(r),
                 Action::Ignore => {}
             }
+            LRESULT(0)
+        }
+        WM_PROMPT_AFTER_HOURS => {
+            (*ptr).resolve_after_hours();
             LRESULT(0)
         }
         WM_QUERYENDSESSION => {
@@ -220,6 +460,7 @@ unsafe extern "system" fn wndproc(
                 TIMER_HEARTBEAT => {
                     let app = &mut *ptr;
                     let _ = crate::db::heartbeat(&app.conn, Utc::now());
+                    app.check_idle();
                     app.update_tooltip();
                 }
                 TIMER_SYNC => (*ptr).do_sync(),
@@ -293,6 +534,11 @@ pub fn run() -> windows::core::Result<()> {
             nid,
             taskbar_created,
             syncing: false,
+            idle_out: false,
+            paused: false,
+            idle_warned: false,
+            after_hours_answer: None,
+            pending_open: None,
         }));
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, ptr as isize);
 
@@ -301,7 +547,7 @@ pub fn run() -> windows::core::Result<()> {
             let app = &mut *ptr;
             let _ = crate::db::recover_crashed(&app.conn, Utc::now());
             let _ = crate::db::heartbeat(&app.conn, Utc::now());
-            app.clock_in("start");
+            app.open_event("start");
 
             let _ = RegisterSuspendResumeNotification(HANDLE(hwnd.0), DEVICE_NOTIFY_WINDOW_HANDLE);
             let _ = WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION);

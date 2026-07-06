@@ -1,6 +1,7 @@
 import { checkAuth } from "./auth";
 import { makeAuth } from "./auth-server";
 import { dashboardResponse } from "./dashboard";
+import { faviconResponse } from "./favicon";
 import { buildAndSendReport } from "./email";
 import { handleIngest } from "./ingest";
 import { buildHoursReport, buildReportTsv } from "./report";
@@ -14,6 +15,9 @@ export default {
 
     // Dashboard (browser) and health check.
     if (req.method === "GET" && url.pathname === "/") return dashboardResponse();
+    if (req.method === "GET" && (url.pathname === "/favicon.ico" || url.pathname === "/favicon.png")) {
+      return faviconResponse();
+    }
     if (req.method === "GET" && url.pathname === "/health") {
       return new Response("clocked-worker ok\n", { status: 200 });
     }
