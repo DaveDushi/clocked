@@ -62,10 +62,12 @@ Run `clocked.exe`. It creates `%APPDATA%\clocked\data\` containing:
 
 Right-click the tray icon for: status, today's total (vs. your `target_hours`
 goal), **Pause / Resume tracking**, **Sync now**, **Open data folder**,
-**Settings…**, **Check for updates / download latest**, **Quit**. The update
-item opens the latest installer download in your browser. The **Settings…**
-window edits `config.toml` (sync, idle, goal, working hours) plus two launch
-options:
+**Settings…**, update status, **Quit**. The app checks for updates on startup
+and periodically. Until that check finishes, the menu says **Check for updates •
+vX.Y.Z**; if a newer release exists it changes to **Download latest update •
+vX.Y.Z** and opens the latest installer download in your browser. The
+**Settings…** window edits `config.toml` (sync, idle, goal, working hours) plus
+two launch options:
 
 - **Start at login** — enabled by default by the installer; a per-user
   `HKCU\...\Run` entry runs clocked at each Windows **sign-in** (not on

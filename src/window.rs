@@ -13,11 +13,11 @@ use windows::Win32::Foundation::{
     GetLastError, ERROR_ALREADY_EXISTS, HANDLE, HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::System::Power::RegisterSuspendResumeNotification;
 use windows::Win32::System::RemoteDesktop::{
     WTSRegisterSessionNotification, WTSUnRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION,
 };
+use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::Shell::{ShellExecuteW, NOTIFYICONDATAW};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -25,15 +25,16 @@ use crate::config::Config;
 use crate::events::{map_power, map_session, Action};
 
 const CLASS_NAME: PCWSTR = w!("ClockedHiddenWindow");
-const LATEST_UPDATE_URL: &str = "https://clocked.daviddusi.com/download";
 
 // Custom + timer identifiers.
 const WM_TRAY: u32 = WM_APP + 1;
 const WM_SYNC_DONE: u32 = WM_APP + 2;
 const WM_PROMPT_AFTER_HOURS: u32 = WM_APP + 3;
 const WM_SETTINGS_SAVED: u32 = WM_APP + 4;
+const WM_UPDATE_CHECK_DONE: u32 = WM_APP + 5;
 const TIMER_HEARTBEAT: usize = 1;
 const TIMER_SYNC: usize = 2;
+const TIMER_UPDATE_CHECK: usize = 3;
 
 // Menu command ids.
 const IDM_SYNC_NOW: usize = 101;
@@ -73,6 +74,7 @@ struct AppState {
     /// Clock-in reason awaiting an after-hours prompt (set just before the modal
     /// is posted, consumed when it's answered).
     pending_open: Option<&'static str>,
+    update_status: crate::update::UpdateStatus,
 }
 
 impl AppState {
@@ -224,8 +226,7 @@ impl AppState {
             if idle_secs < warn_at {
                 self.idle_warned = false;
             } else if warn_at > 0 && !self.idle_warned {
-                let clocked_in =
-                    matches!(crate::db::open_session_start(&self.conn), Ok(Some(_)));
+                let clocked_in = matches!(crate::db::open_session_start(&self.conn), Ok(Some(_)));
                 if clocked_in {
                     let mins = (timeout - idle_secs + 59) / 60;
                     crate::tray::notify(
@@ -268,7 +269,11 @@ impl AppState {
         let base = format!("Today: {}h {:02}m", secs / 3600, (secs % 3600) / 60);
         let target = self.config.target_hours;
         if target > 0.0 {
-            let mark = if secs as f64 >= target * 3600.0 { " ✓" } else { "" };
+            let mark = if secs as f64 >= target * 3600.0 {
+                " ✓"
+            } else {
+                ""
+            };
             format!("{base} / {}{mark}", fmt_hours(target))
         } else {
             base
@@ -287,6 +292,48 @@ impl AppState {
         }
         self.syncing = true;
         crate::sync::spawn(self.hwnd.0 as isize, WM_SYNC_DONE, self.config.clone());
+    }
+
+    fn check_for_updates(&mut self, manual: bool) {
+        if matches!(self.update_status, crate::update::UpdateStatus::Checking) {
+            return;
+        }
+        self.update_status = crate::update::UpdateStatus::Checking;
+        crate::update::spawn(self.hwnd.0 as isize, WM_UPDATE_CHECK_DONE, manual);
+    }
+
+    fn finish_update_check(&mut self, result: crate::update::UpdateCheckResult) {
+        let manual = result.manual;
+        self.update_status = result.status;
+        match &self.update_status {
+            crate::update::UpdateStatus::Available { version, .. } => {
+                crate::logln!("update available: v{version}");
+                crate::tray::notify(
+                    &self.nid,
+                    "clocked update available",
+                    &format!("Version v{version} is ready to download from the tray menu."),
+                );
+            }
+            crate::update::UpdateStatus::UpToDate { version } => {
+                crate::logln!("clocked is up to date: v{version}");
+                if manual {
+                    crate::tray::notify(
+                        &self.nid,
+                        "clocked",
+                        &format!("You're up to date on v{version}."),
+                    );
+                }
+            }
+            crate::update::UpdateStatus::Failed if manual => {
+                crate::tray::notify(
+                    &self.nid,
+                    "clocked",
+                    "Couldn't check for updates. Try again later.",
+                );
+            }
+            crate::update::UpdateStatus::Failed => {}
+            crate::update::UpdateStatus::Unknown | crate::update::UpdateStatus::Checking => {}
+        }
     }
 
     /// Open the native settings window (or focus it if already open).
@@ -345,20 +392,18 @@ fn open_url(url: &str) {
     }
 }
 
-fn latest_update_url() -> &'static str {
-    LATEST_UPDATE_URL
-}
-
 /// Build and show the tray context menu. Uses `TPM_RETURNCMD` and holds no
 /// borrow of `AppState` while `TrackPopupMenu` pumps its own modal loop.
 unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
-    let (status, today, worker_url, clocked_in) = {
+    let (status, today, worker_url, clocked_in, update_label, update_enabled) = {
         let app = &*ptr;
         (
             app.status_line(),
             app.today_line(),
             app.config.effective_worker_url().to_string(),
             app.is_clocked_in(),
+            app.update_status.menu_label(),
+            app.update_status.menu_enabled(),
         )
     };
 
@@ -383,15 +428,22 @@ unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
     } else {
         MF_STRING
     };
-    let _ = AppendMenuW(menu, timesheet_flags, IDM_OPEN_TIMESHEET, w!("Open timesheet"));
+    let _ = AppendMenuW(
+        menu,
+        timesheet_flags,
+        IDM_OPEN_TIMESHEET,
+        w!("Open timesheet"),
+    );
     let _ = AppendMenuW(menu, MF_STRING, IDM_SYNC_NOW, w!("Sync now"));
     let _ = AppendMenuW(menu, MF_STRING, IDM_OPEN_FOLDER, w!("Open data folder"));
     let _ = AppendMenuW(menu, MF_STRING, IDM_SETTINGS, w!("Settings…"));
+    let update_flags = if update_enabled { MF_STRING } else { MF_GRAYED };
+    let wupdate = to_wide(&update_label);
     let _ = AppendMenuW(
         menu,
-        MF_STRING,
+        update_flags,
         IDM_DOWNLOAD_UPDATE,
-        w!("Check for updates / download latest"),
+        PCWSTR(wupdate.as_ptr()),
     );
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
     let _ = AppendMenuW(menu, MF_STRING, IDM_QUIT, w!("Quit"));
@@ -418,7 +470,14 @@ unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
         IDM_OPEN_TIMESHEET => open_url(&worker_url),
         IDM_SYNC_NOW => (*ptr).do_sync(),
         IDM_OPEN_FOLDER => open_data_folder(),
-        IDM_DOWNLOAD_UPDATE => open_url(latest_update_url()),
+        IDM_DOWNLOAD_UPDATE => {
+            let app = &mut *ptr;
+            if let Some(url) = app.update_status.download_url() {
+                open_url(url);
+            } else {
+                app.check_for_updates(true);
+            }
+        }
         IDM_QUIT => {
             let _ = DestroyWindow(hwnd);
         }
@@ -426,12 +485,7 @@ unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
     }
 }
 
-unsafe extern "system" fn wndproc(
-    hwnd: HWND,
-    msg: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> LRESULT {
+unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut AppState;
     if ptr.is_null() {
         return DefWindowProcW(hwnd, msg, wparam, lparam);
@@ -487,6 +541,7 @@ unsafe extern "system" fn wndproc(
                     app.update_tooltip();
                 }
                 TIMER_SYNC => (*ptr).do_sync(),
+                TIMER_UPDATE_CHECK => (*ptr).check_for_updates(false),
                 _ => {}
             }
             LRESULT(0)
@@ -502,6 +557,14 @@ unsafe extern "system" fn wndproc(
             let app = &mut *ptr;
             app.syncing = false;
             app.update_tooltip();
+            LRESULT(0)
+        }
+        WM_UPDATE_CHECK_DONE => {
+            let app = &mut *ptr;
+            let raw = wparam.0 as *mut crate::update::UpdateCheckResult;
+            if !raw.is_null() {
+                app.finish_update_check(*Box::from_raw(raw));
+            }
             LRESULT(0)
         }
         WM_DESTROY => {
@@ -574,6 +637,7 @@ pub fn run() -> windows::core::Result<()> {
             idle_warned: false,
             after_hours_answer: None,
             pending_open: None,
+            update_status: crate::update::UpdateStatus::Unknown,
         }));
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, ptr as isize);
 
@@ -591,7 +655,9 @@ pub fn run() -> windows::core::Result<()> {
 
             let _ = SetTimer(Some(hwnd), TIMER_HEARTBEAT, 60_000, None);
             let _ = SetTimer(Some(hwnd), TIMER_SYNC, 3_600_000, None);
+            let _ = SetTimer(Some(hwnd), TIMER_UPDATE_CHECK, 21_600_000, None);
             app.do_sync();
+            app.check_for_updates(false);
         }
 
         // Message loop.
@@ -605,17 +671,4 @@ pub fn run() -> windows::core::Result<()> {
         drop(Box::from_raw(ptr));
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn latest_update_url_uses_public_download_endpoint() {
-        assert_eq!(
-            latest_update_url(),
-            "https://clocked.daviddusi.com/download"
-        );
-    }
 }

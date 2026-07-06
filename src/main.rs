@@ -13,6 +13,7 @@ mod paths;
 mod settings;
 mod sync;
 mod tray;
+mod update;
 mod window;
 
 fn main() {
