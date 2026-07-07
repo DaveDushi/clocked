@@ -116,7 +116,7 @@ const HTML = /* html */ `<!doctype html>
     background:#0b0d13; color:var(--fg); font:inherit; transition:border-color .15s, box-shadow .15s;
   }
   input:focus { outline:none; border-color:var(--amber); box-shadow:0 0 0 3px rgba(242,169,80,.16); }
-  input[type=month] { font-family:var(--mono); font-size:14px; }
+  input[type=month], input[type=date], input[type=time] { font-family:var(--mono); font-size:14px; }
   ::-webkit-calendar-picker-indicator { filter:invert(.75); cursor:pointer; }
   .row { display:flex; gap:10px; align-items:flex-end; }
   .row > div { flex:1; }
@@ -344,6 +344,27 @@ const HTML = /* html */ `<!doctype html>
     </div>
 
     <div class="card">
+      <h3>Add time manually</h3>
+      <p class="hint">Log a clock-in and clock-out for a day the app missed.</p>
+      <div class="row">
+        <div>
+          <label for="mDate">Date</label>
+          <input id="mDate" type="date" />
+        </div>
+        <div>
+          <label for="mStart">Clock in</label>
+          <input id="mStart" type="time" />
+        </div>
+        <div>
+          <label for="mEnd">Clock out</label>
+          <input id="mEnd" type="time" />
+        </div>
+        <button id="mAdd">Add</button>
+      </div>
+      <div id="manualMsg" class="msg" role="status"></div>
+    </div>
+
+    <div class="card">
       <h3>Desktop sync token</h3>
       <p class="hint">Your account's Bearer token. The desktop app sends it with every sync.</p>
       <div class="setupbox">
@@ -464,6 +485,7 @@ async function afterLogin(fresh) {
   $("freshBanner").classList.toggle("hidden", !fresh);
   const now = new Date();
   $("month").value = now.getFullYear() + "-" + pad(now.getMonth()+1);
+  $("mDate").value = now.getFullYear() + "-" + pad(now.getMonth()+1) + "-" + pad(now.getDate());
   await Promise.all([loadHours(), loadSettings(), loadToken()]);
 }
 
@@ -548,6 +570,25 @@ function shiftMonth(delta) {
   $("month").value = dt.getFullYear() + "-" + pad(dt.getMonth()+1);
   loadHours();
 }
+
+// ---- manual time entry ----
+$("mAdd").onclick = async () => {
+  const date = $("mDate").value, start = $("mStart").value, end = $("mEnd").value;
+  $("manualMsg").textContent = ""; $("manualMsg").className = "msg";
+  if (!date || !start || !end) { $("manualMsg").textContent = "Date, clock in, and clock out are all required."; $("manualMsg").className = "msg err"; return; }
+  if (end <= start) { $("manualMsg").textContent = "Clock out must be after clock in."; $("manualMsg").className = "msg err"; return; }
+  $("mAdd").disabled = true;
+  const r = await api("/api/manual-session", { method:"POST", body: JSON.stringify({ date, start, end }) });
+  $("mAdd").disabled = false;
+  const d = await r.json().catch(()=>({}));
+  if (r.ok) {
+    $("manualMsg").textContent = "Added " + date + ", " + start + "–" + end + "."; $("manualMsg").className = "msg ok";
+    $("mStart").value = ""; $("mEnd").value = "";
+    if (date.slice(0,7) === $("month").value) loadHours();
+  } else {
+    $("manualMsg").textContent = d.error || "Could not add entry."; $("manualMsg").className = "msg err";
+  }
+};
 
 // ---- recipients ----
 function addRecipientRow(value) {

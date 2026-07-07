@@ -8,7 +8,7 @@ import { handleIngest } from "./ingest";
 import { buildHoursReport, buildReportCsv } from "./report";
 import { getRecipients, getSendDay, setMailTo, setSendDay } from "./settings";
 import { getOrCreateToken, rotateToken, userIdForToken } from "./tokens";
-import { localYMD, previousMonthPeriod } from "./time";
+import { localYMD, previousMonthPeriod, wallToUtc } from "./time";
 import type { Env } from "./types";
 
 export default {
@@ -47,6 +47,47 @@ export default {
       if (!user) return json({ error: "unauthorized" }, 401);
       const period = url.searchParams.get("period") ?? previousMonthPeriod(new Date(), env.REPORT_TZ);
       return json(await buildHoursReport(env, period, user.id));
+    }
+
+    // Manually log a day the desktop app missed. Times are local wall-clock in
+    // REPORT_TZ; converted to UTC and stored as a normal session (reason "manual"
+    // so it's distinguishable from an auto-tracked one).
+    if (url.pathname === "/api/manual-session" && req.method === "POST") {
+      const user = await sessionUser(req, env);
+      if (!user) return json({ error: "unauthorized" }, 401);
+      const body = (await req.json().catch(() => ({}))) as {
+        date?: unknown;
+        start?: unknown;
+        end?: unknown;
+      };
+      const date = typeof body.date === "string" ? body.date : "";
+      const start = typeof body.start === "string" ? body.start : "";
+      const end = typeof body.end === "string" ? body.end : "";
+      if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+        !/^\d{2}:\d{2}$/.test(start) ||
+        !/^\d{2}:\d{2}$/.test(end)
+      ) {
+        return json({ error: "invalid date or time" }, 400);
+      }
+      const [y, m, d] = date.split("-").map(Number);
+      const [sh, smi] = start.split(":").map(Number);
+      const [eh, emi] = end.split(":").map(Number);
+      if (m < 1 || m > 12 || d < 1 || d > 31 || sh > 23 || smi > 59 || eh > 23 || emi > 59) {
+        return json({ error: "invalid date or time" }, 400);
+      }
+      if (eh * 60 + emi <= sh * 60 + smi) {
+        return json({ error: "clock-out must be after clock-in" }, 400);
+      }
+      const startUtc = wallToUtc(y, m, d, sh, smi, 0, env.REPORT_TZ);
+      const endUtc = wallToUtc(y, m, d, eh, emi, 0, env.REPORT_TZ);
+      await env.DB.prepare(
+        `INSERT INTO sessions (id, start_utc, end_utc, start_reason, end_reason, user_id)
+         VALUES (?, ?, ?, 'manual', 'manual', ?)`,
+      )
+        .bind(crypto.randomUUID(), startUtc.toISOString(), endUtc.toISOString(), user.id)
+        .run();
+      return json({ ok: true });
     }
 
     if (url.pathname === "/api/settings") {
