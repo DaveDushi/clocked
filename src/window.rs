@@ -80,8 +80,10 @@ struct AppState {
     /// back to `None` on the next event inside working hours so each evening
     /// asks fresh.
     after_hours_answer: Option<bool>,
-    /// Clock-in reason awaiting an after-hours prompt (set just before the modal
-    /// is posted, consumed when it's answered).
+    /// Clock-in reason for the after-hours prompt, and the in-flight guard for
+    /// it: set when the modal is queued and left set until it's answered, so a
+    /// resume+unlock pair (or any event during the modal) can't stack a second
+    /// prompt.
     pending_open: Option<&'static str>,
     update_status: crate::update::UpdateStatus,
     /// When the last update check completed. Lets a stale "up to date" revert to
@@ -133,11 +135,17 @@ impl AppState {
                 }
                 Some(false) => {} // already told us they're not working
                 None => {
-                    // Defer the modal out of the power/session callback.
-                    self.pending_open = Some(reason);
-                    let _ = unsafe {
-                        PostMessageW(Some(self.hwnd), WM_PROMPT_AFTER_HOURS, WPARAM(0), LPARAM(0))
-                    };
+                    // Defer the modal out of the power/session callback. A wake
+                    // fires both a resume and an unlock, and the second often
+                    // lands while the first modal is already up (the modal pumps
+                    // messages). `pending_open` stays set for the whole prompt
+                    // lifecycle, so only the first event queues a modal.
+                    if self.pending_open.is_none() {
+                        self.pending_open = Some(reason);
+                        let _ = unsafe {
+                            PostMessageW(Some(self.hwnd), WM_PROMPT_AFTER_HOURS, WPARAM(0), LPARAM(0))
+                        };
+                    }
                 }
             },
         }
@@ -161,10 +169,14 @@ impl AppState {
     /// Answer a deferred after-hours prompt: track if working, stay out if not,
     /// and remember the choice for the rest of this after-hours stretch.
     fn resolve_after_hours(&mut self) {
-        let Some(reason) = self.pending_open.take() else {
+        let Some(reason) = self.pending_open else {
             return;
         };
         let working = self.prompt_are_you_working();
+        // Clear the in-flight marker only now, after the modal is answered, so
+        // any wake event that arrived while it was up couldn't stack a second
+        // prompt (`open_event` skips posting while `pending_open` is set).
+        self.pending_open = None;
         self.after_hours_answer = Some(working);
         if working {
             self.clock_in(reason);
