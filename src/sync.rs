@@ -12,11 +12,14 @@ use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 use crate::config::Config;
 
+/// Network timeout for the routine background sync.
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Spawn a background sync. `hwnd_raw` is the window handle as `isize` (raw
 /// pointers aren't `Send`; we rebuild the `HWND` inside the thread).
 pub fn spawn(hwnd_raw: isize, done_msg: u32, config: Config) {
     std::thread::spawn(move || {
-        match run(&config) {
+        match run(&config, DEFAULT_TIMEOUT) {
             Ok(n) if n > 0 => crate::logln!("synced {n} session(s)"),
             Ok(_) => {}
             Err(e) => crate::logln!("sync error: {e}"),
@@ -28,7 +31,15 @@ pub fn spawn(hwnd_raw: isize, done_msg: u32, config: Config) {
     });
 }
 
-fn run(cfg: &Config) -> Result<usize, Box<dyn std::error::Error>> {
+/// Sync on the calling thread, blocking until it finishes or `timeout` elapses.
+/// Returns the number of sessions pushed. Used on shutdown/quit, where a
+/// detached thread would be killed before it could complete — keep `timeout`
+/// small so we don't stall the OS shutdown sequence.
+pub fn run_blocking(cfg: &Config, timeout: Duration) -> Result<usize, Box<dyn std::error::Error>> {
+    run(cfg, timeout)
+}
+
+fn run(cfg: &Config, timeout: Duration) -> Result<usize, Box<dyn std::error::Error>> {
     let path = crate::paths::db_file().ok_or("no data dir")?;
     let conn = rusqlite::Connection::open(path)?;
 
@@ -50,7 +61,7 @@ fn run(cfg: &Config) -> Result<usize, Box<dyn std::error::Error>> {
     }
 
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(30))
+        .timeout(timeout)
         .build()?;
     let url = format!("{endpoint}/sessions");
     let resp = client

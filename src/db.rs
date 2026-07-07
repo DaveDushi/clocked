@@ -81,15 +81,36 @@ pub fn clock_in(conn: &Connection, reason: &str, now: DateTime<Utc>) -> rusqlite
     Ok(true)
 }
 
-/// Close the open session. No-op (returns `false`) if none is open.
-pub fn clock_out(conn: &Connection, reason: &str, now: DateTime<Utc>) -> rusqlite::Result<bool> {
-    let n = conn.execute(
+/// Outcome of a `clock_out`.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ClockOut {
+    /// Nothing was open — no-op.
+    None,
+    /// An open session with real elapsed time was closed.
+    Closed,
+    /// The open session had zero duration (e.g. an automatic wake immediately
+    /// followed by a lock) and was discarded rather than recorded.
+    DroppedEmpty,
+}
+
+/// Close the open session. Returns `None` if none is open. A session whose end
+/// wouldn't advance past its start (no time elapsed) is deleted rather than
+/// recorded, so unattended wake/lock blips never reach the timesheet.
+pub fn clock_out(conn: &Connection, reason: &str, now: DateTime<Utc>) -> rusqlite::Result<ClockOut> {
+    let Some(start) = open_session_start(conn)? else {
+        return Ok(ClockOut::None);
+    };
+    if now <= start {
+        conn.execute("DELETE FROM sessions WHERE end_utc IS NULL", [])?;
+        return Ok(ClockOut::DroppedEmpty);
+    }
+    conn.execute(
         "UPDATE sessions
-            SET end_utc = MAX(start_utc, ?1), end_reason = ?2, synced = 0
+            SET end_utc = ?1, end_reason = ?2, synced = 0
           WHERE end_utc IS NULL",
         params![fmt(now), reason],
     )?;
-    Ok(n > 0)
+    Ok(ClockOut::Closed)
 }
 
 /// Record a liveness timestamp (used to recover from crashes/hard power-off).
@@ -114,13 +135,18 @@ pub fn last_alive(conn: &Connection) -> rusqlite::Result<Option<DateTime<Utc>>> 
 /// On startup: if a session was left open (crash / hard power-off), close it at
 /// the last heartbeat time with reason `crash` (never before its start).
 pub fn recover_crashed(conn: &Connection, now: DateTime<Utc>) -> rusqlite::Result<bool> {
-    if open_session_start(conn)?.is_none() {
+    let Some(start) = open_session_start(conn)? else {
+        return Ok(false);
+    };
+    let end = last_alive(conn)?.unwrap_or(now);
+    if end <= start {
+        // No time elapsed before the crash — drop it rather than record a blip.
+        conn.execute("DELETE FROM sessions WHERE end_utc IS NULL", [])?;
         return Ok(false);
     }
-    let end = last_alive(conn)?.unwrap_or(now);
     conn.execute(
         "UPDATE sessions
-            SET end_utc = MAX(start_utc, ?1), end_reason = 'crash', synced = 0
+            SET end_utc = ?1, end_reason = 'crash', synced = 0
           WHERE end_utc IS NULL",
         params![fmt(end)],
     )?;
@@ -243,10 +269,16 @@ mod tests {
     fn clock_out_closes_and_is_idempotent() {
         let c = mem();
         clock_in(&c, "resume", t("2026-06-29T10:00:00Z")).unwrap();
-        assert!(clock_out(&c, "lock", t("2026-06-29T18:00:00Z")).unwrap());
+        assert_eq!(
+            clock_out(&c, "lock", t("2026-06-29T18:00:00Z")).unwrap(),
+            ClockOut::Closed
+        );
         assert!(open_session_start(&c).unwrap().is_none());
         // Second clock-out with nothing open is a no-op.
-        assert!(!clock_out(&c, "suspend", t("2026-06-29T18:05:00Z")).unwrap());
+        assert_eq!(
+            clock_out(&c, "suspend", t("2026-06-29T18:05:00Z")).unwrap(),
+            ClockOut::None
+        );
         let (end, reason): (String, String) = c
             .query_row(
                 "SELECT end_utc, end_reason FROM sessions LIMIT 1",
@@ -256,6 +288,25 @@ mod tests {
             .unwrap();
         assert_eq!(reason, "lock");
         assert_eq!(parse(&end), t("2026-06-29T18:00:00Z"));
+    }
+
+    #[test]
+    fn clock_out_drops_zero_length_session() {
+        // The 10:24 blip: an automatic wake clocks in on `resume`, then the
+        // machine re-locks in the same instant. No time elapsed, so the session
+        // is discarded outright rather than left as a 0-second row.
+        let c = mem();
+        clock_in(&c, "resume", t("2026-07-07T10:24:16Z")).unwrap();
+        assert_eq!(
+            clock_out(&c, "lock", t("2026-07-07T10:24:16Z")).unwrap(),
+            ClockOut::DroppedEmpty
+        );
+        assert!(open_session_start(&c).unwrap().is_none());
+        let n: i64 = c
+            .query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 0);
+        assert!(unsynced(&c).unwrap().is_empty());
     }
 
     #[test]

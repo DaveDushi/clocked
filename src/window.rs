@@ -6,6 +6,8 @@
 //! windows never receive `WM_POWERBROADCAST`. The window is created but never
 //! shown.
 
+use std::time::Duration;
+
 use chrono::{Local, Utc};
 use rusqlite::Connection;
 use windows::core::{w, PCWSTR};
@@ -35,6 +37,10 @@ const WM_UPDATE_CHECK_DONE: u32 = WM_APP + 5;
 const TIMER_HEARTBEAT: usize = 1;
 const TIMER_SYNC: usize = 2;
 const TIMER_UPDATE_CHECK: usize = 3;
+
+// Blocking-sync budget on shutdown/quit. Windows only guarantees a few seconds
+// after `WM_QUERYENDSESSION`, so keep this well under that.
+const SHUTDOWN_SYNC_TIMEOUT: Duration = Duration::from_secs(3);
 
 // Menu command ids.
 const IDM_SYNC_NOW: usize = 101;
@@ -174,6 +180,7 @@ impl AppState {
                 Err(e) => crate::logln!("pause clock_out error: {e}"),
             }
             self.update_tooltip();
+            self.do_sync();
         } else {
             self.paused = false;
             self.idle_warned = false;
@@ -204,13 +211,22 @@ impl AppState {
                 let ago = chrono::Duration::seconds(idle_secs as i64);
                 let last_input = Utc::now() - ago;
                 match crate::db::clock_out(&self.conn, "idle", last_input) {
-                    Ok(true) => {
+                    Ok(crate::db::ClockOut::Closed) => {
                         crate::logln!("clock out (idle {idle_secs}s)");
                         self.idle_out = true;
                         self.idle_warned = false;
                         self.update_tooltip();
+                        self.do_sync();
                     }
-                    Ok(false) => {}
+                    Ok(crate::db::ClockOut::DroppedEmpty) => {
+                        // Whole span was idle (backdated before its start); drop
+                        // it but still latch idle so activity reopens tracking.
+                        crate::logln!("ignored empty session (idle {idle_secs}s)");
+                        self.idle_out = true;
+                        self.idle_warned = false;
+                        self.update_tooltip();
+                    }
+                    Ok(crate::db::ClockOut::None) => {}
                     Err(e) => crate::logln!("idle clock_out error: {e}"),
                 }
             }
@@ -241,12 +257,43 @@ impl AppState {
 
     fn clock_out(&mut self, reason: &str) {
         match crate::db::clock_out(&self.conn, reason, Utc::now()) {
-            Ok(true) => {
+            Ok(crate::db::ClockOut::Closed) => {
                 crate::logln!("clock out ({reason})");
                 self.update_tooltip();
+                self.do_sync();
             }
-            Ok(false) => {}
+            Ok(crate::db::ClockOut::DroppedEmpty) => {
+                crate::logln!("ignored empty session ({reason})");
+                self.update_tooltip();
+            }
+            Ok(crate::db::ClockOut::None) => {}
             Err(e) => crate::logln!("clock_out error: {e}"),
+        }
+    }
+
+    /// Clock out and sync *synchronously* before returning. For shutdown/quit,
+    /// where the spawned background sync would be killed with the process; a
+    /// short timeout keeps us from stalling the exit if the network is down.
+    fn clock_out_blocking(&mut self, reason: &str) {
+        match crate::db::clock_out(&self.conn, reason, Utc::now()) {
+            Ok(crate::db::ClockOut::Closed) => crate::logln!("clock out ({reason})"),
+            Ok(crate::db::ClockOut::DroppedEmpty) => {
+                crate::logln!("ignored empty session ({reason})");
+                return;
+            }
+            Ok(crate::db::ClockOut::None) => return,
+            Err(e) => {
+                crate::logln!("clock_out error: {e}");
+                return;
+            }
+        }
+        if !self.config.is_configured() {
+            return;
+        }
+        match crate::sync::run_blocking(&self.config, SHUTDOWN_SYNC_TIMEOUT) {
+            Ok(n) if n > 0 => crate::logln!("synced {n} session(s) before exit"),
+            Ok(_) => {}
+            Err(e) => crate::logln!("shutdown sync error: {e}"),
         }
     }
 
@@ -510,7 +557,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         WM_QUERYENDSESSION => {
-            (*ptr).clock_out("shutdown");
+            (*ptr).clock_out_blocking("shutdown");
             LRESULT(1)
         }
         WM_TIMER => {
@@ -550,7 +597,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         }
         WM_DESTROY => {
             let app = &mut *ptr;
-            app.clock_out("quit");
+            app.clock_out_blocking("quit");
             crate::tray::remove(&app.nid);
             let _ = WTSUnRegisterSessionNotification(hwnd);
             PostQuitMessage(0);
