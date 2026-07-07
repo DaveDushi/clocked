@@ -642,11 +642,11 @@ function pvClose() { const p = $("previewPanel"); p.classList.add("hidden"); p.i
 function renderPreview(csv, period) {
   const panel = $("previewPanel");
   const header = "<div class='pv-head'><b>Preview — " + pvEsc(period) + "</b><button id='pvCloseBtn' class='ghost'>Close</button></div>";
-  const text = csv.replace(/\s+$/, "");
+  const text = csv.trim();
   if (!text) {
     panel.innerHTML = header + "<div class='pv-empty'>No sessions recorded for this month.</div>";
   } else {
-    const rows = text.split("\n").map(pvParseLine);
+    const rows = text.split(String.fromCharCode(10)).map(pvParseLine);
     const head = rows[0];
     let html = header + "<div class='pv-scroll'><table class='pv'><thead><tr>";
     for (let i = 0; i < head.length; i++) html += "<th>" + pvEsc(head[i]) + "</th>";
