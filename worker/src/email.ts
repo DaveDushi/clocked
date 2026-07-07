@@ -162,18 +162,22 @@ export async function buildAndSendReport(
 
 /**
  * Monthly cron fan-out: email every account its own report for `period`.
- * Each user's recipients are their `mail_to` override(s) or their account email.
+ * The cron fires daily, so each user is only sent on `dayOfMonth` matching their
+ * configured send day (default 1; 0 disables auto-send). Recipients are the
+ * user's `mail_to` override(s) or their account email.
  */
 export async function sendMonthlyReports(
   env: Env,
   period: string,
-  opts: { force: boolean },
+  opts: { force: boolean; dayOfMonth: number },
 ): Promise<void> {
-  const users = await env.DB.prepare("SELECT id, email FROM user").all<{
-    id: string;
-    email: string;
-  }>();
+  const users = await env.DB.prepare(
+    `SELECT u.id AS id, u.email AS email, s.send_day AS send_day
+       FROM user u LEFT JOIN user_settings s ON s.userId = u.id`,
+  ).all<{ id: string; email: string; send_day: number | null }>();
   for (const u of users.results ?? []) {
+    const sendDay = u.send_day ?? 1;
+    if (sendDay === 0 || sendDay !== opts.dayOfMonth) continue;
     const to = await getRecipients(env, u.id, u.email);
     if (to.length === 0) continue;
     await buildAndSendReport(env, period, { force: opts.force, userId: u.id, to });

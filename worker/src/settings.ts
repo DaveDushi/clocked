@@ -36,6 +36,25 @@ export async function setMailTo(env: Env, userId: string, value: string): Promis
     .run();
 }
 
+/** Per-user auto-send day of the month. Absent/NULL -> 1 (send on the 1st);
+ * 0 means automatic monthly sending is turned off. */
+export async function getSendDay(env: Env, userId: string): Promise<number> {
+  const row = await env.DB.prepare("SELECT send_day FROM user_settings WHERE userId = ?")
+    .bind(userId)
+    .first<{ send_day: number | null }>();
+  return row?.send_day ?? 1;
+}
+
+/** Upsert a user's auto-send day (0 = disabled, 1..28 = day of month). */
+export async function setSendDay(env: Env, userId: string, day: number): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO user_settings (userId, send_day) VALUES (?, ?)
+     ON CONFLICT(userId) DO UPDATE SET send_day = excluded.send_day`,
+  )
+    .bind(userId, day)
+    .run();
+}
+
 /** Split a stored `mail_to` value into individual addresses (newline/comma separated,
  * trimmed, de-duplicated, empties dropped). */
 export function parseRecipients(raw: string | null): string[] {

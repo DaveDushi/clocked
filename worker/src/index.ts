@@ -6,9 +6,9 @@ import { faviconResponse } from "./favicon";
 import { buildAndSendReport, sendMonthlyReports } from "./email";
 import { handleIngest } from "./ingest";
 import { buildHoursReport, buildReportCsv } from "./report";
-import { getRecipients, setMailTo } from "./settings";
+import { getRecipients, getSendDay, setMailTo, setSendDay } from "./settings";
 import { getOrCreateToken, rotateToken, userIdForToken } from "./tokens";
-import { isFirstOfMonth, previousMonthPeriod } from "./time";
+import { localYMD, previousMonthPeriod } from "./time";
 import type { Env } from "./types";
 
 export default {
@@ -53,17 +53,32 @@ export default {
       const user = await sessionUser(req, env);
       if (!user) return json({ error: "unauthorized" }, 401);
       if (req.method === "GET") {
-        return json({ recipients: await getRecipients(env, user.id, user.email) });
+        return json({
+          recipients: await getRecipients(env, user.id, user.email),
+          sendDay: await getSendDay(env, user.id),
+        });
       }
       if (req.method === "POST") {
-        const body = (await req.json().catch(() => ({}))) as { recipients?: unknown };
+        const body = (await req.json().catch(() => ({}))) as {
+          recipients?: unknown;
+          sendDay?: unknown;
+        };
         const recipients = Array.isArray(body.recipients)
           ? body.recipients.map((r) => (typeof r === "string" ? r.trim() : "")).filter(Boolean)
           : [];
         if (recipients.length === 0) return json({ error: "at least one recipient required" }, 400);
         if (!recipients.every(isEmail)) return json({ error: "invalid email" }, 400);
+        // Auto-send day: 0 disables, 1..28 selects the day (capped so it exists
+        // in every month). Absent leaves the default (1st).
+        let sendDay = 1;
+        if (body.sendDay !== undefined) {
+          const n = Number(body.sendDay);
+          if (!Number.isInteger(n) || n < 0 || n > 28) return json({ error: "invalid send day" }, 400);
+          sendDay = n;
+        }
         await setMailTo(env, user.id, recipients.join("\n"));
-        return json({ ok: true, recipients });
+        await setSendDay(env, user.id, sendDay);
+        return json({ ok: true, recipients, sendDay });
       }
     }
 
@@ -102,12 +117,14 @@ export default {
     return json({ error: "not found" }, 404);
   },
 
-  // Runs daily (06:00 UTC); only emails on the 1st in REPORT_TZ, for last month.
+  // Runs daily (06:00 UTC). Emails last month's report to each user on their
+  // configured send day (default the 1st) in REPORT_TZ; the per-user
+  // sent_reports guard keeps it to once a month.
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const now = new Date(controller.scheduledTime);
-    if (!isFirstOfMonth(now, env.REPORT_TZ)) return;
+    const { d } = localYMD(now, env.REPORT_TZ);
     const period = previousMonthPeriod(now, env.REPORT_TZ);
-    ctx.waitUntil(sendMonthlyReports(env, period, { force: false }));
+    ctx.waitUntil(sendMonthlyReports(env, period, { force: false, dayOfMonth: d }));
   },
 } satisfies ExportedHandler<Env>;
 

@@ -124,6 +124,16 @@ const HTML = /* html */ `<!doctype html>
   .recipient { display:flex; gap:8px; align-items:center; }
   .recipient input { flex:1; }
   .recipient .del { width:42px; padding:10px 0; font-size:18px; line-height:1; }
+  .schedule { display:flex; flex-direction:column; gap:9px; margin:2px 0 12px; }
+  .check { display:flex; align-items:center; gap:9px; margin:0; text-transform:none; letter-spacing:0; font-size:14px; color:var(--fg); cursor:pointer; }
+  .check input { width:auto; margin:0; accent-color:var(--amber); }
+  .sendday { display:flex; align-items:center; gap:9px; padding-left:26px; color:var(--faint); font-size:14px; }
+  .sendday.off { opacity:.4; }
+  .sendday select {
+    width:auto; padding:8px 10px; border-radius:9px; border:1px solid var(--border);
+    background:#0b0d13; color:var(--fg); font:inherit; font-family:var(--mono); cursor:pointer;
+  }
+  .sendday select:disabled { cursor:default; }
 
   button, a.btn {
     display:inline-flex; align-items:center; justify-content:center; text-decoration:none;
@@ -343,6 +353,14 @@ const HTML = /* html */ `<!doctype html>
       <h3>Monthly timesheet</h3>
       <p class="hint">Where your report is emailed. Add as many recipients as you like.</p>
       <div id="recipients" class="recipients"></div>
+      <div class="schedule">
+        <label class="check"><input type="checkbox" id="autoSend"> Email my timesheet automatically each month</label>
+        <div id="sendDayWrap" class="sendday">
+          <span>Send on the</span>
+          <select id="sendDay"></select>
+          <span>of each month.</span>
+        </div>
+      </div>
       <div class="row">
         <button id="addRecipient" class="ghost">+ Add recipient</button>
         <button id="saveEmail">Save</button>
@@ -430,7 +448,7 @@ async function afterLogin(fresh) {
   $("freshBanner").classList.toggle("hidden", !fresh);
   const now = new Date();
   $("month").value = now.getFullYear() + "-" + pad(now.getMonth()+1);
-  await Promise.all([loadHours(), loadRecipients(), loadToken()]);
+  await Promise.all([loadHours(), loadSettings(), loadToken()]);
 }
 
 // ---- token ----
@@ -535,9 +553,29 @@ function renderRecipients(list) {
 function recipientValues() {
   return [...$("recipients").querySelectorAll("input")].map((i) => i.value.trim()).filter(Boolean);
 }
-async function loadRecipients() {
+// ---- auto-send schedule ----
+function ordinal(n) { const v = n % 100; return n + (["th","st","nd","rd"][(v > 3 && v < 21) ? 0 : (n % 10 < 4 ? n % 10 : 0)]); }
+function fillSendDays() {
+  const sel = $("sendDay");
+  if (sel.options.length) return;
+  for (let d = 1; d <= 28; d++) sel.add(new Option(ordinal(d), String(d)));
+}
+function syncSendDayState() {
+  const on = $("autoSend").checked;
+  $("sendDay").disabled = !on;
+  $("sendDayWrap").classList.toggle("off", !on);
+}
+$("autoSend").onchange = syncSendDayState;
+
+async function loadSettings() {
+  fillSendDays();
   const r = await api("/api/settings");
-  renderRecipients(r.ok ? (await r.json()).recipients : []);
+  const d = r.ok ? await r.json() : { recipients: [], sendDay: 1 };
+  renderRecipients(d.recipients);
+  const day = Number(d.sendDay);
+  $("autoSend").checked = day !== 0;
+  $("sendDay").value = String(day === 0 ? 1 : day);
+  syncSendDayState();
 }
 
 $("signout").onclick = async () => { await api("/api/auth/sign-out", { method:"POST" }); show(false); setMode("signin"); };
@@ -551,8 +589,9 @@ $("saveEmail").onclick = async () => {
   const recipients = recipientValues();
   $("emailMsg").textContent = ""; $("emailMsg").className = "msg";
   if (!recipients.length) { $("emailMsg").textContent = "Add at least one recipient."; $("emailMsg").className = "msg err"; return; }
+  const sendDay = $("autoSend").checked ? Number($("sendDay").value) : 0;
   $("saveEmail").disabled = true;
-  const r = await api("/api/settings", { method:"POST", body: JSON.stringify({ recipients }) });
+  const r = await api("/api/settings", { method:"POST", body: JSON.stringify({ recipients, sendDay }) });
   $("saveEmail").disabled = false;
   if (r.ok) { $("emailMsg").textContent = "Saved."; $("emailMsg").className = "msg ok"; }
   else { const e = await r.json().catch(()=>({})); $("emailMsg").textContent = e.error || "Save failed."; $("emailMsg").className = "msg err"; }
