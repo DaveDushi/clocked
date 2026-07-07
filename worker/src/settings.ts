@@ -37,7 +37,7 @@ export async function setMailTo(env: Env, userId: string, value: string): Promis
 }
 
 /** Per-user auto-send day of the month. Absent/NULL -> 1 (send on the 1st);
- * 0 means automatic monthly sending is turned off. */
+ * 0 means automatic monthly sending is turned off; 99 means the last day. */
 export async function getSendDay(env: Env, userId: string): Promise<number> {
   const row = await env.DB.prepare("SELECT send_day FROM user_settings WHERE userId = ?")
     .bind(userId)

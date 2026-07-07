@@ -3,7 +3,7 @@ import { makeAuth } from "./auth-server";
 import { dashboardResponse } from "./dashboard";
 import { downloadResponse, isDownloadMethod } from "./download";
 import { faviconResponse } from "./favicon";
-import { buildAndSendReport, sendMonthlyReports } from "./email";
+import { buildAndSendReport, sendMonthlyReports, SEND_DAY_LAST } from "./email";
 import { handleIngest } from "./ingest";
 import { buildHoursReport, buildReportCsv } from "./report";
 import { getRecipients, getSendDay, setMailTo, setSendDay } from "./settings";
@@ -69,11 +69,12 @@ export default {
         if (recipients.length === 0) return json({ error: "at least one recipient required" }, 400);
         if (!recipients.every(isEmail)) return json({ error: "invalid email" }, 400);
         // Auto-send day: 0 disables, 1..28 selects the day (capped so it exists
-        // in every month). Absent leaves the default (1st).
+        // in every month), 99 = last day of the month. Absent leaves default (1st).
         let sendDay = 1;
         if (body.sendDay !== undefined) {
           const n = Number(body.sendDay);
-          if (!Number.isInteger(n) || n < 0 || n > 28) return json({ error: "invalid send day" }, 400);
+          const valid = n === 0 || n === SEND_DAY_LAST || (n >= 1 && n <= 28);
+          if (!Number.isInteger(n) || !valid) return json({ error: "invalid send day" }, 400);
           sendDay = n;
         }
         await setMailTo(env, user.id, recipients.join("\n"));
@@ -118,13 +119,14 @@ export default {
   },
 
   // Runs daily (06:00 UTC). Emails last month's report to each user on their
-  // configured send day (default the 1st) in REPORT_TZ; the per-user
-  // sent_reports guard keeps it to once a month.
+  // configured send day (default the 1st, or the month's last day) in
+  // REPORT_TZ; the per-user sent_reports guard keeps it to once a month.
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const now = new Date(controller.scheduledTime);
-    const { d } = localYMD(now, env.REPORT_TZ);
+    const { y, m, d } = localYMD(now, env.REPORT_TZ);
+    const lastDayOfMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
     const period = previousMonthPeriod(now, env.REPORT_TZ);
-    ctx.waitUntil(sendMonthlyReports(env, period, { force: false, dayOfMonth: d }));
+    ctx.waitUntil(sendMonthlyReports(env, period, { force: false, dayOfMonth: d, lastDayOfMonth }));
   },
 } satisfies ExportedHandler<Env>;
 

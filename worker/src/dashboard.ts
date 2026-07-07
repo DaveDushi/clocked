@@ -559,6 +559,7 @@ function fillSendDays() {
   const sel = $("sendDay");
   if (sel.options.length) return;
   for (let d = 1; d <= 28; d++) sel.add(new Option(ordinal(d), String(d)));
+  sel.add(new Option("last day", "99")); // 99 = last day of the month
 }
 function syncSendDayState() {
   const on = $("autoSend").checked;

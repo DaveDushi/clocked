@@ -160,16 +160,20 @@ export async function buildAndSendReport(
   return { ok: true, period, rows };
 }
 
+/** Sentinel `send_day` meaning "the last day of the month". */
+export const SEND_DAY_LAST = 99;
+
 /**
  * Monthly cron fan-out: email every account its own report for `period`.
- * The cron fires daily, so each user is only sent on `dayOfMonth` matching their
- * configured send day (default 1; 0 disables auto-send). Recipients are the
- * user's `mail_to` override(s) or their account email.
+ * The cron fires daily, so each user is only sent when `dayOfMonth` matches
+ * their configured send day: default 1, 0 disables auto-send, and 99 (LAST)
+ * resolves to `lastDayOfMonth`. Recipients are the user's `mail_to`
+ * override(s) or their account email.
  */
 export async function sendMonthlyReports(
   env: Env,
   period: string,
-  opts: { force: boolean; dayOfMonth: number },
+  opts: { force: boolean; dayOfMonth: number; lastDayOfMonth: number },
 ): Promise<void> {
   const users = await env.DB.prepare(
     `SELECT u.id AS id, u.email AS email, s.send_day AS send_day
@@ -177,7 +181,9 @@ export async function sendMonthlyReports(
   ).all<{ id: string; email: string; send_day: number | null }>();
   for (const u of users.results ?? []) {
     const sendDay = u.send_day ?? 1;
-    if (sendDay === 0 || sendDay !== opts.dayOfMonth) continue;
+    if (sendDay === 0) continue;
+    const target = sendDay === SEND_DAY_LAST ? opts.lastDayOfMonth : sendDay;
+    if (target !== opts.dayOfMonth) continue;
     const to = await getRecipients(env, u.id, u.email);
     if (to.length === 0) continue;
     await buildAndSendReport(env, period, { force: opts.force, userId: u.id, to });
