@@ -39,6 +39,42 @@ pub fn run_blocking(cfg: &Config, timeout: Duration) -> Result<usize, Box<dyn st
     run(cfg, timeout)
 }
 
+/// Exchange the desktop Bearer sync token for a one-time browser-login URL, so
+/// "Open timesheet" lands the user already signed in even in a fresh or
+/// logged-out browser. Returns `None` (caller falls back to the plain dashboard
+/// URL) when syncing isn't configured or the Worker is unreachable/outdated.
+pub fn desktop_login_url(cfg: &Config) -> Option<String> {
+    if cfg.bearer_token.trim().is_empty() {
+        return None;
+    }
+    let endpoint = cfg.effective_worker_url().trim_end_matches('/');
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .ok()?;
+    let resp = client
+        .post(format!("{endpoint}/api/auth/desktop/link"))
+        .bearer_auth(&cfg.bearer_token)
+        .json(&serde_json::json!({})) // better-auth requires an application/json body
+        .send()
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+
+    #[derive(serde::Deserialize)]
+    struct LinkResp {
+        url: String,
+    }
+    let body: LinkResp = resp.json().ok()?;
+    let url = body.url.trim().to_string();
+    if url.is_empty() {
+        None
+    } else {
+        Some(url)
+    }
+}
+
 fn run(cfg: &Config, timeout: Duration) -> Result<usize, Box<dyn std::error::Error>> {
     let path = crate::paths::db_file().ok_or("no data dir")?;
     let conn = rusqlite::Connection::open(path)?;

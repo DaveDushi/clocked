@@ -220,6 +220,8 @@ const HTML = /* html */ `<!doctype html>
   .tabs button { flex:1; background:transparent; color:var(--muted); box-shadow:none; font-weight:500; padding:9px 0; border-radius:9px; }
   .tabs button.active { background:linear-gradient(180deg, var(--amber), var(--amber2)); color:#221503; font-weight:700; box-shadow:0 2px 10px rgba(242,169,80,.25); }
   .field { margin-bottom:14px; }
+  .or { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:12px; margin:14px 0; }
+  .or::before, .or::after { content:""; flex:1; height:1px; background:var(--border); }
 
   /* ---------- token card ---------- */
   .tokenbox { display:flex; gap:10px; align-items:stretch; }
@@ -318,6 +320,8 @@ const HTML = /* html */ `<!doctype html>
         <input id="password" type="password" autocomplete="new-password" />
       </div>
       <button id="authBtn" style="width:100%">Create account</button>
+      <div class="or"><span>or</span></div>
+      <button id="googleBtn" class="ghost" style="width:100%">Continue with Google</button>
       <div id="authMsg" class="msg" role="status"></div>
     </div>
   </div>
@@ -484,6 +488,18 @@ async function submitAuth() {
 }
 $("authBtn").onclick = submitAuth;
 $("password").addEventListener("keydown", (e) => { if (e.key === "Enter") submitAuth(); });
+
+// Google OAuth: ask better-auth for the provider URL, then hand off the browser.
+$("googleBtn").onclick = async () => {
+  $("authMsg").textContent = ""; $("authMsg").className = "msg";
+  $("googleBtn").disabled = true;
+  const r = await api("/api/auth/sign-in/social", { method:"POST", body: JSON.stringify({ provider:"google", callbackURL:"/" }) });
+  const data = await r.json().catch(()=>({}));
+  if (r.ok && data.url) { window.location.href = data.url; return; }
+  $("googleBtn").disabled = false;
+  $("authMsg").textContent = data.message || "Google sign-in is unavailable.";
+  $("authMsg").className = "msg err";
+};
 
 // ---- session bootstrap ----
 async function init() {

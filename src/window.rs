@@ -512,7 +512,17 @@ unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
     match cmd.0 as usize {
         IDM_PAUSE => (*ptr).toggle_pause(),
         IDM_SETTINGS => (*ptr).open_settings(),
-        IDM_OPEN_TIMESHEET => open_url(&worker_url),
+        IDM_OPEN_TIMESHEET => {
+            // Open the dashboard already signed in: swap the sync token for a
+            // one-time login URL off the UI thread (network), falling back to
+            // the plain dashboard if that's unavailable. open_url just launches
+            // the default browser, which is safe from a background thread.
+            let cfg = (*ptr).config.clone();
+            std::thread::spawn(move || {
+                let url = crate::sync::desktop_login_url(&cfg).unwrap_or(worker_url);
+                open_url(&url);
+            });
+        }
         IDM_SYNC_NOW => (*ptr).do_sync(),
         IDM_DOWNLOAD_UPDATE => {
             let app = &mut *ptr;

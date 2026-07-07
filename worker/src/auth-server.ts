@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 
+import { desktopAuth } from "./desktop-auth";
 import type { Env } from "./types";
 
 // --- Workers-native password hashing (PBKDF2 via Web Crypto) --------------
@@ -62,6 +63,21 @@ export function makeAuth(env: Env, allowSignUp = true) {
       disableSignUp: !allowSignUp, // public multi-account registration
       password: { hash: hashPassword, verify: verifyPassword },
     },
+    // Google sign-in — only registered when creds are configured, so local dev
+    // without them still boots. Uses non-sensitive scopes (openid/email/profile),
+    // so no Google verification review is needed to publish.
+    socialProviders:
+      env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+        ? {
+            google: {
+              clientId: env.GOOGLE_CLIENT_ID,
+              clientSecret: env.GOOGLE_CLIENT_SECRET,
+            },
+          }
+        : undefined,
+    // Desktop "Open timesheet" auto-login: exchange the sync Bearer token for a
+    // browser session cookie (see desktop-auth.ts).
+    plugins: [desktopAuth(env)],
     session: {
       expiresIn: 60 * 60 * 24 * 30, // 30d — rarely re-run the CPU-heavy login
       updateAge: 60 * 60 * 24 * 7, // slide expiry at most weekly -> ~0 refresh writes

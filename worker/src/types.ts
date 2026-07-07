@@ -15,6 +15,10 @@ export interface Env {
   BETTER_AUTH_SECRET: string;
   /** Public base URL of this worker, e.g. https://clocked-worker.<sub>.workers.dev */
   BETTER_AUTH_URL: string;
+  /** Google OAuth client credentials (wrangler secrets). Optional — Google
+   * sign-in is only enabled when both are set. */
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
 }
 
 export interface SessionIn {
