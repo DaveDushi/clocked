@@ -124,12 +124,17 @@ const HTML = /* html */ `<!doctype html>
   .recipient { display:flex; gap:8px; align-items:center; }
   .recipient input { flex:1; }
   .recipient .del { width:42px; padding:10px 0; font-size:18px; line-height:1; }
-  .mentries { margin-top:14px; display:flex; flex-direction:column; gap:6px; }
+  .mentries { margin-top:14px; display:flex; flex-direction:column; gap:8px; }
   .mentries:empty { margin-top:0; }
-  .mentries-head { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); margin-bottom:2px; }
+  .mentries-head { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); }
+  .mentries-scroll { display:flex; flex-direction:column; gap:6px; max-height:196px; overflow-y:auto; overscroll-behavior:contain; padding-right:4px; }
+  .mentries-scroll::-webkit-scrollbar { width:9px; }
+  .mentries-scroll::-webkit-scrollbar-track { background:transparent; }
+  .mentries-scroll::-webkit-scrollbar-thumb { background:var(--border); border-radius:9px; }
+  .mentries-scroll { scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
   .mentry { display:flex; align-items:center; gap:10px; padding:7px 12px; border:1px solid var(--border); border-radius:9px; background:#0b0d13; }
-  .mentry span { flex:1; font-family:var(--mono); font-size:13px; color:var(--fg); font-variant-numeric:tabular-nums; }
-  .mentry .del { width:34px; padding:6px 0; font-size:16px; line-height:1; }
+  .mentry span { flex:1; min-width:0; font-family:var(--mono); font-size:13px; color:var(--fg); font-variant-numeric:tabular-nums; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mentry .del { flex:none; width:34px; padding:6px 0; font-size:16px; line-height:1; }
   .schedule { display:flex; flex-direction:column; gap:9px; margin:2px 0 12px; }
   .check { display:flex; align-items:center; gap:9px; margin:0; text-transform:none; letter-spacing:0; font-size:14px; color:var(--fg); cursor:pointer; }
   .check input { width:auto; margin:0; accent-color:var(--amber); }
@@ -605,8 +610,10 @@ function renderManualEntries(list) {
   if (!list.length) return;
   const head = document.createElement("div");
   head.className = "mentries-head";
-  head.textContent = "Manual entries this month";
+  head.textContent = "Manual entries this month (" + list.length + ")";
   box.appendChild(head);
+  const scroll = document.createElement("div");
+  scroll.className = "mentries-scroll";
   list.forEach((e) => {
     const row = document.createElement("div");
     row.className = "mentry";
@@ -616,8 +623,9 @@ function renderManualEntries(list) {
     del.type = "button"; del.className = "ghost del"; del.textContent = "×"; del.title = "Delete this entry";
     del.onclick = () => deleteManualEntry(e.id);
     row.appendChild(label); row.appendChild(del);
-    box.appendChild(row);
+    scroll.appendChild(row);
   });
+  box.appendChild(scroll);
 }
 
 async function loadManualEntries() {
