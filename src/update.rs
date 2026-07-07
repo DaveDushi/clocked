@@ -48,6 +48,19 @@ impl UpdateStatus {
         !matches!(self, UpdateStatus::Checking | UpdateStatus::UpToDate { .. })
     }
 
+    /// How the menu should present this status given how long ago the check ran.
+    /// A successful "up to date" is shown as-is (a disabled status line) for a
+    /// while, then reverts to an actionable "check for updates" so the user can
+    /// re-check. `since_check` is `None` if no check has completed yet.
+    pub fn for_menu(&self, since_check: Option<Duration>, ttl: Duration) -> UpdateStatus {
+        match self {
+            UpdateStatus::UpToDate { .. } if since_check.map_or(true, |e| e >= ttl) => {
+                UpdateStatus::Unknown
+            }
+            other => other.clone(),
+        }
+    }
+
     pub fn download_url(&self) -> Option<&str> {
         match self {
             UpdateStatus::Available { download_url, .. } => Some(download_url),
@@ -178,6 +191,39 @@ mod tests {
 
         assert_eq!(status.menu_label(), "Up to date • v0.1.0");
         assert!(!status.menu_enabled());
+    }
+
+    #[test]
+    fn up_to_date_reverts_to_checkable_after_ttl() {
+        let ttl = Duration::from_secs(30 * 60);
+        let uptodate = UpdateStatus::UpToDate {
+            version: "0.1.2".to_string(),
+        };
+        // Just checked: keep showing the disabled "up to date" status line.
+        let fresh = uptodate.for_menu(Some(Duration::from_secs(60)), ttl);
+        assert_eq!(fresh, uptodate);
+        assert!(!fresh.menu_enabled());
+        // Past the TTL: revert to an actionable "check for updates".
+        let stale = uptodate.for_menu(Some(ttl), ttl);
+        assert_eq!(stale, UpdateStatus::Unknown);
+        assert!(stale.menu_enabled());
+        assert!(stale.menu_label().starts_with("Check for updates"));
+        // No check on record yet also presents as checkable.
+        assert_eq!(uptodate.for_menu(None, ttl), UpdateStatus::Unknown);
+    }
+
+    #[test]
+    fn available_and_failed_ignore_the_ttl() {
+        let ttl = Duration::from_secs(30 * 60);
+        let avail = UpdateStatus::Available {
+            version: "0.2.0".to_string(),
+            download_url: DOWNLOAD_URL.to_string(),
+        };
+        assert_eq!(avail.for_menu(Some(Duration::from_secs(9999)), ttl), avail);
+        assert_eq!(
+            UpdateStatus::Failed.for_menu(Some(Duration::from_secs(9999)), ttl),
+            UpdateStatus::Failed
+        );
     }
 
     #[test]

@@ -6,7 +6,7 @@
 //! windows never receive `WM_POWERBROADCAST`. The window is created but never
 //! shown.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chrono::{Local, Utc};
 use rusqlite::Connection;
@@ -41,6 +41,10 @@ const TIMER_UPDATE_CHECK: usize = 3;
 // Blocking-sync budget on shutdown/quit. Windows only guarantees a few seconds
 // after `WM_QUERYENDSESSION`, so keep this well under that.
 const SHUTDOWN_SYNC_TIMEOUT: Duration = Duration::from_secs(3);
+
+// How long a successful "up to date" result keeps showing before the tray menu
+// offers a manual re-check again.
+const UP_TO_DATE_TTL: Duration = Duration::from_secs(30 * 60);
 
 // Menu command ids.
 const IDM_SYNC_NOW: usize = 101;
@@ -80,6 +84,9 @@ struct AppState {
     /// is posted, consumed when it's answered).
     pending_open: Option<&'static str>,
     update_status: crate::update::UpdateStatus,
+    /// When the last update check completed. Lets a stale "up to date" revert to
+    /// a checkable "check for updates" after `UP_TO_DATE_TTL`.
+    update_checked_at: Option<Instant>,
 }
 
 impl AppState {
@@ -348,9 +355,17 @@ impl AppState {
         crate::update::spawn(self.hwnd.0 as isize, WM_UPDATE_CHECK_DONE, manual);
     }
 
+    /// The update status as the tray menu should show it: a successful "up to
+    /// date" older than `UP_TO_DATE_TTL` reverts to an actionable check.
+    fn effective_update_status(&self) -> crate::update::UpdateStatus {
+        self.update_status
+            .for_menu(self.update_checked_at.map(|t| t.elapsed()), UP_TO_DATE_TTL)
+    }
+
     fn finish_update_check(&mut self, result: crate::update::UpdateCheckResult) {
         let manual = result.manual;
         self.update_status = result.status;
+        self.update_checked_at = Some(Instant::now());
         match &self.update_status {
             crate::update::UpdateStatus::Available { version, .. } => {
                 crate::logln!("update available: v{version}");
@@ -427,13 +442,14 @@ fn open_url(url: &str) {
 unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
     let (status, today, worker_url, clocked_in, update_label, update_enabled) = {
         let app = &*ptr;
+        let update = app.effective_update_status();
         (
             app.status_line(),
             app.today_line(),
             app.config.effective_worker_url().to_string(),
             app.is_clocked_in(),
-            app.update_status.menu_label(),
-            app.update_status.menu_enabled(),
+            update.menu_label(),
+            update.menu_enabled(),
         )
     };
 
@@ -666,6 +682,7 @@ pub fn run() -> windows::core::Result<()> {
             after_hours_answer: None,
             pending_open: None,
             update_status: crate::update::UpdateStatus::Unknown,
+            update_checked_at: None,
         }));
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, ptr as isize);
 
