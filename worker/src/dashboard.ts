@@ -124,6 +124,12 @@ const HTML = /* html */ `<!doctype html>
   .recipient { display:flex; gap:8px; align-items:center; }
   .recipient input { flex:1; }
   .recipient .del { width:42px; padding:10px 0; font-size:18px; line-height:1; }
+  .mentries { margin-top:14px; display:flex; flex-direction:column; gap:6px; }
+  .mentries:empty { margin-top:0; }
+  .mentries-head { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); margin-bottom:2px; }
+  .mentry { display:flex; align-items:center; gap:10px; padding:7px 12px; border:1px solid var(--border); border-radius:9px; background:#0b0d13; }
+  .mentry span { flex:1; font-family:var(--mono); font-size:13px; color:var(--fg); font-variant-numeric:tabular-nums; }
+  .mentry .del { width:34px; padding:6px 0; font-size:16px; line-height:1; }
   .schedule { display:flex; flex-direction:column; gap:9px; margin:2px 0 12px; }
   .check { display:flex; align-items:center; gap:9px; margin:0; text-transform:none; letter-spacing:0; font-size:14px; color:var(--fg); cursor:pointer; }
   .check input { width:auto; margin:0; accent-color:var(--amber); }
@@ -362,6 +368,7 @@ const HTML = /* html */ `<!doctype html>
         <button id="mAdd">Add</button>
       </div>
       <div id="manualMsg" class="msg" role="status"></div>
+      <div id="manualList" class="mentries"></div>
     </div>
 
     <div class="card">
@@ -560,6 +567,7 @@ async function loadHours() {
   const activeDays = d.activeDays ?? d.days.filter((x) => x.minutes > 0).length;
   $("statDays").textContent = String(activeDays);
   $("statAvg").textContent = activeDays ? fmt(Math.round(d.totalMinutes / activeDays)) : "0:00";
+  loadManualEntries();
 }
 
 function shiftMonth(delta) {
@@ -585,10 +593,53 @@ $("mAdd").onclick = async () => {
     $("manualMsg").textContent = "Added " + date + ", " + start + "–" + end + "."; $("manualMsg").className = "msg ok";
     $("mStart").value = ""; $("mEnd").value = "";
     if (date.slice(0,7) === $("month").value) loadHours();
+    else loadManualEntries();
   } else {
     $("manualMsg").textContent = d.error || "Could not add entry."; $("manualMsg").className = "msg err";
   }
 };
+
+function renderManualEntries(list) {
+  const box = $("manualList");
+  box.innerHTML = "";
+  if (!list.length) return;
+  const head = document.createElement("div");
+  head.className = "mentries-head";
+  head.textContent = "Manual entries this month";
+  box.appendChild(head);
+  list.forEach((e) => {
+    const row = document.createElement("div");
+    row.className = "mentry";
+    const label = document.createElement("span");
+    label.textContent = e.date + "  ·  " + e.start + "–" + e.end;
+    const del = document.createElement("button");
+    del.type = "button"; del.className = "ghost del"; del.textContent = "×"; del.title = "Delete this entry";
+    del.onclick = () => deleteManualEntry(e.id);
+    row.appendChild(label); row.appendChild(del);
+    box.appendChild(row);
+  });
+}
+
+async function loadManualEntries() {
+  const period = $("month").value;
+  if (!period) return;
+  const r = await api("/api/manual-session?period=" + period);
+  if (!r.ok) { $("manualList").innerHTML = ""; return; }
+  const d = await r.json();
+  renderManualEntries(d.entries || []);
+}
+
+async function deleteManualEntry(id) {
+  $("manualMsg").textContent = ""; $("manualMsg").className = "msg";
+  const r = await api("/api/manual-session", { method:"DELETE", body: JSON.stringify({ id }) });
+  if (r.ok) {
+    $("manualMsg").textContent = "Deleted."; $("manualMsg").className = "msg ok";
+    loadHours();
+  } else {
+    const d = await r.json().catch(()=>({}));
+    $("manualMsg").textContent = d.error || "Could not delete."; $("manualMsg").className = "msg err";
+  }
+}
 
 // ---- recipients ----
 function addRecipientRow(value) {
