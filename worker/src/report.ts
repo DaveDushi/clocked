@@ -90,15 +90,24 @@ export function isWorkDay(date: string): boolean {
   return dow >= 1 && dow <= 5;
 }
 
+/** First clock-in, last clock-out, worked minutes, and between-session breaks
+ * (each `"HH:MM-HH:MM"`) for one local day. */
+interface DaySpan {
+  in: Date;
+  out: Date;
+  minutes: number;
+  breaks: string[];
+}
+
 /**
- * Build the comma-separated report body for `period` ("YYYY-MM").
- * One row per session, `Weekday, Month D, YYYY,HH:MM,HH:MM` (date label quoted),
- * ordered by start. Sessions are clamped to the month and split at every local
- * midnight so each row stays within a single local day.
- *
- * A work day (Mon–Fri) with no logged sessions is emitted as a `label,Vacation`
- * row, and the body ends with a `Total,H:MM` line summing every logged minute.
- * Empty months (no sessions at all) still produce no output.
+ * Build the CSV report body for `period` ("YYYY-MM"). A clear
+ * `Date,Clock In,Clock Out,Breaks,Hours Worked` header leads; then one row per
+ * worked day: earliest clock-in, latest clock-out, the gaps between sessions
+ * (breaks), and total time actually worked (clock-out minus clock-in, minus the
+ * breaks). Sessions are clamped to the month and split at every local midnight
+ * so each day is summed in its own local day. A work day (Mon–Fri) with no
+ * sessions shows `Vacation`, and a trailing row puts the month's total under the
+ * Hours Worked column. Empty months (no sessions at all) still produce no output.
  */
 export async function buildReportCsv(env: Env, period: string, userId: string): Promise<string> {
   const tz = env.REPORT_TZ;
@@ -112,10 +121,11 @@ export async function buildReportCsv(env: Env, period: string, userId: string): 
     .bind(userId, start.toISOString(), end.toISOString())
     .all<Row>();
 
-  // Group session rows and minute totals by local day, preserving chronological
-  // order within each day (sessions arrive ordered by start).
-  const rowsByDate = new Map<string, string[]>();
-  const minutesByDate = new Map<string, number>();
+  // Collapse each local day to first clock-in / last clock-out / worked minutes,
+  // recording the gap before each later session as a break. Sessions arrive
+  // ordered by start, so the first segment seen is the earliest.
+  const spanByDate = new Map<string, DaySpan>();
+  const labelByDate = new Map<string, string>();
   for (const r of res.results ?? []) {
     let segStart = new Date(Math.max(Date.parse(r.start_utc), start.getTime()));
     const sessEnd = new Date(Math.min(Date.parse(r.end_utc), end.getTime()));
@@ -125,36 +135,47 @@ export async function buildReportCsv(env: Env, period: string, userId: string): 
       const segEnd = midnight < sessEnd ? midnight : sessEnd;
       const { y, m, d } = localYMD(segStart, tz);
       const date = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-      const row = `${csvField(formatDateLabel(segStart, tz))},${formatHM(segStart, tz)},${formatHM(segEnd, tz)}`;
-      const dayRows = rowsByDate.get(date);
-      if (dayRows) dayRows.push(row);
-      else rowsByDate.set(date, [row]);
       const minutes = Math.round((segEnd.getTime() - segStart.getTime()) / 60000);
-      minutesByDate.set(date, (minutesByDate.get(date) ?? 0) + minutes);
+      const span = spanByDate.get(date);
+      if (span) {
+        if (segStart > span.out) span.breaks.push(`${formatHM(span.out, tz)}-${formatHM(segStart, tz)}`);
+        span.out = segEnd; // later segment → newer clock-out
+        span.minutes += minutes;
+      } else {
+        spanByDate.set(date, { in: segStart, out: segEnd, minutes, breaks: [] });
+        labelByDate.set(date, formatDateLabel(segStart, tz));
+      }
       segStart = segEnd;
     }
   }
 
   // No work logged this month → keep the historical empty-report behavior.
-  if (minutesByDate.size === 0) return "";
+  if (spanByDate.size === 0) return "";
 
   // Expand to calendar days (past months in full, current month through today)
   // so every gap between logged days is visible for vacation marking.
-  const seed = [...minutesByDate].map(([date, minutes]) => ({ date, label: "", minutes }));
+  const seed = [...spanByDate].map(([date, span]) => ({
+    date,
+    label: labelByDate.get(date) ?? "",
+    minutes: span.minutes,
+  }));
   const calendarDays = expandCalendarDays(seed, period, localYMD(new Date(), tz)).days;
 
-  const lines: string[] = [];
+  const lines = ["Date,Clock In,Clock Out,Breaks,Hours Worked"];
   let totalMinutes = 0;
   for (const day of calendarDays) {
-    const sessionRows = rowsByDate.get(day.date);
-    if (sessionRows) {
-      lines.push(...sessionRows);
-      totalMinutes += minutesByDate.get(day.date) ?? 0;
+    const span = spanByDate.get(day.date);
+    if (span) {
+      lines.push(
+        `${csvField(day.label)},${formatHM(span.in, tz)},${formatHM(span.out, tz)},${csvField(span.breaks.join("; "))},${formatHours(span.minutes)}`,
+      );
+      totalMinutes += span.minutes;
     } else if (isWorkDay(day.date)) {
-      lines.push(`${csvField(day.label)},Vacation`);
+      lines.push(`${csvField(day.label)},Vacation,,,`);
     }
   }
 
-  lines.push(`Total,${formatHours(totalMinutes)}`);
+  lines.push(",,,,");
+  lines.push(`,,,Total,${formatHours(totalMinutes)}`);
   return lines.join("\n") + "\n";
 }

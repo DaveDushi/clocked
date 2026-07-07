@@ -237,6 +237,20 @@ const HTML = /* html */ `<!doctype html>
   .msg.err { color:var(--err); } .msg.ok { color:var(--ok); }
   .hidden { display:none; }
 
+  /* CSV preview panel */
+  .preview { margin-top:14px; border:1px solid var(--border); border-radius:12px; background:var(--panel2); overflow:hidden; }
+  .pv-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border-bottom:1px solid var(--border); }
+  .pv-head b { font-size:13px; letter-spacing:.02em; }
+  .pv-head button { padding:5px 12px; font-size:13px; }
+  .pv-scroll { max-height:340px; overflow:auto; }
+  table.pv { border-collapse:collapse; width:100%; font-family:var(--mono); font-size:12px; }
+  table.pv th, table.pv td { text-align:left; padding:6px 12px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  table.pv th { position:sticky; top:0; background:var(--panel); color:var(--faint); font-weight:600; text-transform:none; letter-spacing:0; }
+  table.pv td { color:var(--fg); }
+  table.pv tr.pv-total td { font-weight:700; color:var(--amber); border-bottom:0; }
+  table.pv tr.pv-vac td { color:var(--muted); }
+  .pv-empty { padding:16px; color:var(--muted); font-size:14px; }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation:none !important; transition:none !important; }
   }
@@ -363,10 +377,12 @@ const HTML = /* html */ `<!doctype html>
       </div>
       <div class="row">
         <button id="addRecipient" class="ghost">+ Add recipient</button>
+        <button id="previewBtn" class="ghost">Preview</button>
         <button id="saveEmail">Save</button>
         <button id="sendNow">Send now</button>
       </div>
       <div id="emailMsg" class="msg" role="status"></div>
+      <div id="previewPanel" class="preview hidden"></div>
     </div>
   </div>
 </div>
@@ -606,6 +622,56 @@ $("sendNow").onclick = async () => {
   const d = await r.json().catch(()=>({}));
   if (r.ok) { $("emailMsg").textContent = "Sent " + d.rows + " row(s) to " + d.recipients + " recipient(s)."; $("emailMsg").className = "msg ok"; }
   else { $("emailMsg").textContent = d.error || "Send failed."; $("emailMsg").className = "msg err"; }
+};
+
+// ---- CSV preview ----
+function pvParseLine(line) {
+  const out = []; let cur = ""; let q = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (q) { if (c === '"') { if (line[i+1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === ",") { out.push(cur); cur = ""; }
+    else cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+function pvEsc(s) { return String(s).replace(/[&<>]/g, (c) => c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;"); }
+function pvClose() { const p = $("previewPanel"); p.classList.add("hidden"); p.innerHTML = ""; }
+function renderPreview(csv, period) {
+  const panel = $("previewPanel");
+  const header = "<div class='pv-head'><b>Preview — " + pvEsc(period) + "</b><button id='pvCloseBtn' class='ghost'>Close</button></div>";
+  const text = csv.replace(/\s+$/, "");
+  if (!text) {
+    panel.innerHTML = header + "<div class='pv-empty'>No sessions recorded for this month.</div>";
+  } else {
+    const rows = text.split("\n").map(pvParseLine);
+    const head = rows[0];
+    let html = header + "<div class='pv-scroll'><table class='pv'><thead><tr>";
+    for (let i = 0; i < head.length; i++) html += "<th>" + pvEsc(head[i]) + "</th>";
+    html += "</tr></thead><tbody>";
+    for (let r = 1; r < rows.length; r++) {
+      const cells = rows[r];
+      if (cells.join("") === "") continue; // skip the blank spacer row
+      const cls = cells.indexOf("Total") !== -1 ? " class='pv-total'" : (cells.indexOf("Vacation") !== -1 ? " class='pv-vac'" : "");
+      html += "<tr" + cls + ">";
+      for (let c = 0; c < head.length; c++) html += "<td>" + pvEsc(cells[c] || "") + "</td>";
+      html += "</tr>";
+    }
+    panel.innerHTML = html + "</tbody></table></div>";
+  }
+  panel.classList.remove("hidden");
+  $("pvCloseBtn").onclick = pvClose;
+}
+$("previewBtn").onclick = async () => {
+  const period = $("month").value;
+  $("emailMsg").textContent = ""; $("emailMsg").className = "msg";
+  $("previewBtn").disabled = true; $("previewBtn").textContent = "Loading…";
+  const r = await api("/preview?period=" + period);
+  $("previewBtn").disabled = false; $("previewBtn").textContent = "Preview";
+  if (!r.ok) { $("emailMsg").textContent = "Preview failed."; $("emailMsg").className = "msg err"; return; }
+  renderPreview(await r.text(), period);
 };
 
 init();
