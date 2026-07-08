@@ -247,6 +247,7 @@ const HTML = /* html */ `<!doctype html>
   /* landing header: brand stays, live clock hides, auth buttons appear right */
   .top.bare #now { display:none; }
   #topAuth { display:flex; gap:8px; }
+  #topAuth.hidden { display:none; } /* id selector beats .hidden alone */
   #topAuth button { padding:8px 14px; font-size:14px; }
 
   /* ---------- auth modal ---------- */
