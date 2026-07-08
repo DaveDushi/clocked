@@ -51,6 +51,34 @@ Write-Host 'Compiling installer...' -ForegroundColor Cyan
 if ($LASTEXITCODE -ne 0) { throw "ISCC failed (exit $LASTEXITCODE)" }
 
 $out = Join-Path $repoRoot "installer\dist\clocked-setup-$version.exe"
+
+# Optional Authenticode signing. Set CLOCKED_SIGN_CERT to a PFX path (and
+# CLOCKED_SIGN_PASSWORD if needed), or CLOCKED_SIGN_THUMBPRINT for a store cert.
+if ($env:CLOCKED_SIGN_CERT -or $env:CLOCKED_SIGN_THUMBPRINT) {
+    Write-Host 'Signing installer…' -ForegroundColor Cyan
+    $signtool = @(
+        "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe",
+        "${env:ProgramFiles}\Windows Kits\10\bin\*\x64\signtool.exe"
+    ) | ForEach-Object { Get-Item $_ -ErrorAction SilentlyContinue } |
+        Sort-Object FullName -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
+    if (-not $signtool) { throw 'signtool.exe not found. Install Windows SDK or unset CLOCKED_SIGN_*' }
+
+    $signArgs = @('sign', '/fd', 'SHA256', '/tr', 'http://timestamp.digicert.com', '/td', 'SHA256')
+    if ($env:CLOCKED_SIGN_THUMBPRINT) {
+        $signArgs += @('/sha1', $env:CLOCKED_SIGN_THUMBPRINT)
+    } else {
+        $signArgs += @('/f', $env:CLOCKED_SIGN_CERT)
+        if ($env:CLOCKED_SIGN_PASSWORD) { $signArgs += @('/p', $env:CLOCKED_SIGN_PASSWORD) }
+    }
+    $signArgs += $out
+    & $signtool @signArgs
+    if ($LASTEXITCODE -ne 0) { throw "signtool failed (exit $LASTEXITCODE)" }
+    Write-Host 'Installer signed.' -ForegroundColor Green
+} else {
+    Write-Host 'Installer not signed (set CLOCKED_SIGN_CERT or CLOCKED_SIGN_THUMBPRINT for production).' -ForegroundColor Yellow
+}
+
 Write-Host ''
 Write-Host "Installer built: $out" -ForegroundColor Green
 Write-Host 'Share that single file. Recipients double-click it to install Clocked.' -ForegroundColor Green

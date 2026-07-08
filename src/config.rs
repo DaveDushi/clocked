@@ -89,22 +89,36 @@ fn escape_toml(s: &str) -> String {
 
 impl Config {
     /// Load config, writing a commented default on first run if none exists.
+    /// The bearer token is loaded from DPAPI storage (`token.dpapi`), with a
+    /// one-time migration from legacy plaintext `bearer_token` in config.toml.
     pub fn load() -> Config {
         let Some(path) = crate::paths::config_file() else {
             return Config::default();
         };
-        match std::fs::read_to_string(&path) {
+        let mut cfg = match std::fs::read_to_string(&path) {
             Ok(text) => toml::from_str(&text).unwrap_or_default(),
             Err(_) => {
                 let cfg = Config::default();
                 let _ = std::fs::write(&path, cfg.to_toml());
                 cfg
             }
+        };
+
+        let dpapi = crate::secret::load_token();
+        if !dpapi.is_empty() {
+            cfg.bearer_token = dpapi;
+        } else if !cfg.bearer_token.trim().is_empty() {
+            // Migrate legacy plaintext token out of config.toml into DPAPI.
+            if crate::secret::save_token(&cfg.bearer_token).is_ok() {
+                let _ = cfg.save(); // rewrites toml without the secret
+            }
         }
+        cfg
     }
 
     /// Render the config as a commented `config.toml` (the on-disk format the
-    /// Settings page writes; still hand-editable).
+    /// Settings page writes; still hand-editable). Bearer token is NOT written
+    /// here — it is stored via DPAPI (`token.dpapi`).
     pub fn to_toml(&self) -> String {
         let days = self
             .work_days
@@ -116,10 +130,9 @@ impl Config {
             "# clocked configuration\n\
              # Managed by the tray Settings page, but safe to edit by hand.\n\
              # Worker URL defaults to https://clocked.daviddusi.com and is usually hidden in Advanced settings.\n\
-             # Leave bearer_token blank for local-only mode (no sync).\n\
+             # The bearer token is stored separately (DPAPI-protected token.dpapi), not in this file.\n\
              \n\
              worker_url   = \"{worker_url}\"\n\
-             bearer_token = \"{bearer_token}\"\n\
              \n\
              # Auto clock-out after this many idle seconds (no keyboard/mouse). 0 disables.\n\
              idle_timeout_secs = {idle}\n\
@@ -133,7 +146,6 @@ impl Config {
              work_end   = \"{work_end}\"\n\
              work_days  = [{days}]\n",
             worker_url = escape_toml(&self.worker_url),
-            bearer_token = escape_toml(&self.bearer_token),
             idle = self.idle_timeout_secs,
             target = self.target_hours,
             work_start = escape_toml(&self.work_start),
@@ -142,12 +154,14 @@ impl Config {
         )
     }
 
-    /// Write the config to `config.toml`.
+    /// Write non-secret config to `config.toml` and the bearer token to DPAPI.
     pub fn save(&self) -> std::io::Result<()> {
         let path = crate::paths::config_file().ok_or_else(|| {
             std::io::Error::new(std::io::ErrorKind::NotFound, "no data dir")
         })?;
-        std::fs::write(path, self.to_toml())
+        std::fs::write(path, self.to_toml())?;
+        crate::secret::save_token(&self.bearer_token)?;
+        Ok(())
     }
 
     /// True once both the endpoint and token are set.
@@ -237,10 +251,10 @@ mod tests {
     }
 
     #[test]
-    fn to_toml_round_trips_through_parser() {
+    fn to_toml_round_trips_non_secret_fields() {
         let c = Config {
             worker_url: "https://ex.workers.dev".to_string(),
-            bearer_token: "s3cr3t".to_string(),
+            bearer_token: "s3cr3t".to_string(), // not written to toml
             idle_timeout_secs: 600,
             target_hours: 7.5,
             work_start: "08:30".to_string(),
@@ -248,7 +262,15 @@ mod tests {
             work_days: vec!["Mon".into(), "Wed".into(), "Fri".into()],
         };
         let reloaded: Config = toml::from_str(&c.to_toml()).unwrap();
-        assert_eq!(c, reloaded);
+        assert_eq!(reloaded.worker_url, c.worker_url);
+        assert_eq!(reloaded.idle_timeout_secs, c.idle_timeout_secs);
+        assert_eq!(reloaded.target_hours, c.target_hours);
+        assert_eq!(reloaded.work_start, c.work_start);
+        assert_eq!(reloaded.work_end, c.work_end);
+        assert_eq!(reloaded.work_days, c.work_days);
+        assert!(reloaded.bearer_token.is_empty());
+        assert!(!c.to_toml().contains("s3cr3t"));
+        assert!(!c.to_toml().contains("bearer_token"));
     }
 
     #[test]

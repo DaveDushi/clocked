@@ -1,9 +1,17 @@
 import type { Env, SessionIn } from "./types";
 
+/** Max sessions accepted in a single POST /sessions (DoS / cost guard). */
+export const MAX_SESSIONS_PER_REQUEST = 500;
+
 /**
  * POST /sessions — validate and upsert synced sessions (idempotent by id).
  * `userId` is the account resolved from the Bearer token; sessions are attributed
  * to it (null only for the legacy global-token path).
+ *
+ * Ownership: an existing row is only updated when `user_id` is null (legacy) or
+ * already equals the caller — never reassigned across accounts.
+ *
+ * Returns `accepted` ids so the desktop client only marks those as synced.
  */
 export async function handleIngest(
   req: Request,
@@ -18,42 +26,113 @@ export async function handleIngest(
   }
 
   const raw = (body as { sessions?: unknown })?.sessions;
-  const sessions = Array.isArray(raw) ? raw : [];
-  const valid = sessions.filter(isValid);
-  if (valid.length === 0) {
-    return json({ ok: true, upserted: 0 });
+  if (!Array.isArray(raw)) {
+    return json({ error: "sessions array required" }, 400);
+  }
+  if (raw.length > MAX_SESSIONS_PER_REQUEST) {
+    return json(
+      { error: `too many sessions (max ${MAX_SESSIONS_PER_REQUEST})` },
+      413,
+    );
   }
 
-  const stmt = env.DB.prepare(
-    `INSERT INTO sessions (id, start_utc, end_utc, start_reason, end_reason, user_id)
-     VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET
-       start_utc    = excluded.start_utc,
-       end_utc      = excluded.end_utc,
-       start_reason = excluded.start_reason,
-       end_reason   = excluded.end_reason,
-       user_id      = excluded.user_id`,
-  );
-  await env.DB.batch(
-    valid.map((s) =>
-      stmt.bind(s.id, s.start_utc, s.end_utc, s.start_reason ?? null, s.end_reason ?? null, userId),
-    ),
-  );
+  const valid = raw.filter(isValid);
+  if (valid.length === 0) {
+    // Do not return a soft 200 that would let the client mark junk as synced.
+    return json({ error: "no valid sessions", accepted: [] as string[], upserted: 0 }, 400);
+  }
 
-  return json({ ok: true, upserted: valid.length });
+  // Bulk ownership lookup (avoid N+1).
+  const ownerById = new Map<string, string | null>();
+  const chunk = 80;
+  for (let i = 0; i < valid.length; i += chunk) {
+    const slice = valid.slice(i, i + chunk);
+    const placeholders = slice.map(() => "?").join(",");
+    const res = await env.DB.prepare(
+      `SELECT id, user_id FROM sessions WHERE id IN (${placeholders})`,
+    )
+      .bind(...slice.map((s) => s.id))
+      .all<{ id: string; user_id: string | null }>();
+    for (const row of res.results ?? []) {
+      ownerById.set(row.id, row.user_id);
+    }
+  }
+
+  const accepted: string[] = [];
+  const stmts: D1PreparedStatement[] = [];
+
+  for (const s of valid) {
+    if (ownerById.has(s.id)) {
+      const owner = ownerById.get(s.id) ?? null;
+      // Block cross-account takeover; allow update when unattributed or same owner.
+      if (owner != null && userId != null && owner !== userId) continue;
+      if (owner != null && userId == null) continue; // legacy global token cannot steal
+    }
+
+    stmts.push(
+      env.DB.prepare(
+        `INSERT INTO sessions (id, start_utc, end_utc, start_reason, end_reason, user_id)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           start_utc    = excluded.start_utc,
+           end_utc      = excluded.end_utc,
+           start_reason = excluded.start_reason,
+           end_reason   = excluded.end_reason,
+           user_id      = COALESCE(sessions.user_id, excluded.user_id)`,
+      ).bind(
+        s.id,
+        s.start_utc,
+        s.end_utc,
+        s.start_reason ?? null,
+        s.end_reason ?? null,
+        userId,
+      ),
+    );
+    accepted.push(s.id);
+  }
+
+  if (stmts.length === 0) {
+    return json({ error: "no sessions accepted", accepted: [], upserted: 0 }, 409);
+  }
+
+  await env.DB.batch(stmts);
+
+  return json({ ok: true, upserted: accepted.length, accepted });
 }
+
+const MAX_REASON_LEN = 64;
+const MAX_ID_LEN = 128;
+/** Reject absurd multi-year spans (likely bad client data). */
+const MAX_DURATION_MS = 1000 * 60 * 60 * 24 * 40; // 40 days
 
 function isValid(s: unknown): s is SessionIn {
   const o = s as Record<string, unknown>;
-  return (
-    !!o &&
-    typeof o.id === "string" &&
-    typeof o.start_utc === "string" &&
-    typeof o.end_utc === "string" &&
-    !Number.isNaN(Date.parse(o.start_utc)) &&
-    !Number.isNaN(Date.parse(o.end_utc)) &&
-    Date.parse(o.end_utc) > Date.parse(o.start_utc)
-  );
+  if (
+    !o ||
+    typeof o.id !== "string" ||
+    typeof o.start_utc !== "string" ||
+    typeof o.end_utc !== "string"
+  ) {
+    return false;
+  }
+  if (o.id.length === 0 || o.id.length > MAX_ID_LEN) return false;
+  const start = Date.parse(o.start_utc);
+  const end = Date.parse(o.end_utc);
+  if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return false;
+  if (end - start > MAX_DURATION_MS) return false;
+  if (
+    o.start_reason != null &&
+    (typeof o.start_reason !== "string" || o.start_reason.length > MAX_REASON_LEN)
+  ) {
+    return false;
+  }
+  if (
+    o.end_reason != null &&
+    (typeof o.end_reason !== "string" || o.end_reason.length > MAX_REASON_LEN)
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function json(obj: unknown, status = 200): Response {

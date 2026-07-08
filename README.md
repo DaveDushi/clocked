@@ -134,10 +134,11 @@ npx wrangler d1 create clocked
 # 2. Apply schema to the remote DB.
 npx wrangler d1 migrations apply clocked --remote
 
-# 3. Set the better-auth signing secret (any long random string) and, optionally,
-#    a legacy global BEARER_TOKEN fallback for pre-account single-user syncing.
+# 3. Set the better-auth signing secret (any long random string).
+#    Per-account clk_ tokens are preferred. A legacy global BEARER_TOKEN is only
+#    honored if you also set ALLOW_LEGACY_BEARER_TOKEN=true (not recommended).
 npx wrangler secret put BETTER_AUTH_SECRET
-npx wrangler secret put BEARER_TOKEN   # optional; per-account clk_ tokens are preferred
+npx wrangler secret put RESEND_API_KEY
 
 # 4. Edit wrangler.jsonc:
 #      REPORT_TZ       -> your IANA timezone, e.g. "America/New_York"
@@ -201,7 +202,7 @@ npm run dev   # serves the app + APIs on http://localhost:8787 (better-auth need
 # in another shell — sign up, grab the account's token, sync a session, read hours:
 BASE=http://localhost:8787
 curl -s -c cj.txt -X POST $BASE/api/auth/sign-up/email -H 'content-type: application/json' \
-  -d '{"email":"you@example.com","password":"supersecret1","name":"You"}'
+  -d '{"email":"you@example.com","password":"supersecret12","name":"You"}'
 TOK=$(curl -s -b cj.txt $BASE/api/token | sed -n 's/.*"token":"\(clk_[^"]*\)".*/\1/p')
 curl -s -X POST $BASE/sessions -H "Authorization: Bearer $TOK" -H 'content-type: application/json' \
   -d '{"sessions":[{"id":"t1","start_utc":"2026-06-30T02:00:00Z","end_utc":"2026-06-30T05:00:00Z","start_reason":"unlock","end_reason":"suspend"}]}'

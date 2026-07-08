@@ -596,7 +596,11 @@ const HTML = /* html */ `<!doctype html>
 
     <div class="card">
       <h3>Desktop sync token</h3>
-      <p class="hint">Your account's Bearer token. The desktop app sends it with every sync.</p>
+      <p class="hint">Your account's Bearer token. Shown in full only when created or regenerated — copy it into the desktop app immediately. Treat it like a password: anyone with it can sync sessions <b>and</b> open your dashboard from the tray app. Regenerate if it leaks.</p>
+      <div id="verifyBanner" class="msg err hidden" role="status" style="margin-bottom:12px">
+        Verify your email to use the dashboard, create a sync token, and send timesheets.
+        <button id="resendVerify" class="ghost" style="margin-left:8px">Resend email</button>
+      </div>
       <div class="setupbox">
         <a class="btn" href="/download">Download for Windows</a>
         <span class="muted">Install Clocked, then paste this token into the tray app Settings.</span>
@@ -732,7 +736,7 @@ async function submitAuth() {
   const password = $("password").value;
   $("authMsg").textContent = ""; $("authMsg").className = "msg";
   if (!email || !password) { $("authMsg").textContent = "Email and password required."; $("authMsg").className = "msg err"; return; }
-  if (mode === "signup" && password.length < 8) { $("authMsg").textContent = "Password must be at least 8 characters."; $("authMsg").className = "msg err"; return; }
+  if (mode === "signup" && password.length < 12) { $("authMsg").textContent = "Password must be at least 12 characters."; $("authMsg").className = "msg err"; return; }
 
   $("authBtn").disabled = true;
   let r, body;
@@ -789,7 +793,14 @@ async function afterLogin(fresh) {
   $("mDate").value = now.getFullYear() + "-" + pad(now.getMonth()+1) + "-" + pad(now.getDate());
   await acceptPendingInvite();
   await applyTeam();
-  await Promise.all([loadHours(), loadEmailSettings(), loadToken()]);
+  await loadToken();
+  // Data APIs require verified email — stop here until the user verifies.
+  if (!$("verifyBanner").classList.contains("hidden")) {
+    $("hoursMsg").textContent = "Verify your email to load hours and settings.";
+    $("hoursMsg").className = "msg";
+    return;
+  }
+  await Promise.all([loadHours(), loadEmailSettings()]);
 }
 
 // ---- teams / organizations ----------------------------------------------
@@ -1103,26 +1114,64 @@ $("orgCreateBtn").onclick = async () => {
   if (!name) { $("orgMsg").textContent = "Enter an organization name."; $("orgMsg").className = "msg err"; return; }
   const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "org";
   const slug = base + "-" + Math.random().toString(36).slice(2, 6);
-  const plan = $("orgPlan").value || "team";
+  // Plan is chosen at checkout — never trusted from the client on create.
+  const desiredPlan = $("orgPlan").value || "team";
   $("orgCreateBtn").disabled = true;
-  const r = await api("/api/auth/organization/create", { method:"POST", body: JSON.stringify({ name, slug, metadata: { plan } }) });
+  const r = await api("/api/auth/organization/create", { method:"POST", body: JSON.stringify({ name, slug, metadata: {} }) });
   $("orgCreateBtn").disabled = false;
-  if (r.ok) { $("orgName").value = ""; await applyTeam(); await loadEmailSettings(); }
+  if (r.ok) {
+    $("orgName").value = "";
+    await applyTeam();
+    await loadEmailSettings();
+    // Offer checkout for the selected tier (org starts unpaid / 1 seat).
+    if (desiredPlan === "team" || desiredPlan === "teamplus") {
+      $("orgMsg").textContent = "Organization created. Subscribe to unlock team seats.";
+      $("orgMsg").className = "msg ok";
+      pendingPlan = desiredPlan;
+    }
+  }
   else { const d = await r.json().catch(()=>({})); $("orgMsg").textContent = d.message || d.error || "Could not create organization."; $("orgMsg").className = "msg err"; }
 };
 
-// ---- token ----
-function setToken(t) {
-  $("token").textContent = t;
-  $("token").classList.add("reveal");
+// ---- token (full secret only on create/rotate; otherwise prefix only) ----
+let fullToken = "";
+function setTokenView(d) {
+  fullToken = d.token || "";
+  if (fullToken) {
+    $("token").textContent = fullToken;
+    $("token").classList.add("reveal");
+    $("tokenMsg").textContent = "Copy this token now - it will not be shown again.";
+    $("tokenMsg").className = "msg ok";
+  } else if (d.prefix) {
+    $("token").textContent = d.prefix + " (hidden)";
+    $("token").classList.add("reveal");
+  } else {
+    $("token").textContent = "........";
+    $("token").classList.remove("reveal");
+  }
 }
 async function loadToken() {
   const r = await api("/api/token");
-  if (r.ok) { const d = await r.json(); setToken(d.token); }
+  if (r.status === 403) {
+    $("verifyBanner").classList.remove("hidden");
+    return;
+  }
+  $("verifyBanner").classList.add("hidden");
+  if (r.ok) { const d = await r.json(); setTokenView(d); }
 }
+const resendBtn = $("resendVerify");
+if (resendBtn) resendBtn.onclick = async () => {
+  const r = await api("/api/auth/send-verification-email", { method:"POST", body: JSON.stringify({}) });
+  $("tokenMsg").textContent = r.ok ? "Verification email sent." : "Could not send verification email.";
+  $("tokenMsg").className = r.ok ? "msg ok" : "msg err";
+};
 $("copyToken").onclick = async () => {
-  const t = $("token").textContent;
-  try { await navigator.clipboard.writeText(t); $("tokenMsg").textContent = "Copied to clipboard."; $("tokenMsg").className = "msg ok"; }
+  if (!fullToken) {
+    $("tokenMsg").textContent = "Full token is hidden. Click Regenerate to mint a new one you can copy.";
+    $("tokenMsg").className = "msg";
+    return;
+  }
+  try { await navigator.clipboard.writeText(fullToken); $("tokenMsg").textContent = "Copied to clipboard."; $("tokenMsg").className = "msg ok"; }
   catch { $("tokenMsg").textContent = "Select the token and copy manually."; $("tokenMsg").className = "msg err"; }
 };
 let regenArmed = false;
@@ -1130,15 +1179,15 @@ $("regenToken").onclick = async () => {
   if (!regenArmed) {
     regenArmed = true;
     $("regenToken").textContent = "Confirm?";
-    $("tokenMsg").textContent = "This revokes your current token — the app will need the new one."; $("tokenMsg").className = "msg";
+    $("tokenMsg").textContent = "This revokes your current token - the app will need the new one."; $("tokenMsg").className = "msg";
     setTimeout(() => { regenArmed = false; $("regenToken").textContent = "Regenerate"; }, 4000);
     return;
   }
   regenArmed = false; $("regenToken").textContent = "Regenerate"; $("regenToken").disabled = true;
   const r = await api("/api/token/regenerate", { method:"POST" });
   $("regenToken").disabled = false;
-  if (r.ok) { const d = await r.json(); setToken(d.token); $("tokenMsg").textContent = "New token issued — paste it into the app's Settings."; $("tokenMsg").className = "msg ok"; }
-  else { $("tokenMsg").textContent = "Could not regenerate."; $("tokenMsg").className = "msg err"; }
+  if (r.ok) { const d = await r.json(); setTokenView(d); $("tokenMsg").textContent = "New token issued - paste it into the app's Settings now."; $("tokenMsg").className = "msg ok"; }
+  else { const e = await r.json().catch(()=>({})); $("tokenMsg").textContent = e.error || "Could not regenerate."; $("tokenMsg").className = "msg err"; }
 };
 
 // ---- hours ----
@@ -1148,7 +1197,7 @@ function rowHtml(x, max, i) {
   const dow = dt.toLocaleDateString(undefined, { weekday:"short" });
   const pct = x.minutes > 0 ? Math.max(2, Math.round((x.minutes / max) * 100)) : 0;
   const bar = x.minutes > 0 ? "<div class='bar' style='width:" + pct + "%; animation-delay:" + (i*30) + "ms'></div>" : "";
-  return "<tr title='" + x.label + "'>" +
+  return "<tr title='" + pvEsc(String(x.label || "")).replace(/'/g, "&#39;") + "'>" +
     "<td class='day'><span class='dow" + (wk ? " wk" : "") + "'>" + dow + "</span><b>" + Number(x.date.slice(8,10)) + "</b></td>" +
     "<td class='barcell'><div class='track'>" + bar + "</div></td>" +
     "<td class='num'>" + fmt(x.minutes) + "</td></tr>";

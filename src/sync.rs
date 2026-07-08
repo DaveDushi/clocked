@@ -110,7 +110,29 @@ fn run(cfg: &Config, timeout: Duration) -> Result<usize, Box<dyn std::error::Err
         return Err(format!("worker returned HTTP {}", resp.status()).into());
     }
 
-    let ids: Vec<String> = pending.iter().map(|s| s.id.clone()).collect();
+    // Prefer the Worker's `accepted` list so invalid/rejected sessions stay
+    // unsynced and can be retried. Fall back only for older Workers that omit it.
+    #[derive(serde::Deserialize)]
+    struct IngestResp {
+        accepted: Option<Vec<String>>,
+        upserted: Option<usize>,
+    }
+    let body: IngestResp = resp.json().unwrap_or(IngestResp {
+        accepted: None,
+        upserted: None,
+    });
+    let ids: Vec<String> = if let Some(accepted) = body.accepted {
+        accepted
+    } else if body.upserted == Some(pending.len()) {
+        pending.iter().map(|s| s.id.clone()).collect()
+    } else {
+        return Err(
+            "worker response missing accepted ids; refusing to mark sessions synced".into(),
+        );
+    };
+    if ids.is_empty() {
+        return Ok(0);
+    }
     crate::db::mark_synced(&conn, &ids)?;
     Ok(ids.len())
 }

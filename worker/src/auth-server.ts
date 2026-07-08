@@ -2,7 +2,8 @@ import { betterAuth } from "better-auth";
 import { organization } from "better-auth/plugins";
 
 import { desktopAuth } from "./desktop-auth";
-import { orgPlan, planCap } from "./plans";
+import { sendAuthEmail } from "./email";
+import { effectiveMemberCap } from "./plans";
 import type { Env } from "./types";
 
 // --- Workers-native password hashing (PBKDF2 via Web Crypto) --------------
@@ -50,6 +51,16 @@ async function verifyPassword({ hash, password }: { hash: string; password: stri
   return diff === 0;
 }
 
+/** Force plan metadata to the unpaid floor — Stripe webhooks elevate later. */
+function unpaidOrgMetadata(
+  incoming: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const rest = { ...(incoming || {}) };
+  // Never trust client-supplied plan (incl. enterprise / teamplus).
+  delete rest.plan;
+  return { ...rest, plan: "single" };
+}
+
 // --- better-auth instance --------------------------------------------------
 // Bindings only exist inside `fetch`, so build a fresh instance per request.
 // Public sign-up is enabled: each new account gets its own per-account API token
@@ -59,11 +70,57 @@ export function makeAuth(env: Env, allowSignUp = true) {
     database: env.DB, // native D1 (better-auth >= 1.5), no adapter
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,
-    trustedOrigins: [env.BETTER_AUTH_URL],
+    // Origins allowed to POST to auth endpoints (CSRF/origin check). Include every
+    // host the app is legitimately served from: the configured URL, the production
+    // domain on either protocol, and local dev on localhost/127.0.0.1. All are the
+    // app's own origins, so this doesn't widen the trust surface.
+    trustedOrigins: [
+      env.BETTER_AUTH_URL,
+      "https://clocked.daviddusi.com",
+      "http://clocked.daviddusi.com",
+      "http://localhost:8787",
+      "http://127.0.0.1:8787",
+    ].filter(Boolean),
+    emailVerification: {
+      sendOnSignUp: true,
+      sendOnSignIn: true,
+      autoSignInAfterVerification: true,
+      expiresIn: 60 * 60 * 24, // 24h
+      async sendVerificationEmail({ user, url }) {
+        await sendAuthEmail(env, {
+          to: user.email,
+          subject: "Verify your clocked email",
+          text: `Verify your clocked account:\n\n${url}\n\nThis link expires in 24 hours.`,
+          html: authEmailHtml(
+            "Verify your email",
+            "Confirm this address to activate desktop sync and timesheet delivery.",
+            url,
+            "Verify email",
+          ),
+        });
+      },
+    },
     emailAndPassword: {
       enabled: true,
-      disableSignUp: !allowSignUp, // public multi-account registration
+      disableSignUp: !allowSignUp,
+      // Soft: allow session creation so the dashboard can prompt verify.
+      // All data APIs require verified email (see requireVerifiedUser).
+      requireEmailVerification: false,
+      minPasswordLength: 12,
       password: { hash: hashPassword, verify: verifyPassword },
+      async sendResetPassword({ user, url }) {
+        await sendAuthEmail(env, {
+          to: user.email,
+          subject: "Reset your clocked password",
+          text: `Reset your clocked password:\n\n${url}\n\nIf you did not request this, ignore this email.`,
+          html: authEmailHtml(
+            "Reset your password",
+            "Choose a new password for your clocked account.",
+            url,
+            "Reset password",
+          ),
+        });
+      },
     },
     // Google sign-in — only registered when creds are configured, so local dev
     // without them still boots. Uses non-sensitive scopes (openid/email/profile),
@@ -77,33 +134,78 @@ export function makeAuth(env: Env, allowSignUp = true) {
             },
           }
         : undefined,
-    // Desktop "Open timesheet" auto-login: exchange the sync Bearer token for a
-    // browser session cookie (see desktop-auth.ts).
     plugins: [
       desktopAuth(env),
-      // Organizations, teams & roles. A manager = a member whose org role is
-      // "owner"/"admin"; a worker = "member". The org creator becomes an owner.
-      // Sub-teams are enabled but optional. v1 surfaces the invite link in the
-      // dashboard; emailing invites via Resend (email.ts) is a fast-follow, so
-      // sendInvitationEmail is a no-op that must resolve (not throw) for invites
-      // to succeed.
       organization({
         creatorRole: "owner",
         teams: { enabled: true },
-        // Enforce the pricing tier's member cap. The org's plan lives in its
-        // metadata (set at create time); look it up authoritatively by id so the
-        // limit holds even if the passed org omits metadata. Solo isn't an org
-        // plan (it means no org), so the floor is Team (5).
+        // Paid seat cap only. Unpaid orgs are hard-capped at 1 (owner).
         membershipLimit: async (_user, org) => {
           const id = (org as { id?: string } | null)?.id;
-          if (!id) return planCap("team");
-          const row = await env.DB.prepare("SELECT metadata FROM organization WHERE id = ?")
-            .bind(id)
-            .first<{ metadata: string | null }>();
-          return planCap(orgPlan(row?.metadata));
+          if (!id) return 1;
+          return effectiveMemberCap(env, id);
         },
-        async sendInvitationEmail() {
-          /* no-op for v1 — the dashboard shows a copyable invite link */
+        organizationHooks: {
+          // Strip any client-supplied plan; only Stripe may elevate seats.
+          async beforeCreateOrganization({ organization: org }) {
+            return {
+              data: {
+                ...org,
+                metadata: unpaidOrgMetadata(
+                  org.metadata as Record<string, unknown> | undefined,
+                ),
+              },
+            };
+          },
+          async beforeUpdateOrganization({ organization: patch }) {
+            // Clients may not change plan via metadata — re-read and re-apply
+            // the server plan whenever metadata is part of the update.
+            if (patch.metadata === undefined) return;
+            let incoming: Record<string, unknown> = {};
+            try {
+              incoming =
+                typeof patch.metadata === "string"
+                  ? (JSON.parse(patch.metadata) as Record<string, unknown>)
+                  : { ...(patch.metadata as Record<string, unknown>) };
+            } catch {
+              incoming = {};
+            }
+            delete incoming.plan;
+            // Best effort: keep whatever plan is already stored for this org id
+            // if the client included one (adapter update is by organizationId).
+            const orgId = (patch as { id?: string }).id;
+            let existingPlan = "single";
+            if (orgId) {
+              const row = await env.DB.prepare("SELECT metadata FROM organization WHERE id = ?")
+                .bind(orgId)
+                .first<{ metadata: string | null }>();
+              try {
+                const cur = row?.metadata ? JSON.parse(row.metadata) : null;
+                if (cur && typeof cur.plan === "string") existingPlan = cur.plan;
+              } catch {
+                /* keep single */
+              }
+            }
+            incoming.plan = existingPlan;
+            return { data: { metadata: incoming } };
+          },
+        },
+        async sendInvitationEmail(data) {
+          const base = env.BETTER_AUTH_URL.replace(/\/$/, "");
+          const url = `${base}/?invitation=${encodeURIComponent(data.id)}`;
+          const orgName = data.organization?.name || "a team";
+          const inviterName = data.inviter?.user?.name || data.inviter?.user?.email || "A teammate";
+          await sendAuthEmail(env, {
+            to: data.email,
+            subject: `You're invited to ${orgName} on clocked`,
+            text: `${inviterName} invited you to join ${orgName} on clocked.\n\nAccept: ${url}\n`,
+            html: authEmailHtml(
+              `Join ${orgName}`,
+              `${inviterName} invited you to track time with their team on clocked.`,
+              url,
+              "Accept invitation",
+            ),
+          });
         },
       }),
     ],
@@ -116,9 +218,28 @@ export function makeAuth(env: Env, allowSignUp = true) {
       enabled: true,
       window: 60,
       max: 100, // in-memory per-isolate limiter; fine at this scale
-      customRules: { "/sign-in/email": { window: 10, max: 3 } }, // throttle password verify
+      customRules: {
+        "/sign-in/email": { window: 10, max: 3 },
+        "/sign-up/email": { window: 60, max: 5 },
+        "/request-password-reset": { window: 60, max: 3 },
+        "/send-verification-email": { window: 60, max: 3 },
+      },
     },
   });
 }
 
 export type Auth = ReturnType<typeof makeAuth>;
+
+function authEmailHtml(title: string, body: string, url: string, cta: string): string {
+  const esc = (s: string) =>
+    s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+  return `<!doctype html><html><body style="margin:0;background:#f0f1f3;padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden">
+    <tr><td style="padding:28px">
+      <div style="font-size:22px;font-weight:700;color:#111827">${esc(title)}</div>
+      <p style="font-size:14px;color:#4b5563;line-height:1.6">${esc(body)}</p>
+      <p style="margin:24px 0"><a href="${esc(url)}" style="display:inline-block;background:#f2a950;color:#221503;text-decoration:none;font-weight:600;padding:12px 18px;border-radius:10px">${esc(cta)}</a></p>
+      <p style="font-size:12px;color:#9ca3af;word-break:break-all">${esc(url)}</p>
+    </td></tr>
+  </table></body></html>`;
+}

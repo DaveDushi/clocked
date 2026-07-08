@@ -10,6 +10,7 @@ mod events;
 mod idle;
 mod keepalive;
 mod paths;
+mod secret;
 mod settings;
 mod sync;
 mod tray;

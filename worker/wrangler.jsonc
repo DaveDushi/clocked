@@ -26,22 +26,28 @@
 
   "vars": {
     "REPORT_TZ": "America/New_York",
-    "MAIL_TO": "ddushey101@gmail.com",
+    // Legacy fallback only; per-user mail_to / account email is preferred.
+    "MAIL_TO": "",
     "MAIL_FROM": "timesheet@clocked.daviddusi.com",
     // Public base URL of this worker (used by better-auth for the dashboard login).
     "BETTER_AUTH_URL": "https://clocked.daviddusi.com",
-    // Stripe recurring Price ids (test mode). Non-secret. Created via the Stripe
-    // API; re-create in live mode and swap these before going to production.
+    // Stripe recurring Price ids. These are currently TEST mode — replace with
+    // live price_… ids and sk_live_ / whsec_ secrets before production billing.
+    // Never commit live secret keys; only non-secret price ids belong in vars.
     "STRIPE_PRICE_SINGLE": "price_1TqxRf2RA3egFzX7NKPO3Oup",
     "STRIPE_PRICE_TEAM": "price_1TqxRg2RA3egFzX7QRRwsJk0",
     "STRIPE_PRICE_TEAMPLUS": "price_1TqxRg2RA3egFzX7ZS8QsXFx"
   }
 
   // Secrets (do NOT put in vars):
-  //   wrangler secret put BEARER_TOKEN
   //   wrangler secret put BETTER_AUTH_SECRET   # 32+ random chars
   //   wrangler secret put RESEND_API_KEY       # Resend API key (timesheet emails)
   //   wrangler secret put STRIPE_SECRET_KEY    # sk_test_... / sk_live_...
   //   wrangler secret put STRIPE_WEBHOOK_SECRET # whsec_... from the webhook endpoint
+  // Optional Google OAuth:
+  //   wrangler secret put GOOGLE_CLIENT_ID
+  //   wrangler secret put GOOGLE_CLIENT_SECRET
+  // Legacy single-user bearer (off by default; only with ALLOW_LEGACY_BEARER_TOKEN=true):
+  //   wrangler secret put BEARER_TOKEN
   // For local dev these live in worker/.dev.vars (gitignored).
 }

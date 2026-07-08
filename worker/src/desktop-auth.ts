@@ -2,6 +2,7 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import { setSessionCookie } from "better-auth/cookies";
 import * as z from "zod";
 
+import { rateLimitAllowDurable } from "./rate-limit";
 import { userIdForToken } from "./tokens";
 import type { Env } from "./types";
 
@@ -13,14 +14,19 @@ import type { Env } from "./types";
 //   1. POST /api/auth/desktop/link   (Authorization: Bearer clk_…)
 //        -> mints a single-use, short-lived code and returns its open URL
 //   2. GET  /api/auth/desktop/open?code=…
-//        -> validates the code, creates a session, sets the cookie, redirects
+//        -> validates the code, creates a *short-lived* session, sets cookie, redirects
+//
+// Threat model: the sync token is equivalent to account login via this bridge.
+// Mitigations: single-use codes, short code TTL, short desktop sessions, D1 rate
+// limits, hashed tokens at rest, regenerate-to-revoke. Keep the token secret.
 //
 // The code is stored in better-auth's own `verification` table via
 // createVerificationValue / consumeVerificationValue (atomic, single-use, with
-// expiry) — so no extra table or migration is needed. Session creation mirrors
-// better-auth's magic-link verify endpoint exactly.
+// expiry) — so no extra table or migration is needed.
 
 const CODE_TTL_MS = 2 * 60 * 1000; // 2 minutes — the app opens it immediately
+/** Desktop-minted browser sessions expire sooner than normal cookie sessions. */
+const DESKTOP_SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 const CODE_PREFIX = "desktop-login:"; // verification identifier namespace
 
 function generateLoginCode(): string {
@@ -44,6 +50,18 @@ export function desktopAuth(env: Env) {
           const userId = await userIdForToken(env, bearer);
           if (!userId) throw ctx.error("UNAUTHORIZED");
 
+          // Durable limits: stolen tokens should not mint unlimited login codes.
+          if (!(await rateLimitAllowDurable(env.DB, `desktop-link:user:${userId}`, 10, 60 * 60_000))) {
+            throw ctx.error("TOO_MANY_REQUESTS");
+          }
+          const ip =
+            ctx.headers?.get("cf-connecting-ip") ||
+            ctx.headers?.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+            "unknown";
+          if (!(await rateLimitAllowDurable(env.DB, `desktop-link:ip:${ip}`, 30, 60 * 60_000))) {
+            throw ctx.error("TOO_MANY_REQUESTS");
+          }
+
           const code = generateLoginCode();
           await ctx.context.internalAdapter.createVerificationValue({
             identifier: CODE_PREFIX + code,
@@ -62,7 +80,7 @@ export function desktopAuth(env: Env) {
         },
       ),
 
-      // Consume a one-time code and start a browser session for its owner.
+      // Consume a one-time code and start a short-lived browser session.
       desktopOpen: createAuthEndpoint(
         "/desktop/open",
         { method: "GET", query: z.object({ code: z.string() }) },
@@ -79,17 +97,31 @@ export function desktopAuth(env: Env) {
           const session = await ctx.context.internalAdapter.createSession(user.id);
           if (!session) throw ctx.redirect(home);
 
+          // Clamp lifetime: token-for-session bridge is high risk if token leaks.
+          const shortExpiry = new Date(Date.now() + DESKTOP_SESSION_TTL_MS);
+          const currentExpiry = new Date(session.expiresAt);
+          if (currentExpiry > shortExpiry) {
+            try {
+              await env.DB.prepare(`UPDATE session SET expiresAt = ? WHERE id = ?`)
+                .bind(shortExpiry.toISOString(), session.id)
+                .run();
+              (session as { expiresAt: Date }).expiresAt = shortExpiry;
+            } catch (e) {
+              console.error("desktop session clamp failed:", String((e as Error)?.message ?? e));
+            }
+          }
+
           await setSessionCookie(ctx, { session, user });
           throw ctx.redirect(home);
         },
       ),
     },
-    // Keep the code-mint and open endpoints modestly rate-limited.
+    // better-auth in-memory limiter (pairs with D1 limits above).
     rateLimit: [
       {
         pathMatcher: (path: string) => path.startsWith("/desktop/"),
         window: 60,
-        max: 20,
+        max: 10,
       },
     ],
   };

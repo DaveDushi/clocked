@@ -4,8 +4,13 @@ export interface Env {
   DB: D1Database;
   /** Resend API key for sending timesheet emails (wrangler secret). */
   RESEND_API_KEY: string;
-  /** Shared secret matching the desktop app's config (wrangler secret). */
-  BEARER_TOKEN: string;
+  /**
+   * Legacy global Bearer for unattributed ingest (wrangler secret).
+   * Only honored when ALLOW_LEGACY_BEARER_TOKEN is "true"/"1". Prefer per-account clk_ tokens.
+   */
+  BEARER_TOKEN?: string;
+  /** Opt-in: allow BEARER_TOKEN to authenticate POST /sessions (default off). */
+  ALLOW_LEGACY_BEARER_TOKEN?: string;
   /** IANA timezone used for day names, day boundaries, and the cron gate. */
   REPORT_TZ: string;
   /** Default timesheet recipient; overridden by the `mail_to` setting if set. */

@@ -101,6 +101,14 @@ export async function buildAndSendReport(
 ): Promise<SendResult> {
   const { userId, to } = opts;
 
+  if (!env.RESEND_API_KEY) {
+    console.error("buildAndSendReport: RESEND_API_KEY not configured");
+    return { ok: false, period, rows: 0, error: "email not configured" };
+  }
+  if (!to.length) {
+    return { ok: false, period, rows: 0, error: "no recipients" };
+  }
+
   if (!opts.force) {
     const existing = await env.DB.prepare(
       "SELECT period FROM sent_reports WHERE period = ? AND userId = ?",
@@ -143,10 +151,13 @@ export async function buildAndSendReport(
       }),
     });
     if (!res.ok) {
-      return { ok: false, period, rows, error: `resend ${res.status}: ${await res.text()}` };
+      const detail = await res.text();
+      console.error(`buildAndSendReport resend ${res.status}: ${detail.slice(0, 200)}`);
+      return { ok: false, period, rows, error: "email send failed" };
     }
   } catch (e) {
-    return { ok: false, period, rows, error: String((e as Error)?.message ?? e) };
+    console.error("buildAndSendReport error:", String((e as Error)?.message ?? e));
+    return { ok: false, period, rows, error: "email send failed" };
   }
 
   if (!opts.force) {
@@ -162,6 +173,42 @@ export async function buildAndSendReport(
 
 /** Fixed recipient for Enterprise "Contact sales" leads. */
 const SALES_INBOX = "ddusi@easytomanage.com";
+
+/** Low-level Resend send for auth/transactional mail (verify, reset, invites). */
+export async function sendAuthEmail(
+  env: Env,
+  opts: { to: string; subject: string; text: string; html: string },
+): Promise<{ ok: boolean; error?: string }> {
+  if (!env.RESEND_API_KEY) {
+    console.error("sendAuthEmail: RESEND_API_KEY not configured");
+    return { ok: false, error: "email not configured" };
+  }
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        from: `clocked <${env.MAIL_FROM}>`,
+        to: [opts.to],
+        subject: opts.subject,
+        html: opts.html,
+        text: opts.text,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(`sendAuthEmail resend ${res.status}: ${body.slice(0, 200)}`);
+      return { ok: false, error: "email send failed" };
+    }
+  } catch (e) {
+    console.error("sendAuthEmail error:", String((e as Error)?.message ?? e));
+    return { ok: false, error: "email send failed" };
+  }
+  return { ok: true };
+}
 
 export interface SalesLead {
   name: string;
@@ -180,6 +227,11 @@ export async function sendContactSales(
   env: Env,
   lead: SalesLead,
 ): Promise<{ ok: boolean; error?: string }> {
+  if (!env.RESEND_API_KEY) {
+    console.error("sendContactSales: RESEND_API_KEY not configured");
+    return { ok: false, error: "email not configured" };
+  }
+
   const fields: [string, string][] = [
     ["Name", lead.name],
     ["Email", lead.email],
@@ -241,9 +293,14 @@ export async function sendContactSales(
         text,
       }),
     });
-    if (!res.ok) return { ok: false, error: `resend ${res.status}: ${await res.text()}` };
+    if (!res.ok) {
+      const detail = await res.text();
+      console.error(`sendContactSales resend ${res.status}: ${detail.slice(0, 200)}`);
+      return { ok: false, error: "email send failed" };
+    }
   } catch (e) {
-    return { ok: false, error: String((e as Error)?.message ?? e) };
+    console.error("sendContactSales error:", String((e as Error)?.message ?? e));
+    return { ok: false, error: "email send failed" };
   }
   return { ok: true };
 }

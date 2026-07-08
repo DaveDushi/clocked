@@ -10,13 +10,11 @@
 import Stripe from "stripe";
 
 import { makeAuth } from "./auth-server";
-import { orgPlan } from "./plans";
+import { orgPlan, SELF_SERVE_PLANS, type SelfServePlan } from "./plans";
 import type { Env } from "./types";
 
 // The smallest tier; a canceled/lapsed subscription reverts an org to this.
 const FLOOR_PLAN = "single";
-const SELF_SERVE_PLANS = ["single", "team", "teamplus"] as const;
-type SelfServePlan = (typeof SELF_SERVE_PLANS)[number];
 
 export function isSelfServePlan(plan: string): plan is SelfServePlan {
   return (SELF_SERVE_PLANS as readonly string[]).includes(plan);
@@ -180,7 +178,8 @@ export async function handleWebhook(req: Request, env: Env): Promise<Response> {
       undefined,
       cryptoProvider,
     );
-  } catch {
+  } catch (e) {
+    console.error("stripe webhook signature error:", String((e as Error)?.message ?? e));
     return json({ error: "invalid signature" }, 400);
   }
 
@@ -194,8 +193,9 @@ export async function handleWebhook(req: Request, env: Env): Promise<Response> {
     await handleEvent(env, stripe, event);
   } catch (e) {
     // Roll back the ledger row so Stripe's retry can reprocess.
+    console.error("stripe webhook handler failed:", String((e as Error)?.message ?? e));
     await env.DB.prepare("DELETE FROM stripe_events WHERE id = ?").bind(event.id).run();
-    return json({ error: "handler failed", detail: String(e) }, 500);
+    return json({ error: "handler failed" }, 500);
   }
   return json({ received: true });
 }
