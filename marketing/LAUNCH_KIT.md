@@ -1,9 +1,18 @@
 # clocked — launch kit
 
-Ready-to-post copy for launch. Site: https://clocked.daviddusi.com  
-Download: https://clocked.daviddusi.com/download  
-Source: https://github.com/DaveDushi/clocked  
-OG image: https://clocked.daviddusi.com/og.jpg
+Ready-to-post copy for launch.
+
+| | |
+|--|--|
+| Site | https://clocked.daviddusi.com |
+| Download | https://clocked.daviddusi.com/download |
+| Press | https://clocked.daviddusi.com/press |
+| Source | https://github.com/DaveDushi/clocked |
+| OG image | https://clocked.daviddusi.com/og.jpg |
+| SEO | https://clocked.daviddusi.com/sitemap.xml · /robots.txt · /llms.txt |
+
+**Note:** Agents cannot create or operate X/Reddit/HN/Product Hunt accounts for you.
+Post the copy below from your accounts (or grant a social integration later).
 
 ---
 

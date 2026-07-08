@@ -13,8 +13,9 @@ export function withSecurityHeaders(res: Response, req?: Request): Response {
   });
 
   // Preserve each Set-Cookie as its own header (sign-out clears several cookies).
-  const setCookies =
-    typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
+  // getSetCookie() exists on undici/Workers Headers but not all TS lib typings.
+  const hdr = res.headers as Headers & { getSetCookie?: () => string[] };
+  const setCookies = typeof hdr.getSetCookie === "function" ? hdr.getSetCookie() : [];
   if (setCookies.length > 0) {
     for (const c of setCookies) headers.append("Set-Cookie", c);
   } else {

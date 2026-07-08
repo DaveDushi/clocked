@@ -29,6 +29,9 @@ const HTML = /* html */ `<!doctype html>
 <meta name="twitter:title" content="clocked — automatic Windows time tracking" />
 <meta name="twitter:description" content="Automatic time tracking for Windows. No timers. No spyware. Monthly timesheet by email." />
 <meta name="twitter:image" content="https://clocked.daviddusi.com/og.jpg" />
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"clocked","applicationCategory":"BusinessApplication","operatingSystem":"Windows","offers":{"@type":"Offer","price":"0","priceCurrency":"USD","description":"Open-source desktop; hosted cloud plans available"},"description":"Automatic Windows time tracking from power and session events. Cloud sync and monthly timesheet email.","url":"https://clocked.daviddusi.com/","downloadUrl":"https://clocked.daviddusi.com/download","softwareVersion":"0.1.6","license":"https://opensource.org/licenses/MIT","codeRepository":"https://github.com/DaveDushi/clocked"}
+</script>
 <link rel="icon" type="image/png" href="/favicon.ico" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -672,6 +675,7 @@ const HTML = /* html */ `<!doctype html>
     <p class="footer-note">
       Source on <a href="https://github.com/DaveDushi/clocked" target="_blank" rel="noopener">GitHub</a>
       · Installer via <a href="/download">/download</a>
+      · <a href="/press">Press kit</a>
       · Questions? Use Contact sales on Enterprise or open an issue on the repo.
     </p>
 

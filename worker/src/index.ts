@@ -4,6 +4,12 @@ import { dashboardResponse } from "./dashboard";
 import { downloadResponse, isDownloadMethod } from "./download";
 import { faviconResponse } from "./favicon";
 import { ogImageResponse } from "./og";
+import {
+  llmsTxtResponse,
+  pressPageResponse,
+  robotsTxtResponse,
+  sitemapXmlResponse,
+} from "./marketing-pages";
 import { buildAndSendReport, sendContactSales, sendMonthlyReports, SEND_DAY_LAST } from "./email";
 import { handleIngest } from "./ingest";
 import { buildHoursReport, buildReportCsv } from "./report";
@@ -77,6 +83,10 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   if (req.method === "GET" && (url.pathname === "/og.jpg" || url.pathname === "/og.png")) {
     return ogImageResponse();
   }
+  if (req.method === "GET" && url.pathname === "/robots.txt") return robotsTxtResponse();
+  if (req.method === "GET" && url.pathname === "/sitemap.xml") return sitemapXmlResponse();
+  if (req.method === "GET" && url.pathname === "/llms.txt") return llmsTxtResponse();
+  if (req.method === "GET" && url.pathname === "/press") return pressPageResponse();
   if (req.method === "GET" && url.pathname === "/health") {
     return new Response("clocked-worker ok\n", { status: 200 });
   }

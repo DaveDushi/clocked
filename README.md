@@ -1,20 +1,31 @@
 # clocked
 
-**Automatic Windows time tracking — no timers.**  
-Live: [clocked.daviddusi.com](https://clocked.daviddusi.com) · [Download](https://clocked.daviddusi.com/download)
+**Automatic Windows time tracking — no timers.**
+
+[Live site](https://clocked.daviddusi.com) · [Download for Windows](https://clocked.daviddusi.com/download) · [Press kit](https://clocked.daviddusi.com/press)
 
 A background tray app clocks you in/out from machine **power** and **session**
 events, stores sessions locally in SQLite, and syncs them to a Cloudflare Worker
-that emails you a monthly report — whether or not your laptop is awake at
-month-end. Desktop is open source; hosted cloud sync/dashboard is paid (self-host
-the Worker if you prefer).
+that emails a monthly report — whether or not your laptop is awake at month-end.
+
+| | |
+|--|--|
+| **Desktop** | Open source (MIT), Windows tray, local SQLite source of truth |
+| **Cloud** | Optional paid host for sync, dashboard, teams, email timesheets |
+| **Self-host** | Point the app at your own Worker |
 
 ```
 Windows tray app (Rust)                     Cloudflare Worker (TypeScript)
   wake / unlock  -> clock in                  POST /sessions -> D1 (upsert by id)
-  sleep / lock   -> clock out                 cron (daily, acts on the 1st)
-  local SQLite (source of truth)   --HTTPS--> emails previous month via send_email
+  sleep / lock   -> clock out                 cron (daily; per-user send day)
+  local SQLite (source of truth)   --HTTPS--> Resend: monthly timesheet email
 ```
+
+### Why it exists
+
+Most trackers make you babysit a timer. clocked uses what Windows already knows
+(unlock, lock, idle, sleep) so freelancers and small teams get honest hours
+without screenshots or keylogging.
 
 ## Clock rules
 
