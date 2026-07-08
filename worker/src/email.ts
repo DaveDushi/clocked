@@ -1,6 +1,6 @@
 import type { Env } from "./types";
 import { buildReportCsv, buildHoursReport, formatHours, isWorkDay, type HoursReport } from "./report";
-import { getRecipients } from "./settings";
+import { getEffectiveRecipients, getEffectiveSendDay } from "./settings";
 
 /** UTF-8-safe base64 (btoa alone mangles non-ASCII in session labels). */
 function toBase64(s: string): string {
@@ -254,26 +254,27 @@ export const SEND_DAY_LAST = 99;
 /**
  * Monthly cron fan-out: email every account its own report for `period`.
  * The cron fires daily, so each user is only sent when `dayOfMonth` matches
- * their configured send day: default 1, 0 disables auto-send, and 99 (LAST)
- * resolves to `lastDayOfMonth`. Recipients are the user's `mail_to`
- * override(s) or their account email.
+ * their *effective* send day: for a team member that's the manager's org-level
+ * schedule; for a solo user their own (default 1, 0 disables, 99 = last day).
+ * Recipients are likewise the effective ones — the manager's team destination in
+ * a team, or the user's own `mail_to`/account email when solo.
  */
 export async function sendMonthlyReports(
   env: Env,
   period: string,
   opts: { force: boolean; dayOfMonth: number; lastDayOfMonth: number },
 ): Promise<void> {
-  const users = await env.DB.prepare(
-    `SELECT u.id AS id, u.email AS email, s.send_day AS send_day
-       FROM user u LEFT JOIN user_settings s ON s.userId = u.id`,
-  ).all<{ id: string; email: string; send_day: number | null }>();
+  const users = await env.DB.prepare(`SELECT id, email FROM user`).all<{
+    id: string;
+    email: string;
+  }>();
   for (const u of users.results ?? []) {
-    const sendDay = u.send_day ?? 1;
+    const sendDay = await getEffectiveSendDay(env, u.id);
     if (sendDay === 0) continue;
     const target = sendDay === SEND_DAY_LAST ? opts.lastDayOfMonth : sendDay;
     if (target !== opts.dayOfMonth) continue;
-    const to = await getRecipients(env, u.id, u.email);
-    if (to.length === 0) continue;
-    await buildAndSendReport(env, period, { force: opts.force, userId: u.id, to });
+    const { recipients } = await getEffectiveRecipients(env, u.id, u.email);
+    if (recipients.length === 0) continue;
+    await buildAndSendReport(env, period, { force: opts.force, userId: u.id, to: recipients });
   }
 }

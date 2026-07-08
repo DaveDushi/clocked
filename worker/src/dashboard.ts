@@ -474,6 +474,21 @@ const HTML = /* html */ `<!doctype html>
       <b>Account created.</b> Your desktop sync token is below — copy it now and
       paste it into the app. You can always find it again here.
     </div>
+    <div id="billingBanner" class="banner hidden">
+      <b>Payment received.</b> Your plan will refresh here shortly.
+    </div>
+
+    <!-- Solo billing — shown when the user belongs to no organization. -->
+    <div id="soloBillingCard" class="card hidden">
+      <h3>Your plan</h3>
+      <p class="hint">You&rsquo;re on the personal dashboard. Subscribe to Single to support clocked &mdash; 25&cent;/day, billed monthly.</p>
+      <div class="row" style="align-items:center">
+        <span class="muted" style="font-size:13px">Single &middot; just you &middot; $7.50/mo</span>
+        <span class="rspacer" style="flex:1"></span>
+        <button id="soloBillingBtn">Subscribe</button>
+      </div>
+      <div id="soloBillingMsg" class="msg" role="status"></div>
+    </div>
 
     <!-- Org onboarding — shown only when the user belongs to no organization. -->
     <div id="orgSetupCard" class="card hidden">
@@ -497,12 +512,19 @@ const HTML = /* html */ `<!doctype html>
       <div id="orgMsg" class="msg" role="status"></div>
     </div>
 
-    <!-- Team — shown only to managers (org role owner/admin). -->
+    <!-- Team — shown to managers (org role owner/admin). Also hosts the personal
+         "Single" plan view, in which the invite/roster UI is hidden. -->
     <div id="teamCard" class="card hidden">
-      <h3>Team <span id="teamOrgName" class="muted"></span></h3>
-      <p class="hint">Invite members and open anyone&rsquo;s timesheet. Members only ever see their own hours.</p>
+      <h3 id="teamCardTitle">Team <span id="teamOrgName" class="muted"></span></h3>
+      <p class="hint" id="teamCardHint">Invite members and open anyone&rsquo;s timesheet. Members only ever see their own hours.</p>
       <div id="teamPlanInfo" class="muted" style="font-size:13px;margin:-8px 0 12px"></div>
-      <div class="row">
+      <div id="billingRow" class="row" style="align-items:center;margin:-4px 0 12px">
+        <span id="billingStatus" class="muted" style="font-size:13px"></span>
+        <span class="rspacer" style="flex:1"></span>
+        <button id="billingBtn" class="ghost">Manage billing</button>
+      </div>
+      <div id="billingMsg" class="msg" role="status"></div>
+      <div id="inviteRow" class="row">
         <div>
           <label for="inviteEmail">Invite by email</label>
           <input id="inviteEmail" type="email" placeholder="teammate@example.com" />
@@ -593,22 +615,25 @@ const HTML = /* html */ `<!doctype html>
     </div>
 
     <div class="card">
-      <h3>Monthly timesheet</h3>
-      <p class="hint">Where your report is emailed. Add as many recipients as you like.</p>
-      <div id="recipients" class="recipients"></div>
-      <div class="schedule">
-        <label class="check"><input type="checkbox" id="autoSend"> Email my timesheet automatically each month</label>
-        <div id="sendDayWrap" class="sendday">
-          <span>Send on the</span>
-          <select id="sendDay"></select>
-          <span>of each month.</span>
+      <h3 id="emailTitle">Monthly timesheet</h3>
+      <p class="hint" id="emailHint">Where your report is emailed. Add as many recipients as you like.</p>
+      <div id="emailReadonly" class="hidden"></div>
+      <div id="emailEdit">
+        <div id="recipients" class="recipients"></div>
+        <div class="schedule">
+          <label class="check"><input type="checkbox" id="autoSend"> Email the timesheet automatically each month</label>
+          <div id="sendDayWrap" class="sendday">
+            <span>Send on the</span>
+            <select id="sendDay"></select>
+            <span>of each month.</span>
+          </div>
         </div>
-      </div>
-      <div class="row">
-        <button id="addRecipient" class="ghost">+ Add recipient</button>
-        <button id="previewBtn" class="ghost">Preview</button>
-        <button id="saveEmail">Save</button>
-        <button id="sendNow">Send now</button>
+        <div class="row">
+          <button id="addRecipient" class="ghost">+ Add recipient</button>
+          <button id="previewBtn" class="ghost">Preview</button>
+          <button id="saveEmail">Save</button>
+          <button id="sendNow">Send now</button>
+        </div>
       </div>
       <div id="emailMsg" class="msg" role="status"></div>
       <div id="previewPanel" class="preview hidden"></div>
@@ -756,11 +781,15 @@ async function init() {
 
 async function afterLogin(fresh) {
   $("freshBanner").classList.toggle("hidden", !fresh);
+  const billingRet = new URLSearchParams(location.search).get("billing");
+  if (billingRet) history.replaceState({}, "", location.pathname);
+  $("billingBanner").classList.toggle("hidden", billingRet !== "success");
   const now = new Date();
   $("month").value = now.getFullYear() + "-" + pad(now.getMonth()+1);
   $("mDate").value = now.getFullYear() + "-" + pad(now.getMonth()+1) + "-" + pad(now.getDate());
   await acceptPendingInvite();
-  await Promise.all([loadHours(), loadSettings(), loadToken(), loadTeam()]);
+  await applyTeam();
+  await Promise.all([loadHours(), loadEmailSettings(), loadToken()]);
 }
 
 // ---- teams / organizations ----------------------------------------------
@@ -768,7 +797,8 @@ async function afterLogin(fresh) {
 // any member's timesheet. Membership actions hit better-auth's own
 // /api/auth/organization/* endpoints; hours reads hit our guarded /api/team/*.
 let orgId = "", orgName = "", meEmail = "", openMemberId = "", openMemberName = "";
-let orgCap = 0, orgPlanLabel = "";
+let orgCap = 0, orgPlanLabel = "", orgPlanKey = "", billingStatus = "";
+let emailMode = "solo"; // "solo" | "manager" | "member" — who controls timesheet delivery
 
 function isManagerRoleC(role) {
   return String(role || "").split(",").some((r) => { const t = r.trim(); return t === "owner" || t === "admin"; });
@@ -783,32 +813,104 @@ async function acceptPendingInvite() {
   history.replaceState({}, "", location.pathname);
 }
 
-async function loadTeam() {
-  orgId = ""; orgName = ""; openMemberId = "";
+async function applyTeam() {
+  orgId = ""; orgName = ""; openMemberId = ""; emailMode = "solo";
+  orgPlanKey = ""; billingStatus = "";
   $("teamCard").classList.add("hidden");
   $("orgSetupCard").classList.add("hidden");
+  $("soloBillingCard").classList.add("hidden");
   $("teamMemberPanel").classList.add("hidden");
   $("inviteLinkBox").classList.add("hidden");
   const r = await api("/api/me");
-  if (!r.ok) return;
+  if (!r.ok) { configureEmailCard(); return; }
   const me = await r.json();
   meEmail = (me.user && me.user.email) || "";
   const mgr = (me.orgs || []).find((o) => isManagerRoleC(o.role));
   if (mgr) {
+    emailMode = "manager";
     orgId = mgr.organizationId; orgName = mgr.name || "";
     orgCap = mgr.cap || 0; orgPlanLabel = mgr.planLabel || "Team";
+    orgPlanKey = mgr.plan || ""; billingStatus = mgr.billingStatus || "";
     $("teamOrgName").textContent = orgName ? "· " + orgName : "";
     $("teamCard").classList.remove("hidden");
+    configureBillingUI();
     updateTeamUsage(mgr.memberCount || 0);
-    await loadRoster();
-  } else if (!(me.orgs && me.orgs.length)) {
+    if (orgPlanKey !== "single") await loadRoster();
+  } else if (me.orgs && me.orgs.length) {
+    emailMode = "member"; // in a team but not a manager — delivery is manager-controlled
+  } else {
     if (pendingPlan === "teamplus") $("orgPlan").value = "teamplus"; else $("orgPlan").value = "team";
     $("orgSetupCard").classList.remove("hidden");
+    $("soloBillingCard").classList.remove("hidden");
+  }
+  configureEmailCard();
+}
+
+// A "single"-plan org is a personal account: hide the team invite/roster UI and
+// relabel the card. Any org shows its subscription state + a subscribe/manage CTA.
+function configureBillingUI() {
+  const single = orgPlanKey === "single";
+  const active = billingStatus === "active" || billingStatus === "trialing" || billingStatus === "past_due";
+  $("inviteRow").classList.toggle("hidden", single);
+  $("roster").classList.toggle("hidden", single);
+  $("teamOrgName").classList.toggle("hidden", single);
+  $("teamCardTitle").firstChild.textContent = single ? "Your plan " : "Team ";
+  $("teamCardHint").textContent = single
+    ? "Your personal subscription."
+    : "Invite members and open anyone's timesheet. Members only ever see their own hours.";
+  $("billingStatus").textContent = active
+    ? ("Subscribed · " + billingStatus)
+    : "No active subscription";
+  $("billingBtn").textContent = active ? "Manage billing" : "Subscribe";
+}
+
+$("billingBtn").onclick = async () => {
+  const active = billingStatus === "active" || billingStatus === "trialing" || billingStatus === "past_due";
+  $("billingMsg").textContent = ""; $("billingMsg").className = "msg";
+  $("billingBtn").disabled = true;
+  const path = active ? "/api/billing/portal" : "/api/billing/checkout";
+  const payload = active ? { organizationId: orgId } : { plan: orgPlanKey, organizationId: orgId };
+  const r = await api(path, { method:"POST", body: JSON.stringify(payload) });
+  const d = await r.json().catch(()=>({}));
+  $("billingBtn").disabled = false;
+  if (r.ok && d.url) { window.location.href = d.url; return; }
+  $("billingMsg").textContent = d.error || "Could not open billing."; $("billingMsg").className = "msg err";
+};
+
+$("soloBillingBtn").onclick = async () => {
+  $("soloBillingMsg").textContent = ""; $("soloBillingMsg").className = "msg";
+  $("soloBillingBtn").disabled = true;
+  const r = await api("/api/billing/checkout", { method:"POST", body: JSON.stringify({ plan:"single" }) });
+  const d = await r.json().catch(()=>({}));
+  $("soloBillingBtn").disabled = false;
+  if (r.ok && d.url) { window.location.href = d.url; return; }
+  $("soloBillingMsg").textContent = d.error || "Could not start checkout."; $("soloBillingMsg").className = "msg err";
+};
+
+// Point the timesheet-email card at the right owner: managers edit the team's
+// destination, members see it read-only, solo users edit their own.
+function configureEmailCard() {
+  if (emailMode === "manager") {
+    $("emailTitle").textContent = "Team timesheets";
+    $("emailHint").textContent = "Where every member's timesheet is emailed. This applies to the whole team.";
+    $("emailEdit").classList.remove("hidden");
+    $("emailReadonly").classList.add("hidden");
+  } else if (emailMode === "member") {
+    $("emailTitle").textContent = "Your timesheet";
+    $("emailHint").textContent = "Your team manager sets where your timesheet is emailed.";
+    $("emailEdit").classList.add("hidden");
+    $("emailReadonly").classList.remove("hidden");
+  } else {
+    $("emailTitle").textContent = "Monthly timesheet";
+    $("emailHint").textContent = "Where your report is emailed. Add as many recipients as you like.";
+    $("emailEdit").classList.remove("hidden");
+    $("emailReadonly").classList.add("hidden");
   }
 }
 
 // Reflect the pricing tier: "Team plan · 3 / 5 members" and gate invites at cap.
 function updateTeamUsage(count) {
+  if (orgPlanKey === "single") { $("teamPlanInfo").textContent = "Single plan · personal account"; return; }
   const unlimited = orgCap >= 1000000;
   const capTxt = unlimited ? "unlimited" : String(orgCap);
   const full = !unlimited && count >= orgCap;
@@ -935,7 +1037,7 @@ $("orgCreateBtn").onclick = async () => {
   $("orgCreateBtn").disabled = true;
   const r = await api("/api/auth/organization/create", { method:"POST", body: JSON.stringify({ name, slug, metadata: { plan } }) });
   $("orgCreateBtn").disabled = false;
-  if (r.ok) { $("orgName").value = ""; await loadTeam(); }
+  if (r.ok) { $("orgName").value = ""; await applyTeam(); await loadEmailSettings(); }
   else { const d = await r.json().catch(()=>({})); $("orgMsg").textContent = d.message || d.error || "Could not create organization."; $("orgMsg").className = "msg err"; }
 };
 
@@ -1123,15 +1225,40 @@ function syncSendDayState() {
 }
 $("autoSend").onchange = syncSendDayState;
 
-async function loadSettings() {
+async function loadEmailSettings() {
   fillSendDays();
-  const r = await api("/api/settings");
-  const d = r.ok ? await r.json() : { recipients: [], sendDay: 1 };
-  renderRecipients(d.recipients);
-  const day = Number(d.sendDay);
+  if (emailMode === "manager") {
+    const r = await api("/api/team/settings?organizationId=" + encodeURIComponent(orgId));
+    const d = r.ok ? await r.json() : { recipients: [], sendDay: 1, defaultRecipients: [] };
+    // Prefill with the managers' emails until an explicit destination is saved.
+    renderRecipients((d.recipients && d.recipients.length) ? d.recipients : (d.defaultRecipients || []));
+    setSchedule(d.sendDay);
+  } else if (emailMode === "member") {
+    const r = await api("/api/settings");
+    const d = r.ok ? await r.json() : { recipients: [], sendDay: 1 };
+    renderEmailReadonly(d.recipients || [], d.sendDay);
+  } else {
+    const r = await api("/api/settings");
+    const d = r.ok ? await r.json() : { recipients: [], sendDay: 1 };
+    renderRecipients(d.recipients);
+    setSchedule(d.sendDay);
+  }
+}
+
+function setSchedule(day) {
+  day = Number(day);
   $("autoSend").checked = day !== 0;
   $("sendDay").value = String(day === 0 ? 1 : day);
   syncSendDayState();
+}
+
+function renderEmailReadonly(recipients, sendDay) {
+  const day = Number(sendDay);
+  const when = day === 0
+    ? "not emailed automatically"
+    : (day === 99 ? "emailed on the last day of each month" : "emailed on the " + ordinal(day) + " of each month");
+  const who = (recipients && recipients.length) ? recipients.map(pvEsc).join(", ") : "your manager";
+  $("emailReadonly").innerHTML = "<p class='muted' style='font-size:13.5px;margin:0;line-height:1.6'>Your monthly timesheet is " + when + " to <b style='color:var(--fg)'>" + who + "</b> — set by your team manager.</p>";
 }
 
 $("signout").onclick = async () => { await api("/api/auth/sign-out", { method:"POST" }); show(false); setMode("signin"); };
@@ -1146,8 +1273,11 @@ $("saveEmail").onclick = async () => {
   $("emailMsg").textContent = ""; $("emailMsg").className = "msg";
   if (!recipients.length) { $("emailMsg").textContent = "Add at least one recipient."; $("emailMsg").className = "msg err"; return; }
   const sendDay = $("autoSend").checked ? Number($("sendDay").value) : 0;
+  const path = emailMode === "manager"
+    ? "/api/team/settings?organizationId=" + encodeURIComponent(orgId)
+    : "/api/settings";
   $("saveEmail").disabled = true;
-  const r = await api("/api/settings", { method:"POST", body: JSON.stringify({ recipients, sendDay }) });
+  const r = await api(path, { method:"POST", body: JSON.stringify({ recipients, sendDay }) });
   $("saveEmail").disabled = false;
   if (r.ok) { $("emailMsg").textContent = "Saved."; $("emailMsg").className = "msg ok"; }
   else { const e = await r.json().catch(()=>({})); $("emailMsg").textContent = e.error || "Save failed."; $("emailMsg").className = "msg err"; }

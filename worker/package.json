@@ -15,7 +15,8 @@
     "migrate:remote": "wrangler d1 migrations apply clocked --remote"
   },
   "dependencies": {
-    "better-auth": "^1.6.23"
+    "better-auth": "^1.6.23",
+    "stripe": "^22.3.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.43.0",

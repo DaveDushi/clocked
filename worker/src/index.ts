@@ -6,10 +6,29 @@ import { faviconResponse } from "./favicon";
 import { buildAndSendReport, sendContactSales, sendMonthlyReports, SEND_DAY_LAST } from "./email";
 import { handleIngest } from "./ingest";
 import { buildHoursReport, buildReportCsv } from "./report";
-import { getRecipients, getSendDay, setMailTo, setSendDay } from "./settings";
+import {
+  getEffectiveRecipients,
+  getEffectiveSendDay,
+  getOrgMailTo,
+  getOrgSendDay,
+  managerEmailsForOrg,
+  orgIdForUser,
+  parseRecipients,
+  setMailTo,
+  setOrgMailTo,
+  setOrgSendDay,
+  setSendDay,
+} from "./settings";
 import { getOrCreateToken, rotateToken, userIdForToken } from "./tokens";
 import { formatHM, localYMD, monthBoundsUtc, previousMonthPeriod, wallToUtc } from "./time";
 import { orgPlan, planCap, planLabel } from "./plans";
+import {
+  createCheckoutSession,
+  createPortalSession,
+  ensurePersonalOrg,
+  handleWebhook,
+  isSelfServePlan,
+} from "./billing";
 import type { Env } from "./types";
 
 export default {
@@ -124,6 +143,95 @@ export default {
       return json(await buildHoursReport(env, period, targetId));
     }
 
+    // Team timesheet delivery: the manager chooses where every member's timesheet
+    // is emailed and on what schedule for their org. Manager-guarded.
+    if (url.pathname === "/api/team/settings") {
+      const user = await sessionUser(req, env);
+      if (!user) return json({ error: "unauthorized" }, 401);
+      const orgId = url.searchParams.get("organizationId") ?? "";
+      if (!(await isManagerOf(env, user.id, orgId))) return json({ error: "forbidden" }, 403);
+      if (req.method === "GET") {
+        return json({
+          recipients: parseRecipients(await getOrgMailTo(env, orgId)),
+          sendDay: await getOrgSendDay(env, orgId),
+          defaultRecipients: await managerEmailsForOrg(env, orgId),
+        });
+      }
+      if (req.method === "POST") {
+        const body = (await req.json().catch(() => ({}))) as {
+          recipients?: unknown;
+          sendDay?: unknown;
+        };
+        const recipients = Array.isArray(body.recipients)
+          ? body.recipients.map((r) => (typeof r === "string" ? r.trim() : "")).filter(Boolean)
+          : [];
+        if (recipients.length === 0) return json({ error: "at least one recipient required" }, 400);
+        if (!recipients.every(isEmail)) return json({ error: "invalid email" }, 400);
+        let sendDay = 1;
+        if (body.sendDay !== undefined) {
+          const n = Number(body.sendDay);
+          const valid = n === 0 || n === SEND_DAY_LAST || (n >= 1 && n <= 28);
+          if (!Number.isInteger(n) || !valid) return json({ error: "invalid send day" }, 400);
+          sendDay = n;
+        }
+        await setOrgMailTo(env, orgId, recipients.join("\n"));
+        await setOrgSendDay(env, orgId, sendDay);
+        return json({ ok: true, recipients, sendDay });
+      }
+    }
+
+    // ---- Billing (Stripe). Checkout + portal are owner/admin gated; the webhook
+    // is authenticated by Stripe's signature (not a session), so it must come
+    // before any session check and stay out of the bearer path.
+    if (req.method === "POST" && url.pathname === "/api/stripe/webhook") {
+      return handleWebhook(req, env);
+    }
+    if (req.method === "POST" && url.pathname === "/api/billing/checkout") {
+      const user = await sessionUser(req, env);
+      if (!user) return json({ error: "unauthorized" }, 401);
+      const body = (await req.json().catch(() => ({}))) as {
+        plan?: unknown;
+        organizationId?: unknown;
+      };
+      const plan = typeof body.plan === "string" ? body.plan : "";
+      if (!isSelfServePlan(plan)) return json({ error: "invalid plan" }, 400);
+      // "single" attaches to a personal org (created on demand); team/teamplus to
+      // an org the caller manages.
+      let targetOrg: string;
+      if (plan === "single") {
+        targetOrg = await ensurePersonalOrg(env, req, user);
+      } else {
+        targetOrg = typeof body.organizationId === "string" ? body.organizationId : "";
+        if (!(await isManagerOf(env, user.id, targetOrg))) return json({ error: "forbidden" }, 403);
+      }
+      try {
+        const checkoutUrl = await createCheckoutSession(env, {
+          orgId: targetOrg,
+          plan,
+          email: user.email,
+          origin: url.origin,
+        });
+        if (!checkoutUrl) return json({ error: "checkout unavailable" }, 502);
+        return json({ url: checkoutUrl });
+      } catch (e) {
+        return json({ error: "stripe error", detail: String(e) }, 502);
+      }
+    }
+    if (req.method === "POST" && url.pathname === "/api/billing/portal") {
+      const user = await sessionUser(req, env);
+      if (!user) return json({ error: "unauthorized" }, 401);
+      const body = (await req.json().catch(() => ({}))) as { organizationId?: unknown };
+      const targetOrg = typeof body.organizationId === "string" ? body.organizationId : "";
+      if (!(await isManagerOf(env, user.id, targetOrg))) return json({ error: "forbidden" }, 403);
+      try {
+        const portalUrl = await createPortalSession(env, { orgId: targetOrg, origin: url.origin });
+        if (!portalUrl) return json({ error: "no subscription" }, 400);
+        return json({ url: portalUrl });
+      } catch (e) {
+        return json({ error: "stripe error", detail: String(e) }, 502);
+      }
+    }
+
     // Manual time entries: log (POST), list (GET), or remove (DELETE) days the
     // desktop app missed. Times are local wall-clock in REPORT_TZ, stored as a
     // normal session with reason "manual" so it's distinguishable from an
@@ -211,12 +319,20 @@ export default {
       const user = await sessionUser(req, env);
       if (!user) return json({ error: "unauthorized" }, 401);
       if (req.method === "GET") {
+        // Org-aware: a team member sees the manager-controlled destination
+        // (managed=true, read-only in the UI); a solo user sees their own.
+        const eff = await getEffectiveRecipients(env, user.id, user.email);
         return json({
-          recipients: await getRecipients(env, user.id, user.email),
-          sendDay: await getSendDay(env, user.id),
+          recipients: eff.recipients,
+          sendDay: await getEffectiveSendDay(env, user.id),
+          managed: eff.managed,
         });
       }
       if (req.method === "POST") {
+        // In a team the manager controls delivery (via /api/team/settings).
+        if (await orgIdForUser(env, user.id)) {
+          return json({ error: "your team manager controls timesheet delivery" }, 403);
+        }
         const body = (await req.json().catch(() => ({}))) as {
           recipients?: unknown;
           sendDay?: unknown;
@@ -256,7 +372,7 @@ export default {
       const user = await sessionUser(req, env);
       if (!user) return json({ error: "unauthorized" }, 401);
       const period = url.searchParams.get("period") ?? previousMonthPeriod(new Date(), env.REPORT_TZ);
-      const to = await getRecipients(env, user.id, user.email);
+      const { recipients: to } = await getEffectiveRecipients(env, user.id, user.email);
       const result = await buildAndSendReport(env, period, { force: true, userId: user.id, to });
       return json({ ...result, recipients: to.length }, result.ok ? 200 : 500);
     }
@@ -301,16 +417,20 @@ interface MembershipRow {
   name: string;
   metadata: string | null;
   memberCount: number;
+  billingStatus: string | null;
 }
 
-/** Every organization the user belongs to, with their role, the org name, and
- * the pricing tier (plan key, label, member cap, and current member count) so
- * the dashboard can show usage and gate invites at the cap. */
+/** Every organization the user belongs to, with their role, the org name, the
+ * pricing tier (plan key, label, member cap, current member count) and Stripe
+ * subscription status so the dashboard can show usage, gate invites at the cap,
+ * and offer the right billing action (subscribe vs. manage). */
 async function membershipsFor(env: Env, userId: string) {
   const res = await env.DB.prepare(
     `SELECT m.organizationId AS organizationId, m.role AS role, o.name AS name, o.metadata AS metadata,
-            (SELECT COUNT(*) FROM member m2 WHERE m2.organizationId = o.id) AS memberCount
+            (SELECT COUNT(*) FROM member m2 WHERE m2.organizationId = o.id) AS memberCount,
+            b.status AS billingStatus
        FROM member m JOIN organization o ON o.id = m.organizationId
+       LEFT JOIN org_billing b ON b.organizationId = o.id
       WHERE m.userId = ?
       ORDER BY o.name`,
   )
@@ -326,6 +446,7 @@ async function membershipsFor(env: Env, userId: string) {
       planLabel: planLabel(plan),
       cap: planCap(plan),
       memberCount: r.memberCount,
+      billingStatus: r.billingStatus ?? "",
     };
   });
 }

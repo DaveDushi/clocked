@@ -19,6 +19,14 @@ export interface Env {
    * sign-in is only enabled when both are set. */
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  /** Stripe secret key (wrangler secret / .dev.vars). */
+  STRIPE_SECRET_KEY: string;
+  /** Stripe webhook signing secret for /api/stripe/webhook (wrangler secret). */
+  STRIPE_WEBHOOK_SECRET: string;
+  /** Recurring Price ids for the self-serve plans (non-secret vars). */
+  STRIPE_PRICE_SINGLE: string;
+  STRIPE_PRICE_TEAM: string;
+  STRIPE_PRICE_TEAMPLUS: string;
 }
 
 export interface SessionIn {

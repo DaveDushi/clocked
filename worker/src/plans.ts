@@ -1,8 +1,11 @@
-// Pricing tiers (see the landing page). Solo = no organization (just the personal
-// dashboard). The org plans map to a hard member cap enforced by better-auth's
-// membershipLimit and surfaced in the dashboard. Enterprise is effectively
-// unlimited and is sales-provisioned (not offered in the self-serve create form).
+// Pricing tiers (see the landing page). "single" is a paid solo plan modelled as
+// a 1-seat personal organization, so all billing is org-scoped. team/teamplus map
+// to a hard member cap enforced by better-auth's membershipLimit and surfaced in
+// the dashboard. Enterprise is effectively unlimited and is sales-provisioned
+// (not offered in the self-serve create form). A canceled/lapsed subscription is
+// reverted to "single" — the smallest tier — by the Stripe webhook.
 export const PLAN_CAPS: Record<string, number> = {
+  single: 1,
   team: 5,
   teamplus: 30,
   enterprise: 1_000_000,
@@ -16,7 +19,13 @@ export function planCap(plan: string | null | undefined): number {
 
 /** Human label for a plan key. */
 export function planLabel(plan: string | null | undefined): string {
-  return plan === "teamplus" ? "Team+" : plan === "enterprise" ? "Enterprise" : "Team";
+  return plan === "single"
+    ? "Single"
+    : plan === "teamplus"
+      ? "Team+"
+      : plan === "enterprise"
+        ? "Enterprise"
+        : "Team";
 }
 
 /** Extract the plan key from an org's `metadata` (a JSON string or object),
