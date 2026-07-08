@@ -64,24 +64,45 @@ const HTML = /* html */ `<!doctype html>
   .dash-panel { display:none; }
   .dash-panel.active { display:block; animation:fadein .18s ease; }
 
-  /* compact plan strip */
-  .plan-strip {
-    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
-    padding:12px 14px; margin-bottom:14px;
-    background:linear-gradient(180deg, var(--panel), var(--panel2));
-    border:1px solid var(--border); border-radius:14px;
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+  /* account / plan menu in header (keeps the page calm) */
+  .acct-menu { position:relative; flex:none; }
+  .acct-menu.hidden { display:none; }
+  .acct-chip {
+    display:inline-flex; align-items:center; gap:8px;
+    padding:6px 10px 6px 6px; border-radius:999px;
+    background:rgba(255,255,255,.03); border:1px solid var(--border);
+    color:var(--fg); font-weight:500; font-size:13px; box-shadow:none;
   }
-  .plan-strip .plan-badge { margin:0; }
-  .plan-strip-meta { flex:1; min-width:140px; display:flex; flex-direction:column; gap:2px; }
-  .plan-strip-meta strong { font-size:14px; font-weight:600; }
-  .plan-strip-meta span { font-size:12px; color:var(--muted); }
-  .plan-strip-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-  .plan-strip-actions button { padding:8px 12px; font-size:13px; }
-  .plan-strip #planStatusPill { margin-left:auto; }
-  @media (max-width:560px) {
-    .plan-strip #planStatusPill { margin-left:0; }
-    .plan-strip { align-items:flex-start; }
+  .acct-chip:hover { border-color:var(--faint); color:var(--fg); transform:none; box-shadow:none; background:rgba(255,255,255,.05); }
+  .acct-chip[aria-expanded="true"] { border-color:rgba(242,169,80,.45); box-shadow:0 0 0 3px rgba(242,169,80,.12); }
+  .acct-chip .plan-badge { margin:0; padding:3px 8px; font-size:10px; }
+  .acct-chip .status-dot {
+    width:7px; height:7px; border-radius:50%; background:var(--faint); flex:none;
+    box-shadow:0 0 0 3px rgba(91,214,162,.0);
+  }
+  .acct-chip .status-dot.ok { background:var(--ok); box-shadow:0 0 0 3px rgba(91,214,162,.15); }
+  .acct-chip .status-dot.warn { background:var(--amber); box-shadow:0 0 0 3px rgba(242,169,80,.15); }
+  .acct-chip .status-dot.bad { background:var(--err); box-shadow:0 0 0 3px rgba(255,112,112,.12); }
+  .acct-chip .acct-label { max-width:7.5em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .acct-chip .acct-chevron { color:var(--muted); font-size:10px; margin-left:2px; }
+  .acct-pop {
+    position:absolute; right:0; top:calc(100% + 8px); z-index:40; width:min(280px, calc(100vw - 40px));
+    padding:12px; border-radius:14px;
+    background:linear-gradient(180deg, var(--panel), var(--panel2));
+    border:1px solid var(--border);
+    box-shadow:0 16px 40px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.04);
+    animation:pop .16s cubic-bezier(.2,.7,.2,1);
+  }
+  .acct-pop.hidden { display:none; }
+  .acct-pop-head { display:flex; flex-direction:column; gap:4px; margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid var(--border); }
+  .acct-pop-head strong { font-size:14px; }
+  .acct-pop-head .sub { font-size:12px; color:var(--muted); }
+  .acct-pop-head .plan-status-pill { align-self:flex-start; margin-top:4px; }
+  .acct-pop-actions { display:flex; flex-direction:column; gap:8px; }
+  .acct-pop-actions button { width:100%; }
+  .acct-pop #billingMsg { min-height:0; margin-top:8px; }
+  @media (max-width:480px) {
+    .acct-chip .acct-label { display:none; }
   }
 
   .section-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:12px; }
@@ -435,6 +456,31 @@ const HTML = /* html */ `<!doctype html>
       <button id="navSignin" class="ghost">Sign in</button>
       <button id="navSignup">Sign up</button>
     </div>
+    <!-- Plan lives in the header as a quiet account chip + popover -->
+    <div id="teamCard" class="acct-menu hidden">
+      <button type="button" id="acctMenuBtn" class="acct-chip" aria-haspopup="menu" aria-expanded="false" aria-controls="acctMenuPop">
+        <span id="planBadge" class="plan-badge">Solo</span>
+        <span id="planStatusDot" class="status-dot" aria-hidden="true"></span>
+        <span id="acctMenuLabel" class="acct-label">Solo</span>
+        <span class="acct-chevron" aria-hidden="true">▾</span>
+      </button>
+      <div id="acctMenuPop" class="acct-pop hidden" role="menu">
+        <div class="acct-pop-head">
+          <strong id="teamCardTitle">Solo plan</strong>
+          <span class="sub" id="teamCardHint">1 of 1 seats · Active</span>
+          <span id="planStatusPill" class="plan-status-pill">—</span>
+          <span class="hidden" id="planFactName"></span>
+          <span class="hidden" id="planFactSeats"></span>
+          <span class="hidden" id="planFactBilling"></span>
+          <span class="hidden" id="teamOrgName"></span>
+        </div>
+        <div class="acct-pop-actions">
+          <button id="billingBtn" class="ghost" type="button">Manage billing</button>
+          <button id="upgradeBtn" type="button">Upgrade plan</button>
+        </div>
+        <div id="billingMsg" class="msg" role="status"></div>
+      </div>
+    </div>
     <button id="signout" class="ghost hidden">Sign out</button>
   </div>
   <div class="ruler" aria-hidden="true"></div>
@@ -626,25 +672,6 @@ const HTML = /* html */ `<!doctype html>
 
     <!-- Product UI — only after paid access. Tabbed to keep the page short. -->
     <div id="appMain" class="hidden">
-
-    <!-- Compact plan strip (managers / personal owners). -->
-    <div id="teamCard" class="plan-strip hidden">
-      <span id="planBadge" class="plan-badge">Solo</span>
-      <div class="plan-strip-meta">
-        <strong id="teamCardTitle">Your plan</strong>
-        <span id="teamCardHint">Personal subscription</span>
-        <span class="hidden" id="planFactName"></span>
-        <span class="hidden" id="planFactSeats"></span>
-        <span class="hidden" id="planFactBilling"></span>
-        <span class="hidden" id="teamOrgName"></span>
-      </div>
-      <span id="planStatusPill" class="plan-status-pill">—</span>
-      <div class="plan-strip-actions">
-        <button id="billingBtn" class="ghost" type="button">Billing</button>
-        <button id="upgradeBtn" type="button">Upgrade</button>
-      </div>
-      <div id="billingMsg" class="msg" role="status" style="flex-basis:100%;margin:0;min-height:0"></div>
-    </div>
 
     <nav class="dash-nav" id="dashNav" aria-label="Dashboard sections">
       <button type="button" class="dashTab active" data-tab="hours">Hours</button>
@@ -980,6 +1007,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     closeAuth();
     closeSales();
+    closeAcctMenu();
     if ($("upgradeModal")) closeUpgradeModal();
   }
 });
@@ -1276,9 +1304,15 @@ function configureBillingUI() {
     : "Inactive";
   pill.className = "plan-status-pill " + (billingStatus === "past_due" ? "warn" : active ? "ok" : "bad");
 
-  $("billingBtn").textContent = active ? "Billing" : "Subscribe";
+  $("billingBtn").textContent = active ? "Manage billing" : "Subscribe";
   $("upgradeBtn").classList.remove("hidden");
-  $("upgradeBtn").textContent = teamplus ? "Sales" : "Upgrade";
+  $("upgradeBtn").textContent = teamplus ? "Contact sales" : "Upgrade plan";
+
+  const dot = $("planStatusDot");
+  if (dot) {
+    dot.className = "status-dot " + (billingStatus === "past_due" ? "warn" : active ? "ok" : "bad");
+  }
+  if ($("acctMenuLabel")) $("acctMenuLabel").textContent = planName;
 
   $("upgradeTeam").classList.toggle("hidden", !single);
   $("upgradeTeamPlus").classList.toggle("hidden", teamplus);
@@ -1298,6 +1332,24 @@ function refreshPlanStripMeta() {
   $("teamCardHint").textContent = seats + " seats · " + billing;
 }
 
+function closeAcctMenu() {
+  if (!$("acctMenuPop")) return;
+  $("acctMenuPop").classList.add("hidden");
+  if ($("acctMenuBtn")) $("acctMenuBtn").setAttribute("aria-expanded", "false");
+}
+function toggleAcctMenu() {
+  const open = $("acctMenuPop").classList.toggle("hidden") === false;
+  $("acctMenuBtn").setAttribute("aria-expanded", open ? "true" : "false");
+}
+if ($("acctMenuBtn")) {
+  $("acctMenuBtn").onclick = (e) => { e.stopPropagation(); toggleAcctMenu(); };
+}
+document.addEventListener("click", (e) => {
+  const menu = $("teamCard");
+  if (!menu || menu.classList.contains("hidden")) return;
+  if (!menu.contains(e.target)) closeAcctMenu();
+});
+
 $("billingBtn").onclick = async () => {
   const active = isBillingActive();
   $("billingMsg").textContent = ""; $("billingMsg").className = "msg";
@@ -1314,6 +1366,7 @@ $("billingBtn").onclick = async () => {
 };
 
 function openUpgradeModal() {
+  closeAcctMenu();
   if (orgPlanKey === "teamplus" || orgPlanKey === "enterprise") {
     openSales();
     return;
@@ -1838,7 +1891,12 @@ function renderEmailReadonly(recipients, sendDay) {
   $("emailReadonly").innerHTML = "<p class='muted' style='font-size:13.5px;margin:0;line-height:1.6'>Your monthly timesheet is " + when + " to <b style='color:var(--fg)'>" + who + "</b> — set by your team manager.</p>";
 }
 
-$("signout").onclick = async () => { await api("/api/auth/sign-out", { method:"POST" }); show(false); setMode("signin"); };
+$("signout").onclick = async () => {
+  closeAcctMenu();
+  await api("/api/auth/sign-out", { method: "POST" });
+  show(false);
+  setMode("signin");
+};
 $("month").addEventListener("change", loadHours);
 $("prev").onclick = () => shiftMonth(-1);
 $("next").onclick = () => shiftMonth(1);
