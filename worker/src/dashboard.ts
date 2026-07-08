@@ -704,7 +704,7 @@ const HTML = /* html */ `<!doctype html>
         </div>
         <div class="total"><span class="muted">Total</span><b id="totalRow">0:00</b></div>
         <div id="hoursMsg" class="msg" role="status"></div>
-        <details class="soft">
+        <details class="soft" id="manualEditWrap">
           <summary>Add time manually</summary>
           <div class="soft-body">
             <p class="hint" style="margin:0 0 10px">For a day the tray app missed.</p>
@@ -727,6 +727,9 @@ const HTML = /* html */ `<!doctype html>
             <div id="manualList" class="mentries"></div>
           </div>
         </details>
+        <p id="manualLockedNote" class="hint hidden" style="margin:14px 0 0">
+          Your timesheet is managed by your team. Hours come from the desktop app; only a manager can add or adjust entries.
+        </p>
       </div>
     </div>
 
@@ -1221,6 +1224,7 @@ if ($("resendVerifyGate")) {
 let orgId = "", orgName = "", orgRole = "", meEmail = "", openMemberId = "", openMemberName = "";
 let orgCap = 0, orgPlanLabel = "", orgPlanKey = "", billingStatus = "", memberCount = 0;
 let emailMode = "solo"; // "solo" | "manager" | "member" — who controls timesheet delivery
+let canEditTimes = true; // false for team workers (non-managers)
 
 function isManagerRoleC(role) {
   return String(role || "").split(",").some((r) => { const t = r.trim(); return t === "owner" || t === "admin"; });
@@ -1244,6 +1248,7 @@ async function applyTeam() {
 async function applyTeamFromMe(me) {
   orgId = ""; orgName = ""; orgRole = ""; openMemberId = ""; emailMode = "solo";
   orgPlanKey = ""; billingStatus = ""; memberCount = 0;
+  canEditTimes = me.canEditTimes !== false;
   $("teamCard").classList.add("hidden");
   $("tabTeam").classList.add("hidden");
   if ($("teamMemberPanel")) { $("teamMemberPanel").classList.add("hidden"); $("teamMemberPanel").innerHTML = ""; }
@@ -1253,6 +1258,7 @@ async function applyTeamFromMe(me) {
   const mgr = (me.orgs || []).find((o) => isManagerRoleC(o.role));
   if (mgr) {
     emailMode = "manager";
+    canEditTimes = true;
     orgId = mgr.organizationId; orgName = mgr.name || ""; orgRole = mgr.role || "";
     orgCap = mgr.cap || 0; orgPlanLabel = mgr.planLabel || "Team";
     orgPlanKey = mgr.plan || ""; billingStatus = mgr.billingStatus || "";
@@ -1264,6 +1270,7 @@ async function applyTeamFromMe(me) {
     if (orgPlanKey !== "single") await loadRoster();
   } else if (me.orgs && me.orgs.length) {
     emailMode = "member";
+    canEditTimes = false;
     const mem = me.orgs[0];
     orgId = mem.organizationId || "";
     orgRole = mem.role || "";
@@ -1272,9 +1279,20 @@ async function applyTeamFromMe(me) {
     // Workers: no billing strip / team admin tab.
     if ($("panel-team") && $("panel-team").classList.contains("active")) setDashTab("hours");
   } else {
+    canEditTimes = true;
     if ($("panel-team") && $("panel-team").classList.contains("active")) setDashTab("hours");
   }
   configureEmailCard();
+  configureManualEditUI();
+}
+
+/** Team workers see hours read-only; solo users and managers can add manual time. */
+function configureManualEditUI() {
+  const wrap = $("manualEditWrap");
+  const note = $("manualLockedNote");
+  if (wrap) wrap.classList.toggle("hidden", !canEditTimes);
+  if (note) note.classList.toggle("hidden", canEditTimes);
+  if (!canEditTimes && $("manualList")) $("manualList").innerHTML = "";
 }
 
 function isBillingActive() {
@@ -1826,6 +1844,11 @@ function shiftMonth(delta) {
 
 // ---- manual time entry ----
 $("mAdd").onclick = async () => {
+  if (!canEditTimes) {
+    $("manualMsg").textContent = "Your team manager controls timesheet adjustments.";
+    $("manualMsg").className = "msg err";
+    return;
+  }
   const date = $("mDate").value, start = $("mStart").value, end = $("mEnd").value;
   $("manualMsg").textContent = ""; $("manualMsg").className = "msg";
   if (!date || !start || !end) { $("manualMsg").textContent = "Date, clock in, and clock out are all required."; $("manualMsg").className = "msg err"; return; }
@@ -1869,6 +1892,10 @@ function renderManualEntries(list) {
 }
 
 async function loadManualEntries() {
+  if (!canEditTimes) {
+    if ($("manualList")) $("manualList").innerHTML = "";
+    return;
+  }
   const period = $("month").value;
   if (!period) return;
   const r = await api("/api/manual-session?period=" + period);

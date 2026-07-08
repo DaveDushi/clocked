@@ -140,19 +140,23 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const user = await sessionUser(req, env);
     if (!user) return json({ error: "unauthorized" }, 401);
     const orgs = user.emailVerified ? await membershipsFor(env, user.id) : [];
+    const manager = orgs.some((o) => isManagerRole(o.role));
     const hasAccess = user.emailVerified && orgs.some((o) => o.paid);
     const waitingOnTeam =
       user.emailVerified &&
       !hasAccess &&
       orgs.length > 0 &&
-      !orgs.some((o) => isManagerRole(o.role));
+      !manager;
+    // Team workers (non-managers) may not self-edit times — managers adjust for them.
+    const canEditTimes = orgs.length === 0 || manager;
     return json({
       user: { id: user.id, email: user.email, emailVerified: user.emailVerified },
       orgs,
-      manager: orgs.some((o) => isManagerRole(o.role)),
+      manager,
       hasAccess,
       needsPlan: user.emailVerified && !hasAccess && !waitingOnTeam,
       waitingOnTeam,
+      canEditTimes,
     });
   }
 
@@ -324,6 +328,15 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   if (url.pathname === "/api/manual-session") {
     const user = await requirePaidUser(req, env);
     if (user instanceof Response) return user;
+    // Team workers cannot add/delete their own manual entries (managers use /api/team/manual-session).
+    if (req.method === "POST" || req.method === "DELETE") {
+      if (!(await canSelfServiceEditTimes(env, user.id))) {
+        return json(
+          { error: "your team manager controls timesheet adjustments" },
+          403,
+        );
+      }
+    }
     return handleManualSession(req, url, env, user.id);
   }
 
@@ -534,6 +547,19 @@ async function isManagerOf(env: Env, userId: string, organizationId: string): Pr
     .bind(userId, organizationId)
     .first<{ role: string }>();
   return !!row && isManagerRole(row.role);
+}
+
+/**
+ * Solo accounts and org managers can add/edit their own manual times.
+ * Pure team workers cannot — only managers adjust timesheets for the team.
+ */
+async function canSelfServiceEditTimes(env: Env, userId: string): Promise<boolean> {
+  const res = await env.DB.prepare(`SELECT role FROM member WHERE userId = ?`)
+    .bind(userId)
+    .all<{ role: string }>();
+  const roles = res.results ?? [];
+  if (roles.length === 0) return true;
+  return roles.some((r) => isManagerRole(r.role));
 }
 
 async function handleManualSession(
