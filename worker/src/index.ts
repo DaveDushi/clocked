@@ -13,6 +13,7 @@ import {
 import {
   indexNowKeyFileResponse,
   marketingStatusResponse,
+  newsFeedResponse,
   newsPageResponse,
   runMarketingAgent,
 } from "./marketing-agent";
@@ -100,6 +101,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   if (req.method === "GET" && url.pathname === "/llms.txt") return llmsTxtResponse();
   if (req.method === "GET" && url.pathname === "/press") return pressPageResponse();
   if (req.method === "GET" && url.pathname === "/news") return newsPageResponse(env);
+  if (req.method === "GET" && url.pathname === "/news.xml") return newsFeedResponse(env);
   if (req.method === "GET" && url.pathname === "/api/marketing/status") {
     return marketingStatusResponse(env);
   }
@@ -107,7 +109,13 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const secret = env.MARKETING_AGENT_SECRET;
     const auth = req.headers.get("authorization") ?? "";
     const token = auth.replace(/^Bearer\s+/i, "");
-    if (!secret || token !== secret) return json({ error: "unauthorized" }, 401);
+    if (!secret || !timingSafeEqual(token, secret)) return json({ error: "unauthorized" }, 401);
+    // Rate-limit only authenticated calls, so a caller without the secret can
+    // never exhaust the budget and lock out the real operator. The scheduled
+    // cron path calls runMarketingAgent directly and is unaffected.
+    if (!(await rateLimitAllowDurable(env.DB, `marketing-run:${ip}`, 6, 60 * 60_000))) {
+      return json({ error: "too many requests" }, 429);
+    }
     const result = await runMarketingAgent(env);
     return json(result, result.ok ? 200 : 502);
   }
@@ -727,6 +735,21 @@ async function isMemberOf(env: Env, userId: string, organizationId: string): Pro
 
 function isEmail(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+}
+
+/**
+ * Constant-time string compare for shared secrets. Avoids leaking how many
+ * leading characters matched via response timing. Unequal lengths short-circuit
+ * (length is not itself the secret).
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const ab = enc.encode(a);
+  const bb = enc.encode(b);
+  if (ab.length !== bb.length) return false;
+  let diff = 0;
+  for (let i = 0; i < ab.length; i++) diff |= ab[i]! ^ bb[i]!;
+  return diff === 0;
 }
 
 function json(obj: unknown, status = 200): Response {

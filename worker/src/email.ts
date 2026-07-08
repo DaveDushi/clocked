@@ -2,6 +2,16 @@ import type { Env } from "./types";
 import { buildReportCsv, buildHoursReport, formatHours, isWorkDay, type HoursReport } from "./report";
 import { getEffectiveRecipients, getEffectiveSendDay } from "./settings";
 
+/**
+ * Referral footer on outgoing timesheets. These land in clients'/managers'
+ * inboxes every month, so a small, tasteful "sent by clocked" line is the
+ * product's best organic growth loop. UTM tags attribute the traffic.
+ */
+const MARKETING_URL =
+  "https://clocked.daviddusi.com/?utm_source=timesheet_email&utm_medium=email&utm_campaign=footer";
+const MARKETING_FOOTER_TEXT =
+  "— Sent automatically by clocked, automatic time tracking for Windows. https://clocked.daviddusi.com";
+
 /** UTF-8-safe base64 (btoa alone mangles non-ASCII in session labels). */
 function toBase64(s: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(s)));
@@ -57,8 +67,13 @@ function renderReportEmail(period: string, report: HoursReport): { html: string;
         ${tile(String(vacation), vacation === 1 ? "Vacation day" : "Vacation days")}
       </tr></table>
     </td></tr>
-    <tr><td style="padding:20px 28px 26px;color:#9ca3af;font-size:12px;">
+    <tr><td style="padding:20px 28px 8px;color:#9ca3af;font-size:12px;">
       The full day-by-day breakdown is attached as <strong>clocked-${esc(period)}.csv</strong>.
+    </td></tr>
+    <tr><td style="padding:0 28px 22px;">
+      <div style="border-top:1px solid #f0f1f3;padding-top:14px;font-size:11px;color:#b6bcc6;line-height:1.5;">
+        Sent automatically by <a href="${MARKETING_URL}" style="color:#9ca3af;text-decoration:none;font-weight:600;">clocked</a> — automatic time tracking for Windows. No timers, no screenshots.
+      </div>
     </td></tr>
   </table>
 </body>
@@ -72,6 +87,8 @@ function renderReportEmail(period: string, report: HoursReport): { html: string;
     `Vacation days: ${vacation}`,
     ``,
     `Full day-by-day breakdown attached as clocked-${period}.csv.`,
+    ``,
+    MARKETING_FOOTER_TEXT,
   ].join("\n");
 
   return { html, text };
@@ -124,7 +141,10 @@ export async function buildAndSendReport(
   const body =
     rows > 0
       ? renderReportEmail(period, report)
-      : { html: undefined, text: "No sessions recorded for this month." };
+      : {
+          html: undefined,
+          text: `No sessions recorded for this month.\n\n${MARKETING_FOOTER_TEXT}`,
+        };
 
   try {
     const res = await fetch("https://api.resend.com/emails", {

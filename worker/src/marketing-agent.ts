@@ -18,8 +18,14 @@ import type { Env } from "./types";
 const SITE = "https://clocked.daviddusi.com";
 const INDEXNOW_KEY_META = "indexnow_key";
 
+interface Tip {
+  title: string;
+  body: string;
+  x: string;
+}
+
 /** Curated tips — rotated into the public feed; also used for optional X posts. */
-const TIP_POOL: { title: string; body: string; x: string }[] = [
+const TIP_POOL: Tip[] = [
   {
     title: "No more timer babysitting",
     body: "clocked clocks you in on unlock and out on lock/idle — so your timesheet matches real presence, not the last time you remembered to click Start.",
@@ -54,6 +60,31 @@ const TIP_POOL: { title: string; body: string; x: string }[] = [
     title: "One token, sync done",
     body: "Create an account, paste the clk_ token into tray Settings, and sessions sync over HTTPS.",
     x: "Install tray app → account → paste sync token. Hours accumulate. Monthly CSV email. That's the whole loop. https://clocked.daviddusi.com",
+  },
+  {
+    title: "Timesheets that survive a closed laptop",
+    body: "Your sessions live on your PC and sync when online, but the monthly email is sent from the cloud — so a laptop that's shut on the 1st doesn't cost you the invoice.",
+    x: "Bill on the 1st? clocked emails your timesheet from the cloud even if your laptop's shut. https://clocked.daviddusi.com",
+  },
+  {
+    title: "Invoice-ready CSV, every month",
+    body: "The monthly email carries a day-by-day CSV: total hours, days worked, vacation days flagged. Drop it straight into an invoice or a client report — no manual tallying.",
+    x: "Month-end = a CSV in your inbox with total hours, days worked, and vacation flagged. Invoice, done. https://clocked.daviddusi.com",
+  },
+  {
+    title: "Presence, not keystrokes",
+    body: "clocked reads OS power and input events — unlock, lock, sleep, idle. It never records what you type, what's on screen, or which apps you use. Honest hours, zero surveillance.",
+    x: "clocked tracks presence from unlock/lock/idle — never keystrokes, screens, or app names. Time tracking you can show a client. https://clocked.daviddusi.com",
+  },
+  {
+    title: "Cheaper than the timer you forget",
+    body: "A forgotten timer costs you real billed hours every week. clocked is a few cents a day and never forgets to start — it pays for itself the first time you'd have missed an afternoon.",
+    x: "The timer you forgot to start cost more than a whole year of clocked. Automatic tracking, cents a day. https://clocked.daviddusi.com",
+  },
+  {
+    title: "Fix a wrong clocking in two clicks",
+    body: "Miss an idle timeout or leave the PC unlocked overnight? Open the dashboard, delete the bad session or add a manual one. Managers can correct any team member's hours the same way.",
+    x: "Bad clocking from an overnight unlock? Delete it or add a manual entry in two clicks. Managers can fix the whole team's. https://clocked.daviddusi.com",
   },
 ];
 
@@ -134,10 +165,34 @@ async function submitIndexNow(env: Env): Promise<{ ok: boolean; detail: string }
   }
 }
 
+/**
+ * Pick the tip least recently posted on a channel (never-posted first), so the
+ * feed and X cycle through the whole pool before repeating — and each channel
+ * rotates independently instead of echoing the same daily tip. Falls back to
+ * pool order if the history query fails.
+ */
+async function pickFreshTip(env: Env, channel: string): Promise<Tip> {
+  let lastByTitle = new Map<string, string>();
+  try {
+    const res = await env.DB.prepare(
+      `SELECT title, MAX(created_at) AS last FROM marketing_posts WHERE channel = ? GROUP BY title`,
+    )
+      .bind(channel)
+      .all<{ title: string; last: string }>();
+    lastByTitle = new Map((res.results ?? []).map((r) => [r.title, r.last] as const));
+  } catch {
+    /* fall back to pool order */
+  }
+  // "" (never posted) sorts before any ISO timestamp; Array.sort is stable so
+  // ties keep pool order.
+  return [...TIP_POOL].sort((a, b) =>
+    (lastByTitle.get(a.title) ?? "").localeCompare(lastByTitle.get(b.title) ?? ""),
+  )[0]!;
+}
+
 async function publishSiteTip(env: Env): Promise<{ ok: boolean; detail: string; postId?: string }> {
   try {
-    const dayIndex = Math.floor(Date.now() / (24 * 60 * 60 * 1000));
-    const tip = TIP_POOL[dayIndex % TIP_POOL.length]!;
+    const tip = await pickFreshTip(env, "site");
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     // Dedupe: one tip per calendar day
@@ -230,8 +285,7 @@ async function maybePostToX(env: Env): Promise<{ ok: boolean; detail: string }> 
     .first();
   if (recent) return { ok: true, detail: "X skipped (posted within last 3 days)" };
 
-  const dayIndex = Math.floor(Date.now() / (24 * 60 * 60 * 1000));
-  const tip = TIP_POOL[dayIndex % TIP_POOL.length]!;
+  const tip = await pickFreshTip(env, "x");
   const url = "https://api.x.com/2/tweets";
   try {
     const auth = await oauth1Header("POST", url, ck, cs, at, ats);
@@ -339,6 +393,23 @@ export async function newsPageResponse(env: Env): Promise<Response> {
     )
     .join("\n");
 
+  // Blog structured data for search rich results. `</` is neutralised so a body
+  // string can never break out of the script tag.
+  const jsonLd = JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "Blog",
+    name: "clocked — news & tips",
+    url: `${SITE}/news`,
+    blogPost: posts.slice(0, 10).map((p) => ({
+      "@type": "BlogPosting",
+      headline: p.title,
+      datePublished: p.created_at,
+      articleBody: p.body,
+      url: `${SITE}/news`,
+      publisher: { "@type": "Organization", name: "clocked", url: SITE },
+    })),
+  }).replace(/</g, "\\u003c");
+
   const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -347,6 +418,8 @@ export async function newsPageResponse(env: Env): Promise<Response> {
 <title>News — clocked</title>
 <meta name="description" content="Tips and updates from the clocked marketing agent." />
 <link rel="canonical" href="${SITE}/news" />
+<link rel="alternate" type="application/rss+xml" title="clocked news &amp; tips" href="${SITE}/news.xml" />
+<script type="application/ld+json">${jsonLd}</script>
 <meta property="og:image" content="${SITE}/og.jpg" />
 <link rel="icon" href="/favicon.ico" />
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -369,7 +442,7 @@ export async function newsPageResponse(env: Env): Promise<Response> {
 </head>
 <body>
 <div class="wrap">
-  <div class="nav"><a href="/">Home</a><a href="/press">Press</a><a href="/download">Download</a><a href="/api/marketing/status">Agent status</a></div>
+  <div class="nav"><a href="/">Home</a><a href="/press">Press</a><a href="/download">Download</a><a href="/news.xml">RSS</a><a href="/api/marketing/status">Agent status</a></div>
   <h1>News & tips</h1>
   <p class="lead">Published by the clocked marketing agent (IndexNow + site tips daily; optional X when configured).</p>
   ${items || '<p class="empty">Agent has not published yet — first cron run will seed tips.</p>'}
@@ -382,7 +455,53 @@ export async function newsPageResponse(env: Env): Promise<Response> {
 }
 
 function escapeHtml(s: string): string {
-  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+  return s.replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
+  );
+}
+
+/** RSS 2.0 feed of recent posts — syndication + discovery for /news. */
+export async function newsFeedResponse(env: Env): Promise<Response> {
+  let posts: { title: string; body: string; created_at: string }[] = [];
+  try {
+    const res = await env.DB.prepare(
+      `SELECT title, body, created_at FROM marketing_posts ORDER BY created_at DESC LIMIT 30`,
+    ).all<{ title: string; body: string; created_at: string }>();
+    posts = res.results ?? [];
+  } catch {
+    /* empty until migration */
+  }
+
+  const items = posts
+    .map(
+      (p) => `    <item>
+      <title>${escapeHtml(p.title)}</title>
+      <link>${SITE}/news</link>
+      <guid isPermaLink="false">${escapeHtml(p.created_at + "|" + p.title)}</guid>
+      <pubDate>${new Date(p.created_at).toUTCString()}</pubDate>
+      <description>${escapeHtml(p.body)}</description>
+    </item>`,
+    )
+    .join("\n");
+
+  const body = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>clocked — news &amp; tips</title>
+    <link>${SITE}/news</link>
+    <description>Tips and updates for clocked, automatic Windows time tracking.</description>
+    <language>en</language>
+${items}
+  </channel>
+</rss>
+`;
+  return new Response(body, {
+    headers: {
+      "content-type": "application/rss+xml; charset=utf-8",
+      "cache-control": "public, max-age=900",
+    },
+  });
 }
 
 export { json as marketingJson };

@@ -10,6 +10,7 @@ export function robotsTxtResponse(): Response {
     "Allow: /og.jpg",
     "Allow: /press",
     "Allow: /news",
+    "Allow: /news.xml",
     "Allow: /llms.txt",
     "Disallow: /api/",
     "Disallow: /sessions",
