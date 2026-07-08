@@ -76,13 +76,6 @@ const HTML = /* html */ `<!doctype html>
   .acct-chip:hover { border-color:var(--faint); color:var(--fg); transform:none; box-shadow:none; background:rgba(255,255,255,.05); }
   .acct-chip[aria-expanded="true"] { border-color:rgba(242,169,80,.45); box-shadow:0 0 0 3px rgba(242,169,80,.12); }
   .acct-chip .plan-badge { margin:0; padding:3px 8px; font-size:10px; }
-  .acct-chip .status-dot {
-    width:7px; height:7px; border-radius:50%; background:var(--faint); flex:none;
-    box-shadow:0 0 0 3px rgba(91,214,162,.0);
-  }
-  .acct-chip .status-dot.ok { background:var(--ok); box-shadow:0 0 0 3px rgba(91,214,162,.15); }
-  .acct-chip .status-dot.warn { background:var(--amber); box-shadow:0 0 0 3px rgba(242,169,80,.15); }
-  .acct-chip .status-dot.bad { background:var(--err); box-shadow:0 0 0 3px rgba(255,112,112,.12); }
   .acct-chip .acct-chevron { color:var(--muted); font-size:10px; margin-left:1px; }
   .acct-pop {
     position:absolute; right:0; top:calc(100% + 8px); z-index:40; width:min(280px, calc(100vw - 40px));
@@ -458,7 +451,6 @@ const HTML = /* html */ `<!doctype html>
     <!-- Plan lives in the header as a quiet account chip + popover -->
     <div id="teamCard" class="acct-menu hidden">
       <button type="button" id="acctMenuBtn" class="acct-chip" aria-haspopup="menu" aria-expanded="false" aria-controls="acctMenuPop">
-        <span id="planStatusDot" class="status-dot" aria-hidden="true"></span>
         <span id="planBadge" class="plan-badge">Solo</span>
         <span id="acctMenuLabel" class="hidden">Solo</span>
         <span class="acct-chevron" aria-hidden="true">▾</span>
@@ -1307,10 +1299,6 @@ function configureBillingUI() {
   $("upgradeBtn").classList.remove("hidden");
   $("upgradeBtn").textContent = teamplus ? "Contact sales" : "Upgrade plan";
 
-  const dot = $("planStatusDot");
-  if (dot) {
-    dot.className = "status-dot " + (billingStatus === "past_due" ? "warn" : active ? "ok" : "bad");
-  }
   if ($("acctMenuLabel")) $("acctMenuLabel").textContent = planName;
 
   $("upgradeTeam").classList.toggle("hidden", !single);
