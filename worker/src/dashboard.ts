@@ -416,9 +416,18 @@ const HTML = /* html */ `<!doctype html>
     padding:12px 14px; border-radius:12px; border:1px solid var(--border); background:#0b0d13; color:var(--fg);
   }
   .upgrade-opt:hover { border-color:rgba(242,169,80,.45); }
+  .upgrade-opt.current { opacity:.55; border-style:dashed; cursor:default; }
+  .upgrade-opt.current:hover { border-color:var(--border); }
   .upgrade-opt .uo-title { font-weight:600; font-size:14px; }
   .upgrade-opt .uo-meta { font-size:12px; color:var(--muted); margin-top:2px; }
   .upgrade-opt .uo-price { margin-left:auto; font-family:var(--mono); color:var(--amber); font-weight:600; font-size:13px; white-space:nowrap; }
+  .upgrade-opt .uo-tag {
+    margin-left:8px; font-size:10px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--muted); border:1px solid var(--border); border-radius:999px; padding:2px 7px; font-weight:600;
+  }
+  .upgrade-opt .uo-tag.up { color:var(--ok); border-color:rgba(91,214,162,.35); }
+  .upgrade-opt .uo-tag.down { color:var(--amber); border-color:rgba(242,169,80,.35); }
+  .upgrade-opt .uo-tag.cur { color:var(--muted); }
 
   .roster { display:flex; flex-direction:column; gap:8px; margin-top:14px; }
   .rosterrow { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--border); border-radius:10px; background:var(--panel2); }
@@ -467,7 +476,7 @@ const HTML = /* html */ `<!doctype html>
         </div>
         <div class="acct-pop-actions">
           <button id="billingBtn" class="ghost" type="button">Manage billing</button>
-          <button id="upgradeBtn" type="button">Upgrade plan</button>
+          <button id="upgradeBtn" type="button">Change plan</button>
         </div>
         <div id="billingMsg" class="msg" role="status"></div>
       </div>
@@ -810,36 +819,43 @@ const HTML = /* html */ `<!doctype html>
         <h3>Team</h3>
         <p class="hint" style="margin:0">Upgrade to Team to invite members and review their hours.</p>
         <div class="inline-actions">
-          <button type="button" id="teamEmptyUpgrade">Upgrade plan</button>
+          <button type="button" id="teamEmptyUpgrade">Change plan</button>
         </div>
       </div>
     </div>
 
-    <!-- Upgrade plan modal -->
+    <!-- Change plan modal (upgrade or downgrade) -->
     <div id="upgradeModal" class="modal hidden">
       <div class="modal-backdrop"></div>
       <div class="card modal-card" style="max-width:440px">
         <button id="upgradeClose" class="ghost modal-close" aria-label="Close" type="button">&times;</button>
-        <h3 style="margin:0 0 6px">Upgrade your plan</h3>
-        <p class="hint" id="upgradeHint">Add seats so you can invite teammates. Checkout opens on Stripe.</p>
+        <h3 style="margin:0 0 6px" id="upgradeModalTitle">Change plan</h3>
+        <p class="hint" id="upgradeHint">Switch anytime. Downgrades require your roster to fit the new seat limit; Stripe prorates the difference.</p>
         <div class="upgrade-options">
-          <button type="button" class="upgrade-opt" data-plan="team" id="upgradeTeam">
+          <button type="button" class="upgrade-opt" data-plan="single" data-rank="1" id="upgradeSingle">
             <div>
-              <div class="uo-title">Team</div>
+              <div class="uo-title">Solo <span class="uo-tag" data-tag></span></div>
+              <div class="uo-meta">1 seat · personal account</div>
+            </div>
+            <div class="uo-price">25&cent;/day</div>
+          </button>
+          <button type="button" class="upgrade-opt" data-plan="team" data-rank="2" id="upgradeTeam">
+            <div>
+              <div class="uo-title">Team <span class="uo-tag" data-tag></span></div>
               <div class="uo-meta">Up to 5 members · shared timesheets</div>
             </div>
             <div class="uo-price">50&cent;/day</div>
           </button>
-          <button type="button" class="upgrade-opt" data-plan="teamplus" id="upgradeTeamPlus">
+          <button type="button" class="upgrade-opt" data-plan="teamplus" data-rank="3" id="upgradeTeamPlus">
             <div>
-              <div class="uo-title">Team+</div>
+              <div class="uo-title">Team+ <span class="uo-tag" data-tag></span></div>
               <div class="uo-meta">Up to 30 members · priority support</div>
             </div>
             <div class="uo-price">$1/day</div>
           </button>
-          <button type="button" class="upgrade-opt" data-plan="enterprise" id="upgradeEnterprise">
+          <button type="button" class="upgrade-opt" data-plan="enterprise" data-rank="4" id="upgradeEnterprise">
             <div>
-              <div class="uo-title">Enterprise</div>
+              <div class="uo-title">Enterprise <span class="uo-tag" data-tag></span></div>
               <div class="uo-meta">30+ seats · custom invoicing</div>
             </div>
             <div class="uo-price">Talk to us</div>
@@ -1297,19 +1313,52 @@ function configureBillingUI() {
 
   $("billingBtn").textContent = active ? "Manage billing" : "Subscribe";
   $("upgradeBtn").classList.remove("hidden");
-  $("upgradeBtn").textContent = teamplus ? "Contact sales" : "Upgrade plan";
+  $("upgradeBtn").textContent = "Change plan";
 
   if ($("acctMenuLabel")) $("acctMenuLabel").textContent = planName;
 
-  $("upgradeTeam").classList.toggle("hidden", !single);
-  $("upgradeTeamPlus").classList.toggle("hidden", teamplus);
-  $("upgradeHint").textContent = single
-    ? "Add seats so you can invite teammates. Checkout opens on Stripe."
-    : team
-      ? "Move up to Team+ for more seats, or talk to us about Enterprise."
-      : "Need more than 30 seats? Enterprise is custom-quoted.";
-
+  refreshPlanPicker();
   refreshPlanStripMeta();
+}
+
+/** Rank for comparing plans (higher = more seats / price). */
+function planRank(key) {
+  if (key === "teamplus" || key === "enterprise") return key === "enterprise" ? 4 : 3;
+  if (key === "team") return 2;
+  return 1; // single / unknown
+}
+
+/** Paint change-plan options: show upgrade/downgrade tags; mark current. */
+function refreshPlanPicker() {
+  const cur = orgPlanKey === "teamplus" ? "teamplus" : orgPlanKey === "team" ? "team" : "single";
+  const curRank = planRank(cur);
+  document.querySelectorAll(".upgrade-opt[data-plan]").forEach((btn) => {
+    const p = btn.getAttribute("data-plan") || "";
+    const rank = Number(btn.getAttribute("data-rank") || planRank(p));
+    const isCurrent = p === cur || (p === "single" && cur === "single" && (orgPlanKey === "single" || !orgPlanKey));
+    const isEnt = p === "enterprise";
+    const tag = btn.querySelector("[data-tag]");
+    btn.classList.toggle("current", isCurrent && !isEnt);
+    btn.disabled = isCurrent && !isEnt;
+    if (!tag) return;
+    if (isCurrent && !isEnt) {
+      tag.textContent = "Current";
+      tag.className = "uo-tag cur";
+    } else if (isEnt) {
+      tag.textContent = "Sales";
+      tag.className = "uo-tag";
+    } else if (rank > curRank) {
+      tag.textContent = "Upgrade";
+      tag.className = "uo-tag up";
+    } else {
+      tag.textContent = "Downgrade";
+      tag.className = "uo-tag down";
+    }
+  });
+  if ($("upgradeHint")) {
+    $("upgradeHint").textContent =
+      "Switch anytime. Downgrades need your roster to fit the new seat limit; Stripe prorates the difference.";
+  }
 }
 
 function refreshPlanStripMeta() {
@@ -1354,10 +1403,7 @@ $("billingBtn").onclick = async () => {
 
 function openUpgradeModal() {
   closeAcctMenu();
-  if (orgPlanKey === "teamplus" || orgPlanKey === "enterprise") {
-    openSales();
-    return;
-  }
+  refreshPlanPicker();
   $("upgradeMsg").textContent = "";
   $("upgradeMsg").className = "msg";
   $("upgradeModal").classList.remove("hidden");
@@ -1367,27 +1413,63 @@ $("upgradeBtn").onclick = openUpgradeModal;
 $("upgradeClose").onclick = closeUpgradeModal;
 $("upgradeModal").querySelector(".modal-backdrop").onclick = closeUpgradeModal;
 
-async function startPlanUpgrade(plan) {
+async function startPlanChange(plan) {
   if (plan === "enterprise") {
     closeUpgradeModal();
     openSales();
     return;
   }
-  $("upgradeMsg").textContent = "Opening secure checkout…";
+  if (!orgId) {
+    $("upgradeMsg").textContent = "No workspace found for billing.";
+    $("upgradeMsg").className = "msg err";
+    return;
+  }
+  const cur = orgPlanKey === "teamplus" ? "teamplus" : orgPlanKey === "team" ? "team" : "single";
+  if (plan === cur) return;
+
+  const goingDown = planRank(plan) < planRank(cur);
+  $("upgradeMsg").textContent = goingDown ? "Downgrading plan…" : "Upgrading plan…";
   $("upgradeMsg").className = "msg";
   document.querySelectorAll(".upgrade-opt").forEach((b) => { b.disabled = true; });
-  const r = await api("/api/billing/checkout", {
+
+  // Prefer in-place subscription change (prorated). Fall back to Checkout if none yet.
+  let r = await api("/api/billing/change-plan", {
     method: "POST",
     body: JSON.stringify({ plan: plan, organizationId: orgId }),
   });
-  const d = await r.json().catch(() => ({}));
+  let d = await r.json().catch(() => ({}));
+
+  if (!r.ok && (d.error === "no active subscription" || d.error === "subscription is not active")) {
+    r = await api("/api/billing/checkout", {
+      method: "POST",
+      body: JSON.stringify({ plan: plan, organizationId: orgId }),
+    });
+    d = await r.json().catch(() => ({}));
+    document.querySelectorAll(".upgrade-opt").forEach((b) => { b.disabled = false; });
+    refreshPlanPicker();
+    if (r.ok && d.url) { window.location.href = d.url; return; }
+    $("upgradeMsg").textContent = d.error || "Could not start checkout.";
+    $("upgradeMsg").className = "msg err";
+    return;
+  }
+
   document.querySelectorAll(".upgrade-opt").forEach((b) => { b.disabled = false; });
-  if (r.ok && d.url) { window.location.href = d.url; return; }
-  $("upgradeMsg").textContent = d.error || "Could not start upgrade checkout.";
+  if (r.ok) {
+    $("upgradeMsg").textContent = goingDown ? "Downgraded. Refreshing…" : "Upgraded. Refreshing…";
+    $("upgradeMsg").className = "msg ok";
+    closeUpgradeModal();
+    await afterLogin(false);
+    return;
+  }
+  refreshPlanPicker();
+  $("upgradeMsg").textContent = d.error || "Could not change plan.";
   $("upgradeMsg").className = "msg err";
 }
 document.querySelectorAll(".upgrade-opt").forEach((b) => {
-  b.onclick = () => startPlanUpgrade(b.getAttribute("data-plan") || "");
+  b.onclick = () => {
+    if (b.disabled || b.classList.contains("current")) return;
+    startPlanChange(b.getAttribute("data-plan") || "");
+  };
 });
 
 // Point the timesheet-email card at the right owner: managers edit the team's

@@ -10,7 +10,13 @@
 import Stripe from "stripe";
 
 import { makeAuth } from "./auth-server";
-import { orgPlan, SELF_SERVE_PLANS, type SelfServePlan } from "./plans";
+import {
+  isPaidBillingStatus,
+  orgPlan,
+  planCap,
+  SELF_SERVE_PLANS,
+  type SelfServePlan,
+} from "./plans";
 import type { Env } from "./types";
 
 // The smallest tier; a canceled/lapsed subscription reverts an org to this.
@@ -197,6 +203,98 @@ export async function createCheckoutSession(
     cancel_url: opts.origin + "/?billing=cancel",
   });
   return session.url;
+}
+
+/**
+ * Switch an existing subscription to another self-serve plan (upgrade or
+ * downgrade). Uses Stripe proration so the customer isn't double-billed.
+ * Blocks downgrades when the roster exceeds the target plan's seat cap.
+ */
+export async function changeSubscriptionPlan(
+  env: Env,
+  opts: { orgId: string; plan: SelfServePlan },
+): Promise<{ ok: true; plan: string } | { ok: false; error: string }> {
+  const priceId = priceForPlan(env, opts.plan);
+  if (!priceId) return { ok: false, error: "invalid plan" };
+
+  const billing = await env.DB.prepare(
+    `SELECT stripeSubscriptionId, status, plan FROM org_billing WHERE organizationId = ?`,
+  )
+    .bind(opts.orgId)
+    .first<{ stripeSubscriptionId: string | null; status: string | null; plan: string | null }>();
+
+  if (!billing?.stripeSubscriptionId) {
+    return { ok: false, error: "no active subscription" };
+  }
+  if (!isPaidBillingStatus(billing.status)) {
+    return { ok: false, error: "subscription is not active" };
+  }
+  if (billing.plan === opts.plan) {
+    return { ok: false, error: "already on this plan" };
+  }
+
+  const members = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM member WHERE organizationId = ?`,
+  )
+    .bind(opts.orgId)
+    .first<{ n: number }>();
+  const count = Number(members?.n ?? 0);
+  const cap = planCap(opts.plan);
+  if (count > cap) {
+    return {
+      ok: false,
+      error:
+        "this plan only allows " +
+        cap +
+        " seat" +
+        (cap === 1 ? "" : "s") +
+        "; remove " +
+        (count - cap) +
+        " member" +
+        (count - cap === 1 ? "" : "s") +
+        " first",
+    };
+  }
+
+  try {
+    const stripe = makeStripe(env);
+    const sub = await stripe.subscriptions.retrieve(billing.stripeSubscriptionId);
+    const itemId = sub.items?.data?.[0]?.id;
+    if (!itemId) return { ok: false, error: "subscription has no items" };
+
+    const updated = await stripe.subscriptions.update(billing.stripeSubscriptionId, {
+      items: [{ id: itemId, price: priceId }],
+      proration_behavior: "create_prorations",
+      metadata: {
+        ...(typeof sub.metadata === "object" && sub.metadata ? sub.metadata : {}),
+        orgId: opts.orgId,
+        plan: opts.plan,
+      },
+    });
+
+    // Persist immediately; subscription.updated webhook will reaffirm.
+    await env.DB.prepare(
+      `UPDATE org_billing
+          SET status = ?, plan = ?, currentPeriodEnd = ?, updatedAt = ?
+        WHERE organizationId = ?`,
+    )
+      .bind(
+        updated.status,
+        opts.plan,
+        (updated as unknown as { current_period_end?: number }).current_period_end ??
+          (updated.items?.data?.[0] as unknown as { current_period_end?: number } | undefined)
+            ?.current_period_end ??
+          null,
+        Date.now(),
+        opts.orgId,
+      )
+      .run();
+    await setOrgPlan(env, opts.orgId, opts.plan);
+    return { ok: true, plan: opts.plan };
+  } catch (e) {
+    console.error("changeSubscriptionPlan error:", String((e as Error)?.message ?? e));
+    return { ok: false, error: "could not change plan" };
+  }
 }
 
 /** Create a Billing Portal Session for an org's Stripe customer, or null if the

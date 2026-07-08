@@ -28,6 +28,7 @@ import {
   planLabel,
 } from "./plans";
 import {
+  changeSubscriptionPlan,
   createCheckoutSession,
   createPortalSession,
   ensurePersonalOrg,
@@ -298,6 +299,26 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
       console.error("stripe portal error:", String((e as Error)?.message ?? e));
       return json({ error: "portal unavailable" }, 502);
     }
+  }
+
+  // Upgrade or downgrade an existing subscription (prorated). Seat-cap checked server-side.
+  if (req.method === "POST" && url.pathname === "/api/billing/change-plan") {
+    const user = await requireVerifiedUser(req, env);
+    if (user instanceof Response) return user;
+    const body = (await req.json().catch(() => ({}))) as {
+      plan?: unknown;
+      organizationId?: unknown;
+    };
+    const plan = typeof body.plan === "string" ? body.plan : "";
+    if (!isSelfServePlan(plan)) return json({ error: "invalid plan" }, 400);
+    const targetOrg = typeof body.organizationId === "string" ? body.organizationId : "";
+    if (!(await isManagerOf(env, user.id, targetOrg))) return json({ error: "forbidden" }, 403);
+    const result = await changeSubscriptionPlan(env, { orgId: targetOrg, plan });
+    if (!result.ok) {
+      const status = result.error.includes("seat") || result.error.includes("member") ? 409 : 400;
+      return json({ error: result.error }, status);
+    }
+    return json({ ok: true, plan: result.plan });
   }
 
   if (url.pathname === "/api/manual-session") {
