@@ -83,8 +83,7 @@ const HTML = /* html */ `<!doctype html>
   .acct-chip .status-dot.ok { background:var(--ok); box-shadow:0 0 0 3px rgba(91,214,162,.15); }
   .acct-chip .status-dot.warn { background:var(--amber); box-shadow:0 0 0 3px rgba(242,169,80,.15); }
   .acct-chip .status-dot.bad { background:var(--err); box-shadow:0 0 0 3px rgba(255,112,112,.12); }
-  .acct-chip .acct-label { max-width:7.5em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .acct-chip .acct-chevron { color:var(--muted); font-size:10px; margin-left:2px; }
+  .acct-chip .acct-chevron { color:var(--muted); font-size:10px; margin-left:1px; }
   .acct-pop {
     position:absolute; right:0; top:calc(100% + 8px); z-index:40; width:min(280px, calc(100vw - 40px));
     padding:12px; border-radius:14px;
@@ -459,9 +458,9 @@ const HTML = /* html */ `<!doctype html>
     <!-- Plan lives in the header as a quiet account chip + popover -->
     <div id="teamCard" class="acct-menu hidden">
       <button type="button" id="acctMenuBtn" class="acct-chip" aria-haspopup="menu" aria-expanded="false" aria-controls="acctMenuPop">
-        <span id="planBadge" class="plan-badge">Solo</span>
         <span id="planStatusDot" class="status-dot" aria-hidden="true"></span>
-        <span id="acctMenuLabel" class="acct-label">Solo</span>
+        <span id="planBadge" class="plan-badge">Solo</span>
+        <span id="acctMenuLabel" class="hidden">Solo</span>
         <span class="acct-chevron" aria-hidden="true">▾</span>
       </button>
       <div id="acctMenuPop" class="acct-pop hidden" role="menu">
