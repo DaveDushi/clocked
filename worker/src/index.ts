@@ -180,6 +180,21 @@ export default {
       }
     }
 
+    // Managers may adjust a member's timesheet on their behalf before it sends —
+    // add, list, or remove that member's manual entries. Same operations as a
+    // member's own /api/manual-session, guarded to the manager's org + target.
+    if (url.pathname === "/api/team/manual-session") {
+      const user = await sessionUser(req, env);
+      if (!user) return json({ error: "unauthorized" }, 401);
+      const orgId = url.searchParams.get("organizationId") ?? "";
+      const targetId = url.searchParams.get("userId") ?? "";
+      if (!(await isManagerOf(env, user.id, orgId))) return json({ error: "forbidden" }, 403);
+      if (!targetId || !(await isMemberOf(env, targetId, orgId))) {
+        return json({ error: "user is not in your organization" }, 403);
+      }
+      return handleManualSession(req, url, env, targetId);
+    }
+
     // ---- Billing (Stripe). Checkout + portal are owner/admin gated; the webhook
     // is authenticated by Stripe's signature (not a session), so it must come
     // before any session check and stay out of the bearer path.
@@ -239,80 +254,7 @@ export default {
     if (url.pathname === "/api/manual-session") {
       const user = await sessionUser(req, env);
       if (!user) return json({ error: "unauthorized" }, 401);
-
-      if (req.method === "GET") {
-        const period =
-          url.searchParams.get("period") ?? previousMonthPeriod(new Date(), env.REPORT_TZ);
-        const { start, end } = monthBoundsUtc(period, env.REPORT_TZ);
-        const res = await env.DB.prepare(
-          `SELECT id, start_utc, end_utc FROM sessions
-            WHERE user_id = ? AND start_reason = 'manual' AND end_utc > ? AND start_utc < ?
-            ORDER BY start_utc`,
-        )
-          .bind(user.id, start.toISOString(), end.toISOString())
-          .all<{ id: string; start_utc: string; end_utc: string }>();
-        const tz = env.REPORT_TZ;
-        const entries = (res.results ?? []).map((r) => {
-          const s = new Date(r.start_utc);
-          const { y, m, d } = localYMD(s, tz);
-          return {
-            id: r.id,
-            date: `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`,
-            start: formatHM(s, tz),
-            end: formatHM(new Date(r.end_utc), tz),
-          };
-        });
-        return json({ entries });
-      }
-
-      if (req.method === "DELETE") {
-        const body = (await req.json().catch(() => ({}))) as { id?: unknown };
-        const id = typeof body.id === "string" ? body.id : "";
-        if (!id) return json({ error: "id required" }, 400);
-        const res = await env.DB.prepare(
-          `DELETE FROM sessions WHERE id = ? AND user_id = ? AND start_reason = 'manual'`,
-        )
-          .bind(id, user.id)
-          .run();
-        if (!res.meta.changes) return json({ error: "not found" }, 404);
-        return json({ ok: true });
-      }
-
-      if (req.method === "POST") {
-        const body = (await req.json().catch(() => ({}))) as {
-          date?: unknown;
-          start?: unknown;
-          end?: unknown;
-        };
-        const date = typeof body.date === "string" ? body.date : "";
-        const start = typeof body.start === "string" ? body.start : "";
-        const end = typeof body.end === "string" ? body.end : "";
-        if (
-          !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
-          !/^\d{2}:\d{2}$/.test(start) ||
-          !/^\d{2}:\d{2}$/.test(end)
-        ) {
-          return json({ error: "invalid date or time" }, 400);
-        }
-        const [y, m, d] = date.split("-").map(Number);
-        const [sh, smi] = start.split(":").map(Number);
-        const [eh, emi] = end.split(":").map(Number);
-        if (m < 1 || m > 12 || d < 1 || d > 31 || sh > 23 || smi > 59 || eh > 23 || emi > 59) {
-          return json({ error: "invalid date or time" }, 400);
-        }
-        if (eh * 60 + emi <= sh * 60 + smi) {
-          return json({ error: "clock-out must be after clock-in" }, 400);
-        }
-        const startUtc = wallToUtc(y, m, d, sh, smi, 0, env.REPORT_TZ);
-        const endUtc = wallToUtc(y, m, d, eh, emi, 0, env.REPORT_TZ);
-        await env.DB.prepare(
-          `INSERT INTO sessions (id, start_utc, end_utc, start_reason, end_reason, user_id)
-           VALUES (?, ?, ?, 'manual', 'manual', ?)`,
-        )
-          .bind(crypto.randomUUID(), startUtc.toISOString(), endUtc.toISOString(), user.id)
-          .run();
-        return json({ ok: true });
-      }
+      return handleManualSession(req, url, env, user.id);
     }
 
     if (url.pathname === "/api/settings") {
@@ -469,6 +411,93 @@ async function isManagerOf(env: Env, userId: string, organizationId: string): Pr
     .bind(userId, organizationId)
     .first<{ role: string }>();
   return !!row && isManagerRole(row.role);
+}
+
+/**
+ * Manual time entries (reason "manual") for `userId`: list (GET), add (POST),
+ * remove (DELETE). Shared by a member editing their own timesheet and a manager
+ * adjusting a member's — the only difference is which `userId` is passed in.
+ */
+async function handleManualSession(
+  req: Request,
+  url: URL,
+  env: Env,
+  userId: string,
+): Promise<Response> {
+  if (req.method === "GET") {
+    const period = url.searchParams.get("period") ?? previousMonthPeriod(new Date(), env.REPORT_TZ);
+    const { start, end } = monthBoundsUtc(period, env.REPORT_TZ);
+    const res = await env.DB.prepare(
+      `SELECT id, start_utc, end_utc FROM sessions
+        WHERE user_id = ? AND start_reason = 'manual' AND end_utc > ? AND start_utc < ?
+        ORDER BY start_utc`,
+    )
+      .bind(userId, start.toISOString(), end.toISOString())
+      .all<{ id: string; start_utc: string; end_utc: string }>();
+    const tz = env.REPORT_TZ;
+    const entries = (res.results ?? []).map((r) => {
+      const s = new Date(r.start_utc);
+      const { y, m, d } = localYMD(s, tz);
+      return {
+        id: r.id,
+        date: `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`,
+        start: formatHM(s, tz),
+        end: formatHM(new Date(r.end_utc), tz),
+      };
+    });
+    return json({ entries });
+  }
+
+  if (req.method === "DELETE") {
+    const body = (await req.json().catch(() => ({}))) as { id?: unknown };
+    const id = typeof body.id === "string" ? body.id : "";
+    if (!id) return json({ error: "id required" }, 400);
+    const res = await env.DB.prepare(
+      `DELETE FROM sessions WHERE id = ? AND user_id = ? AND start_reason = 'manual'`,
+    )
+      .bind(id, userId)
+      .run();
+    if (!res.meta.changes) return json({ error: "not found" }, 404);
+    return json({ ok: true });
+  }
+
+  if (req.method === "POST") {
+    const body = (await req.json().catch(() => ({}))) as {
+      date?: unknown;
+      start?: unknown;
+      end?: unknown;
+    };
+    const date = typeof body.date === "string" ? body.date : "";
+    const start = typeof body.start === "string" ? body.start : "";
+    const end = typeof body.end === "string" ? body.end : "";
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+      !/^\d{2}:\d{2}$/.test(start) ||
+      !/^\d{2}:\d{2}$/.test(end)
+    ) {
+      return json({ error: "invalid date or time" }, 400);
+    }
+    const [y, m, d] = date.split("-").map(Number);
+    const [sh, smi] = start.split(":").map(Number);
+    const [eh, emi] = end.split(":").map(Number);
+    if (m < 1 || m > 12 || d < 1 || d > 31 || sh > 23 || smi > 59 || eh > 23 || emi > 59) {
+      return json({ error: "invalid date or time" }, 400);
+    }
+    if (eh * 60 + emi <= sh * 60 + smi) {
+      return json({ error: "clock-out must be after clock-in" }, 400);
+    }
+    const startUtc = wallToUtc(y, m, d, sh, smi, 0, env.REPORT_TZ);
+    const endUtc = wallToUtc(y, m, d, eh, emi, 0, env.REPORT_TZ);
+    await env.DB.prepare(
+      `INSERT INTO sessions (id, start_utc, end_utc, start_reason, end_reason, user_id)
+       VALUES (?, ?, ?, 'manual', 'manual', ?)`,
+    )
+      .bind(crypto.randomUUID(), startUtc.toISOString(), endUtc.toISOString(), userId)
+      .run();
+    return json({ ok: true });
+  }
+
+  return json({ error: "method not allowed" }, 405);
 }
 
 /** True when `userId` belongs to `organizationId` (any role). */

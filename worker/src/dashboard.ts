@@ -857,7 +857,7 @@ function configureBillingUI() {
   $("teamCardTitle").firstChild.textContent = single ? "Your plan " : "Team ";
   $("teamCardHint").textContent = single
     ? "Your personal subscription."
-    : "Invite members and open anyone's timesheet. Members only ever see their own hours.";
+    : "Invite members and open anyone's timesheet — adjust their entries before it sends. Members only ever see their own hours.";
   $("billingStatus").textContent = active
     ? ("Subscribed · " + billingStatus)
     : "No active subscription";
@@ -995,8 +995,78 @@ function renderTeamMember(d, period) {
     : "<tr class='empty'><td colspan='3'>No days to show for this month.</td></tr>";
   const activeDays = d.activeDays ?? d.days.filter((x) => x.minutes > 0).length;
   const summary = "<div class='muted' style='padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px'>Total <b style='color:var(--amber)'>" + fmt(d.totalMinutes) + "</b> &middot; " + activeDays + " day(s)</div>";
-  panel.innerHTML = head + summary + "<div class='tablewrap'><table><thead><tr><th>Day</th><th></th><th class='num'>Hours</th></tr></thead><tbody>" + rows + "</tbody></table></div>";
+  panel.innerHTML = head + summary + "<div class='tablewrap'><table><thead><tr><th>Day</th><th></th><th class='num'>Hours</th></tr></thead><tbody>" + rows + "</tbody></table></div>" + tmEditHtml();
   $("tmClose").onclick = closeMember;
+  wireTeamEdit(period);
+  loadTeamManual(period);
+}
+
+// ---- manager adjustments to a member's timesheet -------------------------
+function teamManualUrl(period) {
+  let u = "/api/team/manual-session?organizationId=" + encodeURIComponent(orgId) + "&userId=" + encodeURIComponent(openMemberId);
+  if (period) u += "&period=" + period;
+  return u;
+}
+function tmEditHtml() {
+  return "<div style='padding:14px 12px 4px;border-top:1px solid var(--border)'>" +
+    "<div class='mentries-head' style='margin-bottom:8px'>Adjust timesheet</div>" +
+    "<div class='row'>" +
+      "<div><label for='tmDate'>Date</label><input id='tmDate' type='date'></div>" +
+      "<div><label for='tmStart'>Clock in</label><input id='tmStart' type='time'></div>" +
+      "<div><label for='tmEnd'>Clock out</label><input id='tmEnd' type='time'></div>" +
+      "<button id='tmAdd'>Add</button>" +
+    "</div>" +
+    "<div id='tmManualMsg' class='msg' role='status'></div>" +
+    "<div id='tmManualList' class='mentries'></div>" +
+  "</div>";
+}
+function wireTeamEdit(period) {
+  const now = new Date();
+  const cur = now.getFullYear() + "-" + pad(now.getMonth()+1);
+  $("tmDate").value = period === cur ? period + "-" + pad(now.getDate()) : period + "-01";
+  $("tmAdd").onclick = addTeamManual;
+}
+async function addTeamManual() {
+  const date = $("tmDate").value, start = $("tmStart").value, end = $("tmEnd").value;
+  $("tmManualMsg").textContent = ""; $("tmManualMsg").className = "msg";
+  if (!date || !start || !end) { $("tmManualMsg").textContent = "Date, clock in, and clock out are all required."; $("tmManualMsg").className = "msg err"; return; }
+  if (end <= start) { $("tmManualMsg").textContent = "Clock out must be after clock in."; $("tmManualMsg").className = "msg err"; return; }
+  $("tmAdd").disabled = true;
+  const r = await api(teamManualUrl(), { method:"POST", body: JSON.stringify({ date, start, end }) });
+  $("tmAdd").disabled = false;
+  if (r.ok) { loadTeamMemberHours(); } // rebuilds the panel with new totals + entries
+  else { const d = await r.json().catch(()=>({})); $("tmManualMsg").textContent = d.error || "Could not add entry."; $("tmManualMsg").className = "msg err"; }
+}
+async function loadTeamManual(period) {
+  const r = await api(teamManualUrl(period));
+  if (!r.ok) { $("tmManualList").innerHTML = ""; return; }
+  const d = await r.json();
+  renderTeamManual(d.entries || []);
+}
+function renderTeamManual(list) {
+  const box = $("tmManualList");
+  box.innerHTML = "";
+  if (!list.length) return;
+  const head = document.createElement("div");
+  head.className = "mentries-head";
+  head.textContent = "Manual entries this month (" + list.length + ")";
+  box.appendChild(head);
+  list.forEach((e) => {
+    const row = document.createElement("div");
+    row.className = "mentry";
+    const label = document.createElement("span");
+    label.textContent = e.date + "  ·  " + e.start + "–" + e.end;
+    const del = document.createElement("button");
+    del.type = "button"; del.className = "ghost del"; del.textContent = "×"; del.title = "Delete this entry";
+    del.onclick = () => deleteTeamManual(e.id);
+    row.appendChild(label); row.appendChild(del);
+    box.appendChild(row);
+  });
+}
+async function deleteTeamManual(id) {
+  const r = await api(teamManualUrl(), { method:"DELETE", body: JSON.stringify({ id }) });
+  if (r.ok) { loadTeamMemberHours(); }
+  else { const d = await r.json().catch(()=>({})); $("tmManualMsg").textContent = d.error || "Could not delete."; $("tmManualMsg").className = "msg err"; }
 }
 
 $("inviteBtn").onclick = async () => {
