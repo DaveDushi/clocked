@@ -85,6 +85,21 @@ async function orgIdForCustomer(env: Env, customer: unknown): Promise<string | n
   return row?.organizationId ?? null;
 }
 
+/** Orgs the user owns (role contains owner). */
+async function ownedOrgs(
+  env: Env,
+  userId: string,
+): Promise<{ id: string; metadata: string | null }[]> {
+  const owned = await env.DB.prepare(
+    `SELECT o.id AS id, o.metadata AS metadata
+       FROM member m JOIN organization o ON o.id = m.organizationId
+      WHERE m.userId = ? AND m.role LIKE '%owner%'`,
+  )
+    .bind(userId)
+    .all<{ id: string; metadata: string | null }>();
+  return owned.results ?? [];
+}
+
 /** Ensure the user has a 1-seat personal org for the "single" plan, reusing an
  * existing one if present. Created via the better-auth server API so the owner
  * membership is set up exactly like a normal org. Idempotent: the slug is derived
@@ -94,14 +109,7 @@ export async function ensurePersonalOrg(
   req: Request,
   user: { id: string; email: string },
 ): Promise<string> {
-  const owned = await env.DB.prepare(
-    `SELECT o.id AS id, o.metadata AS metadata
-       FROM member m JOIN organization o ON o.id = m.organizationId
-      WHERE m.userId = ? AND m.role LIKE '%owner%'`,
-  )
-    .bind(user.id)
-    .all<{ id: string; metadata: string | null }>();
-  for (const o of owned.results ?? []) {
+  for (const o of await ownedOrgs(env, user.id)) {
     if (orgPlan(o.metadata) === "single") return o.id;
   }
 
@@ -114,6 +122,54 @@ export async function ensurePersonalOrg(
   const orgId = (created as { id?: string } | null)?.id;
   if (!orgId) throw new Error("could not create personal organization");
   return orgId;
+}
+
+/**
+ * Ensure the user has a team workspace to attach team/teamplus checkout.
+ * Reuses any non-single org they already own; otherwise creates one.
+ */
+export async function ensureTeamOrg(
+  env: Env,
+  req: Request,
+  user: { id: string; email: string },
+  name?: string,
+): Promise<string> {
+  for (const o of await ownedOrgs(env, user.id)) {
+    if (orgPlan(o.metadata) !== "single") return o.id;
+  }
+
+  const local = user.email.split("@")[0] || "team";
+  const label = (name && name.trim()) || local + "'s team";
+  const base =
+    label
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 36) || "team";
+  const slug = base + "-" + Math.random().toString(36).slice(2, 6);
+  const created = await makeAuth(env).api.createOrganization({
+    body: { name: label.slice(0, 80), slug, metadata: { plan: "single" } },
+    headers: req.headers,
+  });
+  const orgId = (created as { id?: string } | null)?.id;
+  if (!orgId) throw new Error("could not create team organization");
+  return orgId;
+}
+
+/** True when the user belongs to any org with an active Stripe subscription. */
+export async function userHasPaidAccess(env: Env, userId: string): Promise<boolean> {
+  if (!userId) return false;
+  const row = await env.DB.prepare(
+    `SELECT 1 AS ok
+       FROM member m
+       JOIN org_billing b ON b.organizationId = m.organizationId
+      WHERE m.userId = ?
+        AND b.status IN ('active', 'trialing', 'past_due')
+      LIMIT 1`,
+  )
+    .bind(userId)
+    .first<{ ok: number }>();
+  return !!row;
 }
 
 /** Create a Checkout Session for a plan and return its hosted URL. */

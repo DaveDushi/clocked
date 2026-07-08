@@ -31,8 +31,10 @@ import {
   createCheckoutSession,
   createPortalSession,
   ensurePersonalOrg,
+  ensureTeamOrg,
   handleWebhook,
   isSelfServePlan,
+  userHasPaidAccess,
 } from "./billing";
 import { clientIp, rateLimitAllowDurable } from "./rate-limit";
 import { parsePeriodParam, withSecurityHeaders } from "./security";
@@ -111,12 +113,12 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   // All other data APIs require a verified email.
 
   if (url.pathname === "/api/token" && req.method === "GET") {
-    const user = await requireVerifiedUser(req, env);
+    const user = await requirePaidUser(req, env);
     if (user instanceof Response) return user;
     return json(await getOrCreateToken(env, user.id));
   }
   if (url.pathname === "/api/token/regenerate" && req.method === "POST") {
-    const user = await requireVerifiedUser(req, env);
+    const user = await requirePaidUser(req, env);
     if (user instanceof Response) return user;
     if (!(await rateLimitAllowDurable(env.DB, `token-regen:${user.id}`, 5, 60 * 60_000))) {
       return json({ error: "too many requests" }, 429);
@@ -125,7 +127,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   }
 
   if (url.pathname === "/api/hours" && req.method === "GET") {
-    const user = await requireVerifiedUser(req, env);
+    const user = await requirePaidUser(req, env);
     if (user instanceof Response) return user;
     const period = resolvePeriod(url, env);
     if (!period) return json({ error: "invalid period" }, 400);
@@ -137,15 +139,24 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const user = await sessionUser(req, env);
     if (!user) return json({ error: "unauthorized" }, 401);
     const orgs = user.emailVerified ? await membershipsFor(env, user.id) : [];
+    const hasAccess = user.emailVerified && orgs.some((o) => o.paid);
+    const waitingOnTeam =
+      user.emailVerified &&
+      !hasAccess &&
+      orgs.length > 0 &&
+      !orgs.some((o) => isManagerRole(o.role));
     return json({
       user: { id: user.id, email: user.email, emailVerified: user.emailVerified },
       orgs,
       manager: orgs.some((o) => isManagerRole(o.role)),
+      hasAccess,
+      needsPlan: user.emailVerified && !hasAccess && !waitingOnTeam,
+      waitingOnTeam,
     });
   }
 
   if (url.pathname === "/api/team/members" && req.method === "GET") {
-    const user = await requireVerifiedUser(req, env);
+    const user = await requirePaidUser(req, env);
     if (user instanceof Response) return user;
     const orgId = url.searchParams.get("organizationId") ?? "";
     if (!(await isManagerOf(env, user.id, orgId))) return json({ error: "forbidden" }, 403);
@@ -164,7 +175,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     (url.pathname === "/api/team/hours" || url.pathname === "/api/team/preview") &&
     req.method === "GET"
   ) {
-    const user = await requireVerifiedUser(req, env);
+    const user = await requirePaidUser(req, env);
     if (user instanceof Response) return user;
     const orgId = url.searchParams.get("organizationId") ?? "";
     const targetId = url.searchParams.get("userId") ?? "";
@@ -182,7 +193,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   }
 
   if (url.pathname === "/api/team/settings") {
-    const user = await requireVerifiedUser(req, env);
+    const user = await requirePaidUser(req, env);
     if (user instanceof Response) return user;
     const orgId = url.searchParams.get("organizationId") ?? "";
     if (!(await isManagerOf(env, user.id, orgId))) return json({ error: "forbidden" }, 403);
@@ -218,7 +229,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   }
 
   if (url.pathname === "/api/team/manual-session") {
-    const user = await requireVerifiedUser(req, env);
+    const user = await requirePaidUser(req, env);
     if (user instanceof Response) return user;
     const orgId = url.searchParams.get("organizationId") ?? "";
     const targetId = url.searchParams.get("userId") ?? "";
@@ -239,17 +250,27 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const body = (await req.json().catch(() => ({}))) as {
       plan?: unknown;
       organizationId?: unknown;
+      organizationName?: unknown;
     };
     const plan = typeof body.plan === "string" ? body.plan : "";
     if (!isSelfServePlan(plan)) return json({ error: "invalid plan" }, 400);
+    const orgName =
+      typeof body.organizationName === "string" ? body.organizationName.trim().slice(0, 80) : "";
     let targetOrg: string;
-    if (plan === "single") {
-      targetOrg = await ensurePersonalOrg(env, req, user);
-    } else {
-      targetOrg = typeof body.organizationId === "string" ? body.organizationId : "";
-      if (!(await isManagerOf(env, user.id, targetOrg))) return json({ error: "forbidden" }, 403);
-    }
     try {
+      if (plan === "single") {
+        targetOrg = await ensurePersonalOrg(env, req, user);
+      } else {
+        targetOrg = typeof body.organizationId === "string" ? body.organizationId : "";
+        if (targetOrg) {
+          if (!(await isManagerOf(env, user.id, targetOrg))) {
+            return json({ error: "forbidden" }, 403);
+          }
+        } else {
+          // One-click team checkout: create workspace if needed, then Stripe.
+          targetOrg = await ensureTeamOrg(env, req, user, orgName || undefined);
+        }
+      }
       const checkoutUrl = await createCheckoutSession(env, {
         orgId: targetOrg,
         plan,
@@ -257,7 +278,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
         origin: url.origin,
       });
       if (!checkoutUrl) return json({ error: "checkout unavailable" }, 502);
-      return json({ url: checkoutUrl });
+      return json({ url: checkoutUrl, organizationId: targetOrg });
     } catch (e) {
       console.error("stripe checkout error:", String((e as Error)?.message ?? e));
       return json({ error: "checkout unavailable" }, 502);
@@ -280,13 +301,13 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   }
 
   if (url.pathname === "/api/manual-session") {
-    const user = await requireVerifiedUser(req, env);
+    const user = await requirePaidUser(req, env);
     if (user instanceof Response) return user;
     return handleManualSession(req, url, env, user.id);
   }
 
   if (url.pathname === "/api/settings") {
-    const user = await requireVerifiedUser(req, env);
+    const user = await requirePaidUser(req, env);
     if (user instanceof Response) return user;
     if (req.method === "GET") {
       const eff = await getEffectiveRecipients(env, user.id, user.email);
@@ -324,7 +345,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   }
 
   if (req.method === "GET" && url.pathname === "/preview") {
-    const user = await requireVerifiedUser(req, env);
+    const user = await requirePaidUser(req, env);
     if (user instanceof Response) return user;
     const period = resolvePeriod(url, env);
     if (!period) return json({ error: "invalid period" }, 400);
@@ -334,7 +355,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
 
   // Manual send — throttled (force email is expensive / abusable).
   if (req.method === "POST" && url.pathname === "/api/send") {
-    const user = await requireVerifiedUser(req, env);
+    const user = await requirePaidUser(req, env);
     if (user instanceof Response) return user;
     if (!(await rateLimitAllowDurable(env.DB, `send:${user.id}`, 3, 60 * 60_000))) {
       return json({ error: "too many sends; try again later" }, 429);
@@ -359,6 +380,9 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
     const userId = await userIdForToken(env, bearer);
     if (userId) {
+      if (!(await userHasPaidAccess(env, userId))) {
+        return json({ error: "subscription required" }, 402);
+      }
       if (!(await rateLimitAllowDurable(env.DB, `sessions:user:${userId}`, 120, 60_000))) {
         return json({ error: "too many requests" }, 429);
       }
@@ -406,6 +430,22 @@ async function requireVerifiedUser(
   const user = await sessionUser(req, env);
   if (!user) return json({ error: "unauthorized" }, 401);
   if (!user.emailVerified) return json({ error: "email not verified" }, 403);
+  return user;
+}
+
+/**
+ * Verified user on a paid org (owner or member). Used for product APIs.
+ * Billing/checkout stays on requireVerifiedUser so unpaid users can subscribe.
+ */
+async function requirePaidUser(
+  req: Request,
+  env: Env,
+): Promise<SessionUser | Response> {
+  const user = await requireVerifiedUser(req, env);
+  if (user instanceof Response) return user;
+  if (!(await userHasPaidAccess(env, user.id))) {
+    return json({ error: "subscription required" }, 402);
+  }
   return user;
 }
 

@@ -282,6 +282,12 @@ const HTML = /* html */ `<!doctype html>
   .price-list li { position:relative; padding-left:24px; font-size:13.5px; color:var(--fg); }
   .price-list li::before { content:"✓"; position:absolute; left:0; top:0; color:var(--ok); font-weight:700; }
   .price-card button { margin-top:auto; }
+  .price-card.selected { border-color:rgba(242,169,80,.55); box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 0 0 1px rgba(242,169,80,.25), 0 10px 26px rgba(0,0,0,.3); }
+  #planGate { max-width:720px; margin:0 auto 40px; }
+  #planGate .price-head { margin-top:12px; }
+  #planGateWait { margin-bottom:18px; }
+  #planGateOrgField { max-width:420px; margin:0 auto 18px; }
+  #verifyGate { max-width:520px; margin:24px auto; }
 
   .muted { color:var(--muted); }
   .msg { font-size:13px; margin-top:10px; min-height:18px; }
@@ -435,83 +441,93 @@ const HTML = /* html */ `<!doctype html>
       </div>
     </div>
 
-    <div id="salesModal" class="modal hidden">
-      <div class="modal-backdrop"></div>
-      <div class="card modal-card">
-        <button id="salesClose" class="ghost modal-close" aria-label="Close">&times;</button>
-        <h3>Contact sales</h3>
-        <p class="hint">Tell us about your team and we&rsquo;ll be in touch.</p>
-        <div class="field">
-          <label for="sName">Name</label>
-          <input id="sName" type="text" autocomplete="name" />
-        </div>
-        <div class="field">
-          <label for="sEmail">Work email</label>
-          <input id="sEmail" type="email" autocomplete="email" />
-        </div>
-        <div class="row">
-          <div>
-            <label for="sCompany">Company</label>
-            <input id="sCompany" type="text" autocomplete="organization" />
-          </div>
-          <div>
-            <label for="sTeam">Team size</label>
-            <input id="sTeam" type="text" inputmode="numeric" placeholder="e.g. 45" />
-          </div>
-        </div>
-        <div class="field" style="margin-top:14px">
-          <label for="sMsg">Message <span class="muted" style="text-transform:none;letter-spacing:0">(optional)</span></label>
-          <textarea id="sMsg" rows="3"></textarea>
-        </div>
-        <button id="sSubmit" style="width:100%">Send message</button>
-        <div id="salesMsg" class="msg" role="status"></div>
-      </div>
-    </div>
   </div>
 
   <!-- Dashboard (logged in) -->
   <div id="app" class="hidden">
     <div id="freshBanner" class="banner hidden">
-      <b>Account created.</b> Your desktop sync token is below — copy it now and
-      paste it into the app. You can always find it again here.
+      <b>Account created.</b> Verify your email, pick a plan, then copy your desktop sync token.
     </div>
     <div id="billingBanner" class="banner hidden">
-      <b>Payment received.</b> Your plan will refresh here shortly.
+      <b>Payment received.</b> Unlocking your dashboard&hellip;
     </div>
 
-    <!-- Solo billing — shown when the user belongs to no organization. -->
-    <div id="soloBillingCard" class="card hidden">
-      <h3>Your plan</h3>
-      <p class="hint">You&rsquo;re on the personal dashboard. Subscribe to Single to support clocked &mdash; 25&cent;/day, billed monthly.</p>
-      <div class="row" style="align-items:center">
-        <span class="muted" style="font-size:13px">Single &middot; just you &middot; $7.50/mo</span>
-        <span class="rspacer" style="flex:1"></span>
-        <button id="soloBillingBtn">Subscribe</button>
-      </div>
-      <div id="soloBillingMsg" class="msg" role="status"></div>
+    <!-- Verify email first (blocking). -->
+    <div id="verifyGate" class="card hidden">
+      <h3>Verify your email</h3>
+      <p class="hint">We sent a link to your inbox. Confirm it to choose a plan and open your dashboard.</p>
+      <button id="resendVerifyGate" class="ghost">Resend verification email</button>
+      <div id="verifyGateMsg" class="msg" role="status"></div>
     </div>
 
-    <!-- Org onboarding — shown only when the user belongs to no organization. -->
-    <div id="orgSetupCard" class="card hidden">
-      <h3>Create a team</h3>
-      <p class="hint">Start an organization to invite people and see everyone&rsquo;s hours. You&rsquo;ll be its manager. Optional — skip it to keep using clocked solo.</p>
-      <div class="row">
-        <div>
-          <label for="orgName">Organization name</label>
-          <input id="orgName" type="text" placeholder="Acme Inc." />
-        </div>
-        <div style="flex:0 0 170px">
-          <label for="orgPlan">Plan</label>
-          <select id="orgPlan">
-            <option value="team">Team &middot; up to 5</option>
-            <option value="teamplus">Team+ &middot; up to 30</option>
-          </select>
-        </div>
-        <button id="orgCreateBtn">Create</button>
+    <!-- Paid plan required (SaaS onboarding wall). -->
+    <div id="planGate" class="hidden">
+      <div class="price-head">
+        <h2>Choose a plan to continue</h2>
+        <p>Subscribe to unlock the dashboard, desktop sync token, and monthly timesheets.</p>
       </div>
-      <p class="hint" style="margin:8px 0 0">Need more than 30 seats? Enterprise plans are unlimited &mdash; contact sales.</p>
-      <div id="orgMsg" class="msg" role="status"></div>
+      <div id="planGateWait" class="card hidden">
+        <h3>Waiting on your team</h3>
+        <p class="hint">You&rsquo;re on a team that isn&rsquo;t subscribed yet. Ask your manager to finish checkout, then refresh this page.</p>
+        <button id="planGateRefresh" class="ghost">Refresh status</button>
+      </div>
+      <div id="planGateChooser">
+        <div id="planGateOrgField" class="field">
+          <label for="planGateOrgName">Team name <span class="muted" style="text-transform:none;letter-spacing:0">(for Team / Team+)</span></label>
+          <input id="planGateOrgName" type="text" placeholder="Acme Inc." autocomplete="organization" />
+        </div>
+        <div class="pricing">
+          <div class="price-card" data-plan="single">
+            <div class="plan-name">Solo</div>
+            <div class="price-tag"><span class="price-num">25&cent;</span><span class="price-per">/ day</span></div>
+            <div class="plan-meta">Just you &middot; ~$7.50/mo</div>
+            <ul class="price-list">
+              <li>Desktop sync token</li>
+              <li>Private hours dashboard</li>
+              <li>Monthly timesheet email</li>
+            </ul>
+            <button type="button" class="gatePlanCta" data-plan="single" style="width:100%">Continue with Solo</button>
+          </div>
+          <div class="price-card" data-plan="team">
+            <div class="plan-name">Team</div>
+            <div class="price-tag"><span class="price-num">50&cent;</span><span class="price-per">/ day</span></div>
+            <div class="plan-meta">Up to 5 members</div>
+            <ul class="price-list">
+              <li>Everything in Solo</li>
+              <li>Invite workers</li>
+              <li>Shared manager timesheets</li>
+            </ul>
+            <button type="button" class="gatePlanCta" data-plan="team" style="width:100%">Continue with Team</button>
+          </div>
+          <div class="price-card" data-plan="teamplus">
+            <div class="plan-name">Team+</div>
+            <div class="price-tag"><span class="price-num">$1</span><span class="price-per">/ day</span></div>
+            <div class="plan-meta">Up to 30 members</div>
+            <ul class="price-list">
+              <li>Everything in Team</li>
+              <li>Larger roster</li>
+              <li>Priority support</li>
+            </ul>
+            <button type="button" class="gatePlanCta" data-plan="teamplus" style="width:100%">Continue with Team+</button>
+          </div>
+          <div class="price-card enterprise" data-plan="enterprise">
+            <div class="plan-name">Enterprise</div>
+            <div class="price-tag"><span class="price-num sm">Let&rsquo;s talk</span></div>
+            <div class="plan-meta">30+ members</div>
+            <ul class="price-list">
+              <li>Everything in Team+</li>
+              <li>Unlimited seats</li>
+              <li>Custom invoicing &amp; SLA</li>
+            </ul>
+            <button type="button" id="gateSalesCta" style="width:100%">Contact sales</button>
+          </div>
+        </div>
+      </div>
+      <div id="planGateMsg" class="msg" role="status" style="text-align:center"></div>
     </div>
+
+    <!-- Product UI — only after paid access. -->
+    <div id="appMain" class="hidden">
 
     <!-- Team — shown to managers (org role owner/admin). Also hosts the personal
          "Single" plan view, in which the invite/roster UI is hidden. -->
@@ -643,6 +659,41 @@ const HTML = /* html */ `<!doctype html>
       <div id="emailMsg" class="msg" role="status"></div>
       <div id="previewPanel" class="preview hidden"></div>
     </div>
+    </div><!-- /appMain -->
+  </div><!-- /app -->
+
+  <!-- Sales modal lives outside landing so plan-gate (logged-in) can open it. -->
+  <div id="salesModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="card modal-card">
+      <button id="salesClose" class="ghost modal-close" aria-label="Close">&times;</button>
+      <h3>Contact sales</h3>
+      <p class="hint">Tell us about your team and we&rsquo;ll be in touch.</p>
+      <div class="field">
+        <label for="sName">Name</label>
+        <input id="sName" type="text" autocomplete="name" />
+      </div>
+      <div class="field">
+        <label for="sEmail">Work email</label>
+        <input id="sEmail" type="email" autocomplete="email" />
+      </div>
+      <div class="row">
+        <div>
+          <label for="sCompany">Company</label>
+          <input id="sCompany" type="text" autocomplete="organization" />
+        </div>
+        <div>
+          <label for="sTeam">Team size</label>
+          <input id="sTeam" type="text" inputmode="numeric" placeholder="e.g. 45" />
+        </div>
+      </div>
+      <div class="field" style="margin-top:14px">
+        <label for="sMsg">Message <span class="muted" style="text-transform:none;letter-spacing:0">(optional)</span></label>
+        <textarea id="sMsg" rows="3"></textarea>
+      </div>
+      <button id="sSubmit" style="width:100%">Send message</button>
+      <div id="salesMsg" class="msg" role="status"></div>
+    </div>
   </div>
 </div>
 
@@ -691,16 +742,21 @@ function openAuth(m) {
 function closeAuth() { $("authModal").classList.add("hidden"); }
 $("navSignin").onclick = () => openAuth("signin");
 $("navSignup").onclick = () => openAuth("signup");
-// Remember which pricing tier the visitor clicked so onboarding preselects it.
-let pendingPlan = "team";
+// Remember which pricing tier the visitor clicked so post-login checkout prefers it.
+let pendingPlan = "single";
 document.querySelectorAll(".planCta").forEach((b) => {
   b.onclick = () => {
     const card = b.closest(".price-card");
     const nm = (card && card.querySelector(".plan-name") ? card.querySelector(".plan-name").textContent : "") || "";
-    pendingPlan = /team\+/i.test(nm) ? "teamplus" : (/solo/i.test(nm) ? "solo" : "team");
+    pendingPlan = /team\+/i.test(nm) ? "teamplus" : (/solo/i.test(nm) ? "single" : "team");
+    try { sessionStorage.setItem("clocked_pending_plan", pendingPlan); } catch (e) {}
     openAuth("signup");
   };
 });
+try {
+  const stored = sessionStorage.getItem("clocked_pending_plan");
+  if (stored === "single" || stored === "team" || stored === "teamplus") pendingPlan = stored;
+} catch (e) {}
 $("authClose").onclick = closeAuth;
 $("authModal").querySelector(".modal-backdrop").onclick = closeAuth;
 
@@ -708,6 +764,8 @@ $("authModal").querySelector(".modal-backdrop").onclick = closeAuth;
 function openSales() { $("salesModal").classList.remove("hidden"); setTimeout(() => $("sName").focus(), 30); }
 function closeSales() { $("salesModal").classList.add("hidden"); }
 $("salesCta").onclick = openSales;
+const gateSales = $("gateSalesCta");
+if (gateSales) gateSales.onclick = openSales;
 $("salesClose").onclick = closeSales;
 $("salesModal").querySelector(".modal-backdrop").onclick = closeSales;
 $("sSubmit").onclick = async () => {
@@ -793,22 +851,130 @@ async function afterLogin(fresh) {
   $("month").value = now.getFullYear() + "-" + pad(now.getMonth()+1);
   $("mDate").value = now.getFullYear() + "-" + pad(now.getMonth()+1) + "-" + pad(now.getDate());
   await acceptPendingInvite();
-  await applyTeam();
-  await loadToken();
-  // Data APIs require verified email — stop here until the user verifies.
-  if (!$("verifyBanner").classList.contains("hidden")) {
-    $("hoursMsg").textContent = "Verify your email to load hours and settings.";
-    $("hoursMsg").className = "msg";
+
+  // Entitlement gate (verify → plan → product), same shape as modern SaaS apps.
+  const me = await fetchMe();
+  if (!me || !me.user) {
+    show(false);
+    setMode("signin");
     return;
   }
-  await Promise.all([loadHours(), loadEmailSettings()]);
+  if (!me.user.emailVerified) {
+    setAccessStage("verify");
+    return;
+  }
+  if (me.waitingOnTeam) {
+    setAccessStage("wait");
+    return;
+  }
+  if (!me.hasAccess) {
+    setAccessStage("plan");
+    highlightPendingPlan();
+    if (billingRet === "success") pollForAccess();
+    // Optional: auto-start checkout when they clicked a landing plan CTA.
+    else if (pendingPlan === "single" || pendingPlan === "team" || pendingPlan === "teamplus") {
+      // Don't auto-redirect; show the chooser with selection highlighted.
+    }
+    return;
+  }
+
+  setAccessStage("app");
+  await applyTeamFromMe(me);
+  await Promise.all([loadToken(), loadHours(), loadEmailSettings()]);
+  if (billingRet === "success") {
+    $("billingBanner").classList.remove("hidden");
+    setTimeout(() => $("billingBanner").classList.add("hidden"), 6000);
+  }
+}
+
+/** Which post-login shell is visible. */
+function setAccessStage(stage) {
+  const verify = stage === "verify";
+  const plan = stage === "plan";
+  const wait = stage === "wait";
+  const app = stage === "app";
+  $("verifyGate").classList.toggle("hidden", !verify);
+  $("planGate").classList.toggle("hidden", !(plan || wait));
+  $("planGateChooser").classList.toggle("hidden", !plan);
+  $("planGateWait").classList.toggle("hidden", !wait);
+  $("appMain").classList.toggle("hidden", !app);
+  if (plan || wait) {
+    $("teamCard").classList.add("hidden");
+  }
+}
+
+async function fetchMe() {
+  const r = await api("/api/me");
+  if (!r.ok) return null;
+  return r.json();
+}
+
+function highlightPendingPlan() {
+  document.querySelectorAll("#planGate .price-card").forEach((c) => {
+    c.classList.toggle("selected", c.getAttribute("data-plan") === pendingPlan);
+  });
+}
+
+async function pollForAccess() {
+  $("planGateMsg").textContent = "Confirming payment…";
+  $("planGateMsg").className = "msg ok";
+  for (let i = 0; i < 15; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const me = await fetchMe();
+    if (me && me.hasAccess) {
+      $("planGateMsg").textContent = "";
+      try { sessionStorage.removeItem("clocked_pending_plan"); } catch (e) {}
+      await afterLogin(false);
+      return;
+    }
+  }
+  $("planGateMsg").textContent = "Payment is processing — click refresh in a moment, or re-open this page.";
+  $("planGateMsg").className = "msg";
+}
+
+async function startCheckout(plan) {
+  $("planGateMsg").textContent = "";
+  $("planGateMsg").className = "msg";
+  if (plan === "enterprise") { openSales(); return; }
+  if (plan !== "single" && plan !== "team" && plan !== "teamplus") return;
+  pendingPlan = plan;
+  try { sessionStorage.setItem("clocked_pending_plan", plan); } catch (e) {}
+  highlightPendingPlan();
+
+  const body = { plan };
+  if (plan === "team" || plan === "teamplus") {
+    const name = ($("planGateOrgName").value || "").trim();
+    if (name) body.organizationName = name;
+    if (orgId && isManagerRoleC(orgRole)) body.organizationId = orgId;
+  }
+  document.querySelectorAll(".gatePlanCta").forEach((b) => { b.disabled = true; });
+  $("planGateMsg").textContent = "Redirecting to secure checkout…";
+  $("planGateMsg").className = "msg";
+  const r = await api("/api/billing/checkout", { method: "POST", body: JSON.stringify(body) });
+  const d = await r.json().catch(() => ({}));
+  document.querySelectorAll(".gatePlanCta").forEach((b) => { b.disabled = false; });
+  if (r.ok && d.url) { window.location.href = d.url; return; }
+  $("planGateMsg").textContent = d.error || "Could not start checkout. Try again.";
+  $("planGateMsg").className = "msg err";
+}
+
+document.querySelectorAll(".gatePlanCta").forEach((b) => {
+  b.onclick = () => startCheckout(b.getAttribute("data-plan") || "");
+});
+if ($("planGateRefresh")) $("planGateRefresh").onclick = () => afterLogin(false);
+if ($("resendVerifyGate")) {
+  $("resendVerifyGate").onclick = async () => {
+    const r = await api("/api/auth/send-verification-email", { method: "POST", body: JSON.stringify({}) });
+    $("verifyGateMsg").textContent = r.ok ? "Verification email sent." : "Could not send verification email.";
+    $("verifyGateMsg").className = r.ok ? "msg ok" : "msg err";
+  };
 }
 
 // ---- teams / organizations ----------------------------------------------
 // A manager (org role owner/admin) sees the Team card: invite members and open
 // any member's timesheet. Membership actions hit better-auth's own
 // /api/auth/organization/* endpoints; hours reads hit our guarded /api/team/*.
-let orgId = "", orgName = "", meEmail = "", openMemberId = "", openMemberName = "";
+let orgId = "", orgName = "", orgRole = "", meEmail = "", openMemberId = "", openMemberName = "";
 let orgCap = 0, orgPlanLabel = "", orgPlanKey = "", billingStatus = "";
 let emailMode = "solo"; // "solo" | "manager" | "member" — who controls timesheet delivery
 
@@ -826,21 +992,22 @@ async function acceptPendingInvite() {
 }
 
 async function applyTeam() {
-  orgId = ""; orgName = ""; openMemberId = ""; emailMode = "solo";
+  const me = await fetchMe();
+  if (!me) { configureEmailCard(); return; }
+  await applyTeamFromMe(me);
+}
+
+async function applyTeamFromMe(me) {
+  orgId = ""; orgName = ""; orgRole = ""; openMemberId = ""; emailMode = "solo";
   orgPlanKey = ""; billingStatus = "";
   $("teamCard").classList.add("hidden");
-  $("orgSetupCard").classList.add("hidden");
-  $("soloBillingCard").classList.add("hidden");
   $("teamMemberPanel").classList.add("hidden");
   $("inviteLinkBox").classList.add("hidden");
-  const r = await api("/api/me");
-  if (!r.ok) { configureEmailCard(); return; }
-  const me = await r.json();
   meEmail = (me.user && me.user.email) || "";
   const mgr = (me.orgs || []).find((o) => isManagerRoleC(o.role));
   if (mgr) {
     emailMode = "manager";
-    orgId = mgr.organizationId; orgName = mgr.name || "";
+    orgId = mgr.organizationId; orgName = mgr.name || ""; orgRole = mgr.role || "";
     orgCap = mgr.cap || 0; orgPlanLabel = mgr.planLabel || "Team";
     orgPlanKey = mgr.plan || ""; billingStatus = mgr.billingStatus || "";
     $("teamOrgName").textContent = orgName ? "· " + orgName : "";
@@ -849,11 +1016,12 @@ async function applyTeam() {
     updateTeamUsage(mgr.memberCount || 0);
     if (orgPlanKey !== "single") await loadRoster();
   } else if (me.orgs && me.orgs.length) {
-    emailMode = "member"; // in a team but not a manager — delivery is manager-controlled
-  } else {
-    if (pendingPlan === "teamplus") $("orgPlan").value = "teamplus"; else $("orgPlan").value = "team";
-    $("orgSetupCard").classList.remove("hidden");
-    $("soloBillingCard").classList.remove("hidden");
+    emailMode = "member";
+    const mem = me.orgs[0];
+    orgId = mem.organizationId || "";
+    orgRole = mem.role || "";
+    billingStatus = mem.billingStatus || "";
+    orgPlanKey = mem.plan || "";
   }
   configureEmailCard();
 }
@@ -881,22 +1049,14 @@ $("billingBtn").onclick = async () => {
   $("billingMsg").textContent = ""; $("billingMsg").className = "msg";
   $("billingBtn").disabled = true;
   const path = active ? "/api/billing/portal" : "/api/billing/checkout";
-  const payload = active ? { organizationId: orgId } : { plan: orgPlanKey, organizationId: orgId };
+  // Unpaid single/personal: upgrade via single plan. Team orgs use team tier.
+  const plan = orgPlanKey === "single" || !orgPlanKey ? "single" : (orgPlanKey === "teamplus" ? "teamplus" : "team");
+  const payload = active ? { organizationId: orgId } : { plan, organizationId: orgId };
   const r = await api(path, { method:"POST", body: JSON.stringify(payload) });
   const d = await r.json().catch(()=>({}));
   $("billingBtn").disabled = false;
   if (r.ok && d.url) { window.location.href = d.url; return; }
   $("billingMsg").textContent = d.error || "Could not open billing."; $("billingMsg").className = "msg err";
-};
-
-$("soloBillingBtn").onclick = async () => {
-  $("soloBillingMsg").textContent = ""; $("soloBillingMsg").className = "msg";
-  $("soloBillingBtn").disabled = true;
-  const r = await api("/api/billing/checkout", { method:"POST", body: JSON.stringify({ plan:"single" }) });
-  const d = await r.json().catch(()=>({}));
-  $("soloBillingBtn").disabled = false;
-  if (r.ok && d.url) { window.location.href = d.url; return; }
-  $("soloBillingMsg").textContent = d.error || "Could not start checkout."; $("soloBillingMsg").className = "msg err";
 };
 
 // Point the timesheet-email card at the right owner: managers edit the team's
@@ -1109,31 +1269,6 @@ $("copyInvite").onclick = async () => {
   catch { $("inviteLink").select(); }
 };
 
-$("orgCreateBtn").onclick = async () => {
-  const name = $("orgName").value.trim();
-  $("orgMsg").textContent = ""; $("orgMsg").className = "msg";
-  if (!name) { $("orgMsg").textContent = "Enter an organization name."; $("orgMsg").className = "msg err"; return; }
-  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "org";
-  const slug = base + "-" + Math.random().toString(36).slice(2, 6);
-  // Plan is chosen at checkout — never trusted from the client on create.
-  const desiredPlan = $("orgPlan").value || "team";
-  $("orgCreateBtn").disabled = true;
-  const r = await api("/api/auth/organization/create", { method:"POST", body: JSON.stringify({ name, slug, metadata: {} }) });
-  $("orgCreateBtn").disabled = false;
-  if (r.ok) {
-    $("orgName").value = "";
-    await applyTeam();
-    await loadEmailSettings();
-    // Offer checkout for the selected tier (org starts unpaid / 1 seat).
-    if (desiredPlan === "team" || desiredPlan === "teamplus") {
-      $("orgMsg").textContent = "Organization created. Subscribe to unlock team seats.";
-      $("orgMsg").className = "msg ok";
-      pendingPlan = desiredPlan;
-    }
-  }
-  else { const d = await r.json().catch(()=>({})); $("orgMsg").textContent = d.message || d.error || "Could not create organization."; $("orgMsg").className = "msg err"; }
-};
-
 // ---- token (full secret only on create/rotate; otherwise prefix only) ----
 let fullToken = "";
 function setTokenView(d) {
@@ -1155,6 +1290,11 @@ async function loadToken() {
   const r = await api("/api/token");
   if (r.status === 403) {
     $("verifyBanner").classList.remove("hidden");
+    return;
+  }
+  if (r.status === 402) {
+    // Shouldn't reach appMain without paid access; re-run gate.
+    setAccessStage("plan");
     return;
   }
   $("verifyBanner").classList.add("hidden");
