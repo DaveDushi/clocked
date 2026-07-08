@@ -309,6 +309,45 @@ const HTML = /* html */ `<!doctype html>
   .pv-empty { padding:16px; color:var(--muted); font-size:14px; }
 
   /* ---------- team / roster ---------- */
+  /* ---------- plan / billing card ---------- */
+  .plan-hero { display:flex; flex-direction:column; gap:14px; }
+  .plan-hero-top { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  .plan-badge {
+    display:inline-block; font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase;
+    color:#221503; background:linear-gradient(180deg, var(--amber), var(--amber2));
+    border-radius:999px; padding:4px 10px; font-weight:700; margin-bottom:8px;
+  }
+  .plan-badge.team { background:linear-gradient(180deg, #7db3ff, #4f7fd6); color:#06101f; }
+  .plan-badge.teamplus { background:linear-gradient(180deg, #c4a1ff, #8b5cf6); color:#140a22; }
+  .plan-title { margin:0 0 4px; font-size:18px; letter-spacing:.02em; }
+  .plan-status-pill {
+    flex:none; font-size:12px; font-weight:600; letter-spacing:.04em; text-transform:uppercase;
+    padding:6px 10px; border-radius:999px; border:1px solid var(--border); color:var(--muted); background:rgba(255,255,255,.03);
+  }
+  .plan-status-pill.ok { color:var(--ok); border-color:rgba(91,214,162,.35); background:rgba(91,214,162,.08); }
+  .plan-status-pill.warn { color:var(--amber); border-color:rgba(242,169,80,.35); background:rgba(242,169,80,.08); }
+  .plan-status-pill.bad { color:var(--err); border-color:rgba(255,112,112,.35); background:rgba(255,112,112,.08); }
+  .plan-facts {
+    display:grid; grid-template-columns:repeat(3,1fr); gap:10px;
+    padding:12px; border-radius:12px; border:1px solid var(--border); background:#0b0d13;
+  }
+  @media (max-width:560px) { .plan-facts { grid-template-columns:1fr; } }
+  .plan-fact label { display:block; font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); margin-bottom:4px; }
+  .plan-fact b { font-size:14px; color:var(--fg); font-weight:600; }
+  .plan-actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+  .plan-actions .rspacer { flex:1; min-width:8px; }
+  #teamSection { margin-top:18px; padding-top:16px; border-top:1px solid var(--border); }
+  #teamSection.hidden { display:none; }
+  .upgrade-options { display:flex; flex-direction:column; gap:10px; margin-top:4px; }
+  .upgrade-opt {
+    display:flex; align-items:center; gap:12px; text-align:left; width:100%;
+    padding:12px 14px; border-radius:12px; border:1px solid var(--border); background:#0b0d13; color:var(--fg);
+  }
+  .upgrade-opt:hover { border-color:rgba(242,169,80,.45); }
+  .upgrade-opt .uo-title { font-weight:600; font-size:14px; }
+  .upgrade-opt .uo-meta { font-size:12px; color:var(--muted); margin-top:2px; }
+  .upgrade-opt .uo-price { margin-left:auto; font-family:var(--mono); color:var(--amber); font-weight:600; font-size:13px; white-space:nowrap; }
+
   .roster { display:flex; flex-direction:column; gap:8px; margin-top:14px; }
   .rosterrow { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--border); border-radius:10px; background:var(--panel2); }
   .rosterrow .rname { font-weight:500; }
@@ -529,39 +568,90 @@ const HTML = /* html */ `<!doctype html>
     <!-- Product UI — only after paid access. -->
     <div id="appMain" class="hidden">
 
-    <!-- Team — shown to managers (org role owner/admin). Also hosts the personal
-         "Single" plan view, in which the invite/roster UI is hidden. -->
+    <!-- Plan + team (managers). Solo hides invite/roster; team shows them below. -->
     <div id="teamCard" class="card hidden">
-      <h3 id="teamCardTitle">Team <span id="teamOrgName" class="muted"></span></h3>
-      <p class="hint" id="teamCardHint">Invite members and open anyone&rsquo;s timesheet. Members only ever see their own hours.</p>
-      <div id="teamPlanInfo" class="muted" style="font-size:13px;margin:-8px 0 12px"></div>
-      <div id="billingRow" class="row" style="align-items:center;margin:-4px 0 12px">
-        <span id="billingStatus" class="muted" style="font-size:13px"></span>
-        <span class="rspacer" style="flex:1"></span>
-        <button id="billingBtn" class="ghost">Manage billing</button>
-      </div>
-      <div id="billingMsg" class="msg" role="status"></div>
-      <div id="inviteRow" class="row">
-        <div>
-          <label for="inviteEmail">Invite by email</label>
-          <input id="inviteEmail" type="email" placeholder="teammate@example.com" />
+      <div class="plan-hero">
+        <div class="plan-hero-top">
+          <div>
+            <span id="planBadge" class="plan-badge">Solo</span>
+            <h3 class="plan-title" id="teamCardTitle">Your plan</h3>
+            <p class="hint" id="teamCardHint" style="margin:0">Personal subscription for one person.</p>
+          </div>
+          <span id="planStatusPill" class="plan-status-pill">—</span>
         </div>
-        <div style="flex:0 0 140px">
-          <label for="inviteRole">Role</label>
-          <select id="inviteRole">
-            <option value="member">Worker</option>
-            <option value="admin">Manager</option>
-          </select>
+        <div class="plan-facts">
+          <div class="plan-fact"><label>Plan</label><b id="planFactName">Solo</b></div>
+          <div class="plan-fact"><label>Seats</label><b id="planFactSeats">1 of 1</b></div>
+          <div class="plan-fact"><label>Billing</label><b id="planFactBilling">—</b></div>
         </div>
-        <button id="inviteBtn">Invite</button>
+        <div class="plan-actions">
+          <button id="billingBtn" class="ghost" type="button">Manage billing</button>
+          <button id="upgradeBtn" type="button">Upgrade plan</button>
+          <span class="rspacer"></span>
+          <span id="teamOrgName" class="muted" style="font-size:13px"></span>
+        </div>
+        <div id="billingMsg" class="msg" role="status"></div>
       </div>
-      <div id="inviteMsg" class="msg" role="status"></div>
-      <div id="inviteLinkBox" class="invitelink hidden">
-        <input id="inviteLink" type="text" readonly aria-label="Invite link" />
-        <button id="copyInvite" class="ghost">Copy link</button>
+
+      <div id="teamSection" class="hidden">
+        <h3 style="margin:0 0 4px;font-size:15px">Team members</h3>
+        <p class="hint" id="teamSectionHint">Invite people and open anyone&rsquo;s timesheet. The invite link is only for teammates you invite — not a public share link.</p>
+        <div id="inviteRow" class="row">
+          <div>
+            <label for="inviteEmail">Invite by email</label>
+            <input id="inviteEmail" type="email" placeholder="teammate@example.com" />
+          </div>
+          <div style="flex:0 0 140px">
+            <label for="inviteRole">Role</label>
+            <select id="inviteRole">
+              <option value="member">Worker</option>
+              <option value="admin">Manager</option>
+            </select>
+          </div>
+          <button id="inviteBtn" type="button">Invite</button>
+        </div>
+        <div id="inviteMsg" class="msg" role="status"></div>
+        <div id="inviteLinkBox" class="invitelink hidden">
+          <input id="inviteLink" type="text" readonly aria-label="Invite link for the person you invited" />
+          <button id="copyInvite" class="ghost" type="button">Copy invite link</button>
+        </div>
+        <div id="roster" class="roster"></div>
+        <div id="teamMemberPanel" class="preview hidden"></div>
       </div>
-      <div id="roster" class="roster"></div>
-      <div id="teamMemberPanel" class="preview hidden"></div>
+    </div>
+
+    <!-- Upgrade plan modal -->
+    <div id="upgradeModal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="card modal-card" style="max-width:440px">
+        <button id="upgradeClose" class="ghost modal-close" aria-label="Close" type="button">&times;</button>
+        <h3 style="margin:0 0 6px">Upgrade your plan</h3>
+        <p class="hint" id="upgradeHint">Add seats so you can invite teammates. You&rsquo;ll finish on Stripe&rsquo;s secure checkout.</p>
+        <div class="upgrade-options">
+          <button type="button" class="upgrade-opt" data-plan="team" id="upgradeTeam">
+            <div>
+              <div class="uo-title">Team</div>
+              <div class="uo-meta">Up to 5 members · shared timesheets</div>
+            </div>
+            <div class="uo-price">50&cent;/day</div>
+          </button>
+          <button type="button" class="upgrade-opt" data-plan="teamplus" id="upgradeTeamPlus">
+            <div>
+              <div class="uo-title">Team+</div>
+              <div class="uo-meta">Up to 30 members · priority support</div>
+            </div>
+            <div class="uo-price">$1/day</div>
+          </button>
+          <button type="button" class="upgrade-opt" data-plan="enterprise" id="upgradeEnterprise">
+            <div>
+              <div class="uo-title">Enterprise</div>
+              <div class="uo-meta">30+ seats · custom invoicing</div>
+            </div>
+            <div class="uo-price">Talk to us</div>
+          </button>
+        </div>
+        <div id="upgradeMsg" class="msg" role="status"></div>
+      </div>
     </div>
 
     <div class="stats">
@@ -788,7 +878,13 @@ $("sSubmit").onclick = async () => {
   }
 };
 
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeAuth(); closeSales(); } });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    closeAuth();
+    closeSales();
+    if ($("upgradeModal")) closeUpgradeModal();
+  }
+});
 
 async function submitAuth() {
   const email = $("email").value.trim();
@@ -989,7 +1085,7 @@ if ($("resendVerifyGate")) {
 // any member's timesheet. Membership actions hit better-auth's own
 // /api/auth/organization/* endpoints; hours reads hit our guarded /api/team/*.
 let orgId = "", orgName = "", orgRole = "", meEmail = "", openMemberId = "", openMemberName = "";
-let orgCap = 0, orgPlanLabel = "", orgPlanKey = "", billingStatus = "";
+let orgCap = 0, orgPlanLabel = "", orgPlanKey = "", billingStatus = "", memberCount = 0;
 let emailMode = "solo"; // "solo" | "manager" | "member" — who controls timesheet delivery
 
 function isManagerRoleC(role) {
@@ -1013,10 +1109,11 @@ async function applyTeam() {
 
 async function applyTeamFromMe(me) {
   orgId = ""; orgName = ""; orgRole = ""; openMemberId = ""; emailMode = "solo";
-  orgPlanKey = ""; billingStatus = "";
+  orgPlanKey = ""; billingStatus = ""; memberCount = 0;
   $("teamCard").classList.add("hidden");
-  $("teamMemberPanel").classList.add("hidden");
-  $("inviteLinkBox").classList.add("hidden");
+  if ($("teamMemberPanel")) { $("teamMemberPanel").classList.add("hidden"); $("teamMemberPanel").innerHTML = ""; }
+  if ($("inviteLinkBox")) $("inviteLinkBox").classList.add("hidden");
+  if ($("inviteMsg")) { $("inviteMsg").textContent = ""; $("inviteMsg").className = "msg"; }
   meEmail = (me.user && me.user.email) || "";
   const mgr = (me.orgs || []).find((o) => isManagerRoleC(o.role));
   if (mgr) {
@@ -1024,10 +1121,10 @@ async function applyTeamFromMe(me) {
     orgId = mgr.organizationId; orgName = mgr.name || ""; orgRole = mgr.role || "";
     orgCap = mgr.cap || 0; orgPlanLabel = mgr.planLabel || "Team";
     orgPlanKey = mgr.plan || ""; billingStatus = mgr.billingStatus || "";
-    $("teamOrgName").textContent = orgName ? "· " + orgName : "";
+    memberCount = mgr.memberCount || 1;
     $("teamCard").classList.remove("hidden");
     configureBillingUI();
-    updateTeamUsage(mgr.memberCount || 0);
+    updateTeamUsage(memberCount);
     if (orgPlanKey !== "single") await loadRoster();
   } else if (me.orgs && me.orgs.length) {
     emailMode = "member";
@@ -1036,42 +1133,114 @@ async function applyTeamFromMe(me) {
     orgRole = mem.role || "";
     billingStatus = mem.billingStatus || "";
     orgPlanKey = mem.plan || "";
+    // Workers do not manage billing — hide plan admin card.
   }
   configureEmailCard();
 }
 
-// A "single"-plan org is a personal account: hide the team invite/roster UI and
-// relabel the card. Any org shows its subscription state + a subscribe/manage CTA.
+function isBillingActive() {
+  return billingStatus === "active" || billingStatus === "trialing" || billingStatus === "past_due";
+}
+
+/** Paint the plan card: Solo hides team invites; Team shows roster + invite link only after inviting. */
 function configureBillingUI() {
-  const single = orgPlanKey === "single";
-  const active = billingStatus === "active" || billingStatus === "trialing" || billingStatus === "past_due";
-  $("inviteRow").classList.toggle("hidden", single);
-  $("roster").classList.toggle("hidden", single);
-  $("teamOrgName").classList.toggle("hidden", single);
-  $("teamCardTitle").firstChild.textContent = single ? "Your plan " : "Team ";
+  const single = orgPlanKey === "single" || !orgPlanKey;
+  const team = orgPlanKey === "team";
+  const teamplus = orgPlanKey === "teamplus";
+  const active = isBillingActive();
+
+  $("teamSection").classList.toggle("hidden", single);
+  $("inviteLinkBox").classList.add("hidden");
+  $("inviteMsg").textContent = "";
+  $("inviteMsg").className = "msg";
+
+  const badge = $("planBadge");
+  badge.textContent = single ? "Solo" : teamplus ? "Team+" : team ? "Team" : (orgPlanLabel || "Plan");
+  badge.className = "plan-badge" + (teamplus ? " teamplus" : team ? " team" : "");
+
+  $("teamCardTitle").textContent = single ? "Your plan" : (orgName ? orgName : "Your team");
   $("teamCardHint").textContent = single
-    ? "Your personal subscription."
-    : "Invite members and open anyone's timesheet — adjust their entries before it sends. Members only ever see their own hours.";
-  $("billingStatus").textContent = active
-    ? ("Subscribed · " + billingStatus)
-    : "No active subscription";
+    ? "Personal subscription — sync, dashboard, and monthly timesheets for one person."
+    : "Invite teammates and open their hours. Invite links are private one-time links for people you invite — not a public share URL.";
+
+  $("planFactName").textContent = single ? "Solo" : (orgPlanLabel || "Team");
+  $("planFactBilling").textContent = active
+    ? (billingStatus === "past_due" ? "Past due" : billingStatus === "trialing" ? "Trialing" : "Active")
+    : "Inactive";
+
+  const pill = $("planStatusPill");
+  pill.textContent = active
+    ? (billingStatus === "past_due" ? "Past due" : billingStatus === "trialing" ? "Trial" : "Active")
+    : "Inactive";
+  pill.className = "plan-status-pill " + (billingStatus === "past_due" ? "warn" : active ? "ok" : "bad");
+
   $("billingBtn").textContent = active ? "Manage billing" : "Subscribe";
+  // Solo / Team can upgrade; Team+ can still reach sales for Enterprise.
+  $("upgradeBtn").classList.remove("hidden");
+  $("upgradeBtn").textContent = teamplus ? "Contact sales" : "Upgrade plan";
+  $("teamOrgName").textContent = single ? "" : (orgName ? "" : "");
+
+  // Modal option visibility: hide plans you already have or are below.
+  $("upgradeTeam").classList.toggle("hidden", !single);
+  $("upgradeTeamPlus").classList.toggle("hidden", teamplus);
+  $("upgradeHint").textContent = single
+    ? "Add seats so you can invite teammates. Checkout opens on Stripe."
+    : team
+      ? "Move up to Team+ for more seats, or talk to us about Enterprise."
+      : "Need more than 30 seats? Enterprise is custom-quoted.";
 }
 
 $("billingBtn").onclick = async () => {
-  const active = billingStatus === "active" || billingStatus === "trialing" || billingStatus === "past_due";
+  const active = isBillingActive();
   $("billingMsg").textContent = ""; $("billingMsg").className = "msg";
   $("billingBtn").disabled = true;
   const path = active ? "/api/billing/portal" : "/api/billing/checkout";
-  // Unpaid single/personal: upgrade via single plan. Team orgs use team tier.
-  const plan = orgPlanKey === "single" || !orgPlanKey ? "single" : (orgPlanKey === "teamplus" ? "teamplus" : "team");
-  const payload = active ? { organizationId: orgId } : { plan, organizationId: orgId };
-  const r = await api(path, { method:"POST", body: JSON.stringify(payload) });
-  const d = await r.json().catch(()=>({}));
+  const plan = orgPlanKey === "teamplus" ? "teamplus" : orgPlanKey === "team" ? "team" : "single";
+  const payload = active ? { organizationId: orgId } : { plan: plan, organizationId: orgId };
+  const r = await api(path, { method: "POST", body: JSON.stringify(payload) });
+  const d = await r.json().catch(() => ({}));
   $("billingBtn").disabled = false;
   if (r.ok && d.url) { window.location.href = d.url; return; }
-  $("billingMsg").textContent = d.error || "Could not open billing."; $("billingMsg").className = "msg err";
+  $("billingMsg").textContent = d.error || "Could not open billing.";
+  $("billingMsg").className = "msg err";
 };
+
+function openUpgradeModal() {
+  if (orgPlanKey === "teamplus" || orgPlanKey === "enterprise") {
+    openSales();
+    return;
+  }
+  $("upgradeMsg").textContent = "";
+  $("upgradeMsg").className = "msg";
+  $("upgradeModal").classList.remove("hidden");
+}
+function closeUpgradeModal() { $("upgradeModal").classList.add("hidden"); }
+$("upgradeBtn").onclick = openUpgradeModal;
+$("upgradeClose").onclick = closeUpgradeModal;
+$("upgradeModal").querySelector(".modal-backdrop").onclick = closeUpgradeModal;
+
+async function startPlanUpgrade(plan) {
+  if (plan === "enterprise") {
+    closeUpgradeModal();
+    openSales();
+    return;
+  }
+  $("upgradeMsg").textContent = "Opening secure checkout…";
+  $("upgradeMsg").className = "msg";
+  document.querySelectorAll(".upgrade-opt").forEach((b) => { b.disabled = true; });
+  const r = await api("/api/billing/checkout", {
+    method: "POST",
+    body: JSON.stringify({ plan: plan, organizationId: orgId }),
+  });
+  const d = await r.json().catch(() => ({}));
+  document.querySelectorAll(".upgrade-opt").forEach((b) => { b.disabled = false; });
+  if (r.ok && d.url) { window.location.href = d.url; return; }
+  $("upgradeMsg").textContent = d.error || "Could not start upgrade checkout.";
+  $("upgradeMsg").className = "msg err";
+}
+document.querySelectorAll(".upgrade-opt").forEach((b) => {
+  b.onclick = () => startPlanUpgrade(b.getAttribute("data-plan") || "");
+});
 
 // Point the timesheet-email card at the right owner: managers edit the team's
 // destination, members see it read-only, solo users edit their own.
@@ -1094,13 +1263,17 @@ function configureEmailCard() {
   }
 }
 
-// Reflect the pricing tier: "Team plan · 3 / 5 members" and gate invites at cap.
+// Seats readout + gate invites at cap.
 function updateTeamUsage(count) {
-  if (orgPlanKey === "single") { $("teamPlanInfo").textContent = "Single plan · personal account"; return; }
+  memberCount = count;
   const unlimited = orgCap >= 1000000;
-  const capTxt = unlimited ? "unlimited" : String(orgCap);
-  const full = !unlimited && count >= orgCap;
-  $("teamPlanInfo").textContent = orgPlanLabel + " plan · " + count + " / " + capTxt + " member" + (count === 1 ? "" : "s") + (full ? " · seat limit reached" : "");
+  const cap = unlimited ? null : (orgCap || 1);
+  if (orgPlanKey === "single" || !orgPlanKey) {
+    $("planFactSeats").textContent = "1 of 1";
+    return;
+  }
+  $("planFactSeats").textContent = count + " of " + (cap == null ? "∞" : String(cap));
+  const full = cap != null && count >= cap;
   $("inviteBtn").disabled = full;
   $("inviteBtn").title = full ? "Upgrade your plan to invite more members" : "";
 }
@@ -1270,17 +1443,24 @@ $("inviteBtn").onclick = async () => {
   if (invId) {
     $("inviteLink").value = location.origin + "/?invitation=" + invId;
     $("inviteLinkBox").classList.remove("hidden");
-    $("inviteMsg").textContent = "Invite created — send this link to " + email + "."; $("inviteMsg").className = "msg ok";
+    $("inviteMsg").textContent = "Invite ready — send this private link to " + email + " so they can join your team.";
+    $("inviteMsg").className = "msg ok";
   } else {
-    $("inviteMsg").textContent = "Invite sent to " + email + "."; $("inviteMsg").className = "msg ok";
+    $("inviteMsg").textContent = "Invite sent to " + email + ".";
+    $("inviteMsg").className = "msg ok";
   }
   $("inviteEmail").value = "";
   loadRoster();
 };
 
 $("copyInvite").onclick = async () => {
-  try { await navigator.clipboard.writeText($("inviteLink").value); $("inviteMsg").textContent = "Link copied."; $("inviteMsg").className = "msg ok"; }
-  catch { $("inviteLink").select(); }
+  try {
+    await navigator.clipboard.writeText($("inviteLink").value);
+    $("inviteMsg").textContent = "Invite link copied — only share it with the person you invited.";
+    $("inviteMsg").className = "msg ok";
+  } catch {
+    $("inviteLink").select();
+  }
 };
 
 // ---- token (full secret only on create/rotate; otherwise prefix only) ----
