@@ -7,8 +7,9 @@
   // better-auth imports node:crypto / node:async_hooks at load, so enable Node compat.
   "compatibility_flags": ["nodejs_compat"],
 
-  // Fires daily at 06:00 UTC; the handler only acts on the 1st (in REPORT_TZ).
-  "triggers": { "crons": ["0 6 * * *"] },
+  // 06:00 UTC — monthly report fan-out (acts on each user's send day).
+  // 14:00 UTC — marketing agent (IndexNow + site tips; optional X if secrets set).
+  "triggers": { "crons": ["0 6 * * *", "0 14 * * *"] },
   "routes": [
     { "pattern": "clocked.daviddusi.com", "custom_domain": true },
     { "pattern": "clocked.daviddusi.com/*", "zone_name": "daviddusi.com" }
@@ -49,5 +50,11 @@
   //   wrangler secret put GOOGLE_CLIENT_SECRET
   // Legacy single-user bearer (off by default; only with ALLOW_LEGACY_BEARER_TOKEN=true):
   //   wrangler secret put BEARER_TOKEN
+  // Marketing agent (optional X posting + manual run trigger):
+  //   wrangler secret put MARKETING_AGENT_SECRET
+  //   wrangler secret put X_API_KEY
+  //   wrangler secret put X_API_SECRET
+  //   wrangler secret put X_ACCESS_TOKEN
+  //   wrangler secret put X_ACCESS_TOKEN_SECRET
   // For local dev these live in worker/.dev.vars (gitignored).
 }

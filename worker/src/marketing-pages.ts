@@ -9,6 +9,7 @@ export function robotsTxtResponse(): Response {
     "Allow: /download",
     "Allow: /og.jpg",
     "Allow: /press",
+    "Allow: /news",
     "Allow: /llms.txt",
     "Disallow: /api/",
     "Disallow: /sessions",
@@ -26,7 +27,7 @@ export function robotsTxtResponse(): Response {
 }
 
 export function sitemapXmlResponse(): Response {
-  const urls = ["/", "/download", "/press", "/llms.txt"];
+  const urls = ["/", "/download", "/press", "/news", "/llms.txt"];
   const today = new Date().toISOString().slice(0, 10);
   const entries = urls
     .map(

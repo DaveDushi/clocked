@@ -10,6 +10,12 @@ import {
   robotsTxtResponse,
   sitemapXmlResponse,
 } from "./marketing-pages";
+import {
+  indexNowKeyFileResponse,
+  marketingStatusResponse,
+  newsPageResponse,
+  runMarketingAgent,
+} from "./marketing-agent";
 import { buildAndSendReport, sendContactSales, sendMonthlyReports, SEND_DAY_LAST } from "./email";
 import { handleIngest } from "./ingest";
 import { buildHoursReport, buildReportCsv } from "./report";
@@ -58,11 +64,17 @@ export default {
     }
   },
 
-  // Runs daily (06:00 UTC). Emails last month's report to each user on their
-  // configured send day (default the 1st, or the month's last day) in
-  // REPORT_TZ; the per-user sent_reports guard keeps it to once a month.
+  // Cron schedules (wrangler.jsonc):
+  //   0 6 * * *  — monthly timesheet emails (per-user send day in REPORT_TZ)
+  //   0 14 * * * — marketing agent (IndexNow + site tips; optional X)
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const now = new Date(controller.scheduledTime);
+    if (now.getUTCHours() === 14) {
+      ctx.waitUntil(
+        runMarketingAgent(env).then((r) => console.log("marketing agent:", r.summary)),
+      );
+      return;
+    }
     const { y, m, d } = localYMD(now, env.REPORT_TZ);
     const lastDayOfMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
     const period = previousMonthPeriod(now, env.REPORT_TZ);
@@ -87,6 +99,23 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   if (req.method === "GET" && url.pathname === "/sitemap.xml") return sitemapXmlResponse();
   if (req.method === "GET" && url.pathname === "/llms.txt") return llmsTxtResponse();
   if (req.method === "GET" && url.pathname === "/press") return pressPageResponse();
+  if (req.method === "GET" && url.pathname === "/news") return newsPageResponse(env);
+  if (req.method === "GET" && url.pathname === "/api/marketing/status") {
+    return marketingStatusResponse(env);
+  }
+  if (req.method === "POST" && url.pathname === "/api/marketing/run") {
+    const secret = env.MARKETING_AGENT_SECRET;
+    const auth = req.headers.get("authorization") ?? "";
+    const token = auth.replace(/^Bearer\s+/i, "");
+    if (!secret || token !== secret) return json({ error: "unauthorized" }, 401);
+    const result = await runMarketingAgent(env);
+    return json(result, result.ok ? 200 : 502);
+  }
+  // IndexNow key file: /{hex}.txt
+  {
+    const keyFile = await indexNowKeyFileResponse(env, url.pathname);
+    if (keyFile) return keyFile;
+  }
   if (req.method === "GET" && url.pathname === "/health") {
     return new Response("clocked-worker ok\n", { status: 200 });
   }

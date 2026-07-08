@@ -32,6 +32,16 @@ export interface Env {
   STRIPE_PRICE_SINGLE: string;
   STRIPE_PRICE_TEAM: string;
   STRIPE_PRICE_TEAMPLUS: string;
+  /**
+   * Optional X (Twitter) user-context OAuth 1.0a credentials for the marketing agent.
+   * When all four are set, the agent may post at most once every 3 days.
+   */
+  X_API_KEY?: string;
+  X_API_SECRET?: string;
+  X_ACCESS_TOKEN?: string;
+  X_ACCESS_TOKEN_SECRET?: string;
+  /** Optional bearer for POST /api/marketing/run (manual trigger). */
+  MARKETING_AGENT_SECRET?: string;
 }
 
 export interface SessionIn {

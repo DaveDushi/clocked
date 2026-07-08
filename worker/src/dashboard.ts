@@ -676,6 +676,7 @@ const HTML = /* html */ `<!doctype html>
       Source on <a href="https://github.com/DaveDushi/clocked" target="_blank" rel="noopener">GitHub</a>
       · Installer via <a href="/download">/download</a>
       · <a href="/press">Press kit</a>
+      · <a href="/news">News</a>
       · Questions? Use Contact sales on Enterprise or open an issue on the repo.
     </p>
 
