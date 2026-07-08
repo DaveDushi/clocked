@@ -13,7 +13,22 @@ const HTML = /* html */ `<!doctype html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>clocked — your hours, on the record</title>
+<title>clocked — automatic Windows time tracking</title>
+<meta name="description" content="Automatic Windows time tracker. Clock in from unlock and activity, clock out from lock and idle. Sync to the cloud and get a monthly timesheet by email — even if your laptop was asleep." />
+<meta name="theme-color" content="#0a0b10" />
+<meta name="robots" content="index,follow" />
+<link rel="canonical" href="https://clocked.daviddusi.com/" />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://clocked.daviddusi.com/" />
+<meta property="og:title" content="clocked — automatic Windows time tracking" />
+<meta property="og:description" content="Tray app tracks real work time. Cloud sync + monthly timesheet email. Open-source desktop, simple paid plans for solo and teams." />
+<meta property="og:image" content="https://clocked.daviddusi.com/og.jpg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="675" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="clocked — automatic Windows time tracking" />
+<meta name="twitter:description" content="Automatic time tracking for Windows. No timers. No spyware. Monthly timesheet by email." />
+<meta name="twitter:image" content="https://clocked.daviddusi.com/og.jpg" />
 <link rel="icon" type="image/png" href="/favicon.ico" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -274,19 +289,60 @@ const HTML = /* html */ `<!doctype html>
   .total b { font-family:var(--mono); font-size:26px; font-weight:600; color:var(--amber); text-shadow:0 0 12px rgba(242,169,80,.2); font-variant-numeric:tabular-nums; }
 
   /* ---------- landing / auth ---------- */
-  .hero { text-align:center; margin:7vh auto 24px; max-width:560px; }
+  .hero { text-align:center; margin:5vh auto 28px; max-width:620px; }
   .hero .logo { width:58px; height:58px; margin:0 auto 18px; border-width:3px; }
   .hero .logo::before { height:14px; }
   .hero .logo::after { height:21px; }
-  .hero h1 { font-size:34px; line-height:1.15; margin:0 0 10px; letter-spacing:.02em; }
+  .hero .eyebrow {
+    display:inline-block; font-family:var(--mono); font-size:12px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--amber); margin:0 0 14px; padding:5px 10px; border:1px solid rgba(242,169,80,.3); border-radius:999px;
+    background:rgba(242,169,80,.06);
+  }
+  .hero h1 { font-size:36px; line-height:1.12; margin:0 0 12px; letter-spacing:.02em; }
   .hero h1 small { color:var(--amber); }
-  .hero p { color:var(--muted); margin:0; font-size:16px; }
+  .hero p { color:var(--muted); margin:0 auto; font-size:16.5px; max-width:520px; line-height:1.55; }
+  .hero .trust { margin:14px 0 0; font-size:12.5px; color:var(--faint); }
 
-  .features { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; max-width:640px; margin:0 auto 26px; }
-  .feature { background:linear-gradient(180deg, var(--panel), var(--panel2)); border:1px solid var(--border); border-radius:14px; padding:14px 15px; box-shadow:inset 0 1px 0 rgba(255,255,255,.04); }
+  .features { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; max-width:720px; margin:0 auto 28px; }
+  .feature { background:linear-gradient(180deg, var(--panel), var(--panel2)); border:1px solid var(--border); border-radius:14px; padding:16px 15px; box-shadow:inset 0 1px 0 rgba(255,255,255,.04); text-align:left; }
   .feature .k { font-family:var(--mono); font-size:12px; color:var(--amber); letter-spacing:.08em; text-transform:uppercase; margin-bottom:6px; }
-  .feature .v { font-size:13px; color:var(--muted); line-height:1.45; }
-  @media (max-width:560px) { .features { grid-template-columns:1fr; } }
+  .feature .v { font-size:13.5px; color:var(--muted); line-height:1.5; }
+  @media (max-width:560px) { .features { grid-template-columns:1fr; } .hero h1 { font-size:30px; } }
+
+  .how { max-width:720px; margin:0 auto 32px; }
+  .how h2 { text-align:center; font-size:22px; margin:0 0 6px; letter-spacing:.02em; }
+  .how > p { text-align:center; color:var(--muted); font-size:14.5px; margin:0 0 16px; }
+  .how-steps { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  @media (max-width:560px) { .how-steps { grid-template-columns:1fr; } }
+  .how-step {
+    background:linear-gradient(180deg, var(--panel), var(--panel2)); border:1px solid var(--border);
+    border-radius:14px; padding:16px; box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+  }
+  .how-step .n { font-family:var(--mono); font-size:12px; color:var(--amber); letter-spacing:.1em; margin-bottom:8px; }
+  .how-step h3 { margin:0 0 6px; font-size:15px; }
+  .how-step p { margin:0; font-size:13.5px; color:var(--muted); line-height:1.5; }
+
+  .audience { max-width:720px; margin:0 auto 32px; text-align:center; }
+  .audience h2 { font-size:22px; margin:0 0 6px; }
+  .audience > p { color:var(--muted); font-size:14.5px; margin:0 0 14px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
+  .chip {
+    font-size:13px; color:var(--fg); padding:8px 12px; border-radius:999px;
+    border:1px solid var(--border); background:rgba(255,255,255,.02);
+  }
+
+  .faq { max-width:640px; margin:8px auto 40px; }
+  .faq h2 { text-align:center; font-size:22px; margin:0 0 14px; }
+  .faq details {
+    border:1px solid var(--border); border-radius:12px; background:linear-gradient(180deg, var(--panel), var(--panel2));
+    padding:0 16px; margin-bottom:8px;
+  }
+  .faq summary { cursor:pointer; list-style:none; padding:14px 0; font-weight:600; font-size:14.5px; }
+  .faq summary::-webkit-details-marker { display:none; }
+  .faq details p { margin:0 0 14px; color:var(--muted); font-size:14px; line-height:1.55; }
+
+  .footer-note { text-align:center; color:var(--faint); font-size:12.5px; margin:8px auto 24px; max-width:520px; line-height:1.5; }
+  .footer-note a { color:var(--muted); }
 
   #auth { max-width:400px; margin:0 auto; }
   .tabs { display:flex; gap:6px; margin-bottom:18px; background:#0b0d13; border:1px solid var(--border); border-radius:12px; padding:4px; }
@@ -489,26 +545,62 @@ const HTML = /* html */ `<!doctype html>
   <div id="landingView" class="hidden">
     <div class="hero">
       <div class="logo" aria-hidden="true"></div>
-      <h1>Your hours,<br /><small>on the record.</small></h1>
-      <p>A tiny Windows tray app clocks you in and out from real machine
-        activity, then syncs to your account here. Sign up and you get a token —
-        paste it into the app and your timesheet builds itself.</p>
+      <div class="eyebrow">Windows · automatic · open source desktop</div>
+      <h1>Stop babysitting<br /><small>a timer.</small></h1>
+      <p>clocked is a tiny tray app that clocks you in and out from real PC activity —
+        unlock, work, lock, idle. It syncs to the cloud and emails a clean monthly
+        timesheet, even if your laptop was asleep at month-end.</p>
       <div class="downloadCta row">
-        <a class="btn" href="/download">Download for Windows</a>
-        <a class="btn ghost" href="https://github.com/DaveDushi/clocked" target="_blank" rel="noopener">View source</a>
-        <div class="hintline">Installer: clocked-setup.exe</div>
+        <button type="button" class="btn" id="heroSignup">Start free account</button>
+        <a class="btn ghost" href="/download">Download for Windows</a>
+        <div class="hintline">No browser extension. No always-on screenshots. Just power &amp; input events.</div>
       </div>
+      <p class="trust">Open-source desktop app · paid cloud sync &amp; email · self-host the Worker if you want</p>
     </div>
 
     <div class="features">
-      <div class="feature"><div class="k">Automatic</div><div class="v">Wake, unlock, and activity clock you in; sleep, lock, and idle clock you out.</div></div>
-      <div class="feature"><div class="k">Private</div><div class="v">Your own account, your own sync token, your own hours — nobody else's.</div></div>
-      <div class="feature"><div class="k">Monthly report</div><div class="v">A tidy timesheet emailed to you on the 1st, awake or not.</div></div>
+      <div class="feature"><div class="k">Automatic</div><div class="v">Wake, unlock, and activity clock you in. Sleep, lock, idle, and quit clock you out — backdated so idle time doesn&rsquo;t inflate the day.</div></div>
+      <div class="feature"><div class="k">Yours</div><div class="v">Your machine, your account, your token. Teams share manager views — not a surveillance product.</div></div>
+      <div class="feature"><div class="k">Monthly report</div><div class="v">A tidy timesheet (CSV attached) emailed on your schedule. Late-arriving sessions still land in the next sync.</div></div>
+    </div>
+
+    <div class="how">
+      <h2>How it works</h2>
+      <p>Three steps. Under a minute after install.</p>
+      <div class="how-steps">
+        <div class="how-step">
+          <div class="n">01</div>
+          <h3>Install the tray app</h3>
+          <p>Download for Windows. It runs in the background and starts with login if you want.</p>
+        </div>
+        <div class="how-step">
+          <div class="n">02</div>
+          <h3>Create an account</h3>
+          <p>Sign up here, verify email, pick a plan, copy your sync token into the app Settings.</p>
+        </div>
+        <div class="how-step">
+          <div class="n">03</div>
+          <h3>Forget about it</h3>
+          <p>Hours accumulate locally and sync over HTTPS. Get the monthly report by email — or preview anytime.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="audience">
+      <h2>Built for people who bill time</h2>
+      <p>Not another productivity panopticon. A quiet clock for real work.</p>
+      <div class="chips">
+        <span class="chip">Freelancers</span>
+        <span class="chip">Consultants</span>
+        <span class="chip">Small agencies</span>
+        <span class="chip">Contractors</span>
+        <span class="chip">Solo founders</span>
+      </div>
     </div>
 
     <div class="price-head">
       <h2>Simple pricing</h2>
-      <p>Just you or a whole team &mdash; pick a plan and start tracking.</p>
+      <p>Open-source desktop is free. Cloud sync, dashboard, and email reports are paid — solo or team.</p>
     </div>
     <div class="pricing">
       <div class="price-card">
@@ -556,6 +648,32 @@ const HTML = /* html */ `<!doctype html>
         <button id="salesCta" style="width:100%">Contact sales</button>
       </div>
     </div>
+
+    <div class="faq">
+      <h2>FAQ</h2>
+      <details>
+        <summary>Is this employee surveillance software?</summary>
+        <p>No. clocked tracks presence from OS power and input events on the machine you install it on. There are no screenshots, keylogging, or website lists. Team managers see hours for people who joined their org — not live monitoring.</p>
+      </details>
+      <details>
+        <summary>What if my laptop is closed at month-end?</summary>
+        <p>Sessions live on your PC and sync when you&rsquo;re online. The cloud report is emailed by the server on your schedule, so you still get the timesheet even if the laptop was asleep that day.</p>
+      </details>
+      <details>
+        <summary>Can I self-host?</summary>
+        <p>Yes. The desktop app is open source and can point at your own Worker URL. The hosted service at clocked.daviddusi.com is the paid convenience path for sync, dashboard, teams, and email.</p>
+      </details>
+      <details>
+        <summary>Windows only?</summary>
+        <p>The tray app is Windows-only today. The web dashboard works in any modern browser once you have an account.</p>
+      </details>
+    </div>
+
+    <p class="footer-note">
+      Source on <a href="https://github.com/DaveDushi/clocked" target="_blank" rel="noopener">GitHub</a>
+      · Installer via <a href="/download">/download</a>
+      · Questions? Use Contact sales on Enterprise or open an issue on the repo.
+    </p>
 
     <div id="authModal" class="modal hidden">
       <div class="modal-backdrop"></div>
@@ -967,6 +1085,7 @@ function openAuth(m) {
 function closeAuth() { $("authModal").classList.add("hidden"); }
 $("navSignin").onclick = () => openAuth("signin");
 $("navSignup").onclick = () => openAuth("signup");
+if ($("heroSignup")) $("heroSignup").onclick = () => openAuth("signup");
 // Remember which pricing tier the visitor clicked so post-login checkout prefers it.
 let pendingPlan = "single";
 document.querySelectorAll(".planCta").forEach((b) => {

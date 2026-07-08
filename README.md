@@ -1,9 +1,13 @@
 # clocked
 
-Automatic Windows time tracker. A background tray app clocks you in/out from
-machine **power** and **session** events, stores sessions locally in SQLite, and
-syncs them to a Cloudflare Worker that emails you a monthly report — whether or
-not your laptop is awake at month-end.
+**Automatic Windows time tracking — no timers.**  
+Live: [clocked.daviddusi.com](https://clocked.daviddusi.com) · [Download](https://clocked.daviddusi.com/download)
+
+A background tray app clocks you in/out from machine **power** and **session**
+events, stores sessions locally in SQLite, and syncs them to a Cloudflare Worker
+that emails you a monthly report — whether or not your laptop is awake at
+month-end. Desktop is open source; hosted cloud sync/dashboard is paid (self-host
+the Worker if you prefer).
 
 ```
 Windows tray app (Rust)                     Cloudflare Worker (TypeScript)

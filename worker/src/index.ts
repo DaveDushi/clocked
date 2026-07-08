@@ -3,6 +3,7 @@ import { makeAuth } from "./auth-server";
 import { dashboardResponse } from "./dashboard";
 import { downloadResponse, isDownloadMethod } from "./download";
 import { faviconResponse } from "./favicon";
+import { ogImageResponse } from "./og";
 import { buildAndSendReport, sendContactSales, sendMonthlyReports, SEND_DAY_LAST } from "./email";
 import { handleIngest } from "./ingest";
 import { buildHoursReport, buildReportCsv } from "./report";
@@ -72,6 +73,9 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   if (isDownloadMethod(req.method) && url.pathname === "/download") return downloadResponse();
   if (req.method === "GET" && (url.pathname === "/favicon.ico" || url.pathname === "/favicon.png")) {
     return faviconResponse();
+  }
+  if (req.method === "GET" && (url.pathname === "/og.jpg" || url.pathname === "/og.png")) {
+    return ogImageResponse();
   }
   if (req.method === "GET" && url.pathname === "/health") {
     return new Response("clocked-worker ok\n", { status: 200 });
