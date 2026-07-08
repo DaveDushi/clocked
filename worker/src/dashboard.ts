@@ -971,10 +971,10 @@ if ($("resendVerifyGate")) {
       $("verifyGateMsg").className = "msg err";
       return;
     }
-    // better-auth requires `email` in the body (optional callbackURL).
+    // better-auth requires email in the body (optional callbackURL).
     const r = await api("/api/auth/send-verification-email", {
       method: "POST",
-      body: JSON.stringify({ email, callbackURL: "/" }),
+      body: JSON.stringify({ email: email, callbackURL: "/" }),
     });
     const d = await r.json().catch(() => ({}));
     $("verifyGateMsg").textContent = r.ok
