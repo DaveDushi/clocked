@@ -44,6 +44,7 @@ export async function handleIngest(
 
   // Bulk ownership lookup (avoid N+1).
   const ownerById = new Map<string, string | null>();
+  const deletedIds = new Set<string>();
   const chunk = 80;
   for (let i = 0; i < valid.length; i += chunk) {
     const slice = valid.slice(i, i + chunk);
@@ -56,12 +57,28 @@ export async function handleIngest(
     for (const row of res.results ?? []) {
       ownerById.set(row.id, row.user_id);
     }
+    // Manager/user deletions must not be resurrected by a later desktop sync.
+    try {
+      const del = await env.DB.prepare(
+        `SELECT id FROM session_deletions WHERE id IN (${placeholders})`,
+      )
+        .bind(...slice.map((s) => s.id))
+        .all<{ id: string }>();
+      for (const row of del.results ?? []) deletedIds.add(row.id);
+    } catch {
+      /* migration 0010 not applied yet */
+    }
   }
 
   const accepted: string[] = [];
   const stmts: D1PreparedStatement[] = [];
 
   for (const s of valid) {
+    if (deletedIds.has(s.id)) {
+      // Count as accepted so the desktop marks it synced and stops retrying.
+      accepted.push(s.id);
+      continue;
+    }
     if (ownerById.has(s.id)) {
       const owner = ownerById.get(s.id) ?? null;
       // Block cross-account takeover; allow update when unattributed or same owner.
@@ -92,12 +109,16 @@ export async function handleIngest(
   }
 
   if (stmts.length === 0) {
+    // All rejected, or only tombstoned (still return accepted so client settles).
+    if (accepted.length > 0) {
+      return json({ ok: true, upserted: 0, accepted });
+    }
     return json({ error: "no sessions accepted", accepted: [], upserted: 0 }, 409);
   }
 
   await env.DB.batch(stmts);
 
-  return json({ ok: true, upserted: accepted.length, accepted });
+  return json({ ok: true, upserted: stmts.length, accepted });
 }
 
 const MAX_REASON_LEN = 64;

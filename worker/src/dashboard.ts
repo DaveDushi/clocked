@@ -705,9 +705,9 @@ const HTML = /* html */ `<!doctype html>
         <div class="total"><span class="muted">Total</span><b id="totalRow">0:00</b></div>
         <div id="hoursMsg" class="msg" role="status"></div>
         <details class="soft" id="manualEditWrap">
-          <summary>Add time manually</summary>
+          <summary>Add or remove time</summary>
           <div class="soft-body">
-            <p class="hint" style="margin:0 0 10px">For a day the tray app missed.</p>
+            <p class="hint" style="margin:0 0 10px">Add a missing span, or remove a wrong app-clocked session below.</p>
             <div class="row">
               <div>
                 <label for="mDate">Date</label>
@@ -1620,11 +1620,12 @@ function teamManualUrl(period) {
 function tmEditHtml() {
   return "<div style='padding:14px 12px 4px;border-top:1px solid var(--border)'>" +
     "<div class='mentries-head' style='margin-bottom:8px'>Adjust timesheet</div>" +
+    "<p class='hint' style='margin:0 0 10px;font-size:12.5px'>Add a missing span, or remove a wrong app clocking below.</p>" +
     "<div class='row'>" +
       "<div><label for='tmDate'>Date</label><input id='tmDate' type='date'></div>" +
       "<div><label for='tmStart'>Clock in</label><input id='tmStart' type='time'></div>" +
       "<div><label for='tmEnd'>Clock out</label><input id='tmEnd' type='time'></div>" +
-      "<button id='tmAdd'>Add</button>" +
+      "<button id='tmAdd' type='button'>Add</button>" +
     "</div>" +
     "<div id='tmManualMsg' class='msg' role='status'></div>" +
     "<div id='tmManualList' class='mentries'></div>" +
@@ -1653,30 +1654,56 @@ async function loadTeamManual(period) {
   const d = await r.json();
   renderTeamManual(d.entries || []);
 }
-function renderTeamManual(list) {
-  const box = $("tmManualList");
+function sessionSourceLabel(e) {
+  return e.source === "manual" ? "manual" : "app";
+}
+function renderSessionList(box, list, onDelete) {
   box.innerHTML = "";
-  if (!list.length) return;
+  if (!list.length) {
+    const empty = document.createElement("div");
+    empty.className = "muted";
+    empty.style.fontSize = "13px";
+    empty.style.marginTop = "8px";
+    empty.textContent = "No sessions this month.";
+    box.appendChild(empty);
+    return;
+  }
   const head = document.createElement("div");
   head.className = "mentries-head";
-  head.textContent = "Manual entries this month (" + list.length + ")";
+  head.textContent = "Sessions this month (" + list.length + ")";
   box.appendChild(head);
+  const scroll = document.createElement("div");
+  scroll.className = "mentries-scroll";
   list.forEach((e) => {
     const row = document.createElement("div");
     row.className = "mentry";
     const label = document.createElement("span");
-    label.textContent = e.date + "  ·  " + e.start + "–" + e.end;
+    const src = sessionSourceLabel(e);
+    label.textContent = e.date + "  ·  " + e.start + "–" + e.end + "  ·  " + src;
     const del = document.createElement("button");
-    del.type = "button"; del.className = "ghost del"; del.textContent = "×"; del.title = "Delete this entry";
-    del.onclick = () => deleteTeamManual(e.id);
-    row.appendChild(label); row.appendChild(del);
-    box.appendChild(row);
+    del.type = "button";
+    del.className = "ghost del";
+    del.textContent = "×";
+    del.title = src === "app" ? "Remove this app-clocked session" : "Remove this manual entry";
+    del.onclick = () => onDelete(e.id);
+    row.appendChild(label);
+    row.appendChild(del);
+    scroll.appendChild(row);
   });
+  box.appendChild(scroll);
+}
+function renderTeamManual(list) {
+  renderSessionList($("tmManualList"), list, deleteTeamManual);
 }
 async function deleteTeamManual(id) {
-  const r = await api(teamManualUrl(), { method:"DELETE", body: JSON.stringify({ id }) });
+  if (!confirm("Remove this session from the timesheet?")) return;
+  const r = await api(teamManualUrl(), { method: "DELETE", body: JSON.stringify({ id: id }) });
   if (r.ok) { loadTeamMemberHours(); }
-  else { const d = await r.json().catch(()=>({})); $("tmManualMsg").textContent = d.error || "Could not delete."; $("tmManualMsg").className = "msg err"; }
+  else {
+    const d = await r.json().catch(() => ({}));
+    $("tmManualMsg").textContent = d.error || "Could not delete.";
+    $("tmManualMsg").className = "msg err";
+  }
 }
 
 $("inviteBtn").onclick = async () => {
@@ -1868,27 +1895,7 @@ $("mAdd").onclick = async () => {
 };
 
 function renderManualEntries(list) {
-  const box = $("manualList");
-  box.innerHTML = "";
-  if (!list.length) return;
-  const head = document.createElement("div");
-  head.className = "mentries-head";
-  head.textContent = "Manual entries this month (" + list.length + ")";
-  box.appendChild(head);
-  const scroll = document.createElement("div");
-  scroll.className = "mentries-scroll";
-  list.forEach((e) => {
-    const row = document.createElement("div");
-    row.className = "mentry";
-    const label = document.createElement("span");
-    label.textContent = e.date + "  ·  " + e.start + "–" + e.end;
-    const del = document.createElement("button");
-    del.type = "button"; del.className = "ghost del"; del.textContent = "×"; del.title = "Delete this entry";
-    del.onclick = () => deleteManualEntry(e.id);
-    row.appendChild(label); row.appendChild(del);
-    scroll.appendChild(row);
-  });
-  box.appendChild(scroll);
+  renderSessionList($("manualList"), list, deleteManualEntry);
 }
 
 async function loadManualEntries() {
@@ -1905,6 +1912,7 @@ async function loadManualEntries() {
 }
 
 async function deleteManualEntry(id) {
+  if (!confirm("Remove this session from the timesheet?")) return;
   $("manualMsg").textContent = ""; $("manualMsg").className = "msg";
   const r = await api("/api/manual-session", { method:"DELETE", body: JSON.stringify({ id }) });
   if (r.ok) {

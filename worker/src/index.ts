@@ -562,6 +562,12 @@ async function canSelfServiceEditTimes(env: Env, userId: string): Promise<boolea
   return roles.some((r) => isManagerRole(r.role));
 }
 
+/**
+ * List / add / remove sessions for a user.
+ * GET returns all sessions in the period (app + manual) so wrong clockings can be removed.
+ * POST still creates manual adjustments only.
+ * DELETE removes any session id owned by the user (manual or desktop-synced).
+ */
 async function handleManualSession(
   req: Request,
   url: URL,
@@ -573,21 +579,31 @@ async function handleManualSession(
     if (!period) return json({ error: "invalid period" }, 400);
     const { start, end } = monthBoundsUtc(period, env.REPORT_TZ);
     const res = await env.DB.prepare(
-      `SELECT id, start_utc, end_utc FROM sessions
-        WHERE user_id = ? AND start_reason = 'manual' AND end_utc > ? AND start_utc < ?
+      `SELECT id, start_utc, end_utc, start_reason, end_reason FROM sessions
+        WHERE user_id = ? AND end_utc IS NOT NULL AND end_utc > ? AND start_utc < ?
         ORDER BY start_utc`,
     )
       .bind(userId, start.toISOString(), end.toISOString())
-      .all<{ id: string; start_utc: string; end_utc: string }>();
+      .all<{
+        id: string;
+        start_utc: string;
+        end_utc: string;
+        start_reason: string | null;
+        end_reason: string | null;
+      }>();
     const tz = env.REPORT_TZ;
     const entries = (res.results ?? []).map((r) => {
       const s = new Date(r.start_utc);
       const { y, m, d } = localYMD(s, tz);
+      const reason = r.start_reason || "app";
       return {
         id: r.id,
         date: `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`,
         start: formatHM(s, tz),
         end: formatHM(new Date(r.end_utc), tz),
+        source: reason === "manual" ? "manual" : "app",
+        start_reason: r.start_reason,
+        end_reason: r.end_reason,
       };
     });
     return json({ entries });
@@ -597,12 +613,23 @@ async function handleManualSession(
     const body = (await req.json().catch(() => ({}))) as { id?: unknown };
     const id = typeof body.id === "string" ? body.id : "";
     if (!id || id.length > 128) return json({ error: "id required" }, 400);
+    // Any owned closed session — managers use this to drop bad desktop clockings.
     const res = await env.DB.prepare(
-      `DELETE FROM sessions WHERE id = ? AND user_id = ? AND start_reason = 'manual'`,
+      `DELETE FROM sessions WHERE id = ? AND user_id = ? AND end_utc IS NOT NULL`,
     )
       .bind(id, userId)
       .run();
     if (!res.meta.changes) return json({ error: "not found" }, 404);
+    // Tombstone so a later desktop re-sync of the same id cannot resurrect it.
+    try {
+      await env.DB.prepare(
+        `INSERT OR IGNORE INTO session_deletions (id, user_id, deleted_at) VALUES (?, ?, ?)`,
+      )
+        .bind(id, userId, new Date().toISOString())
+        .run();
+    } catch {
+      /* table may not exist until migration applied — delete still succeeded */
+    }
     return json({ ok: true });
   }
 
