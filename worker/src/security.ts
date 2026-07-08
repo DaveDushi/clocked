@@ -1,6 +1,28 @@
-/** Attach baseline security headers to any Worker response. */
+/**
+ * Attach baseline security headers without destroying multi-value Set-Cookie.
+ * `new Headers(res.headers)` + rebuild can collapse multiple Set-Cookie lines into
+ * one (or drop them), which breaks better-auth sign-out / session cookies.
+ */
 export function withSecurityHeaders(res: Response, req?: Request): Response {
-  const headers = new Headers(res.headers);
+  const headers = new Headers();
+
+  // Copy every header except Set-Cookie (handled separately).
+  res.headers.forEach((value, key) => {
+    if (key.toLowerCase() === "set-cookie") return;
+    headers.append(key, value);
+  });
+
+  // Preserve each Set-Cookie as its own header (sign-out clears several cookies).
+  const setCookies =
+    typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
+  if (setCookies.length > 0) {
+    for (const c of setCookies) headers.append("Set-Cookie", c);
+  } else {
+    // Fallback if runtime only exposes a single joined header.
+    const single = res.headers.get("set-cookie");
+    if (single) headers.append("Set-Cookie", single);
+  }
+
   if (!headers.has("x-content-type-options")) {
     headers.set("X-Content-Type-Options", "nosniff");
   }

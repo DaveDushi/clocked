@@ -45,6 +45,21 @@ test("security headers include HSTS only on https", async () => {
   assert.equal(withHsts.headers.get("x-content-type-options"), "nosniff");
 });
 
+test("security headers preserve multiple Set-Cookie values", async () => {
+  const { withSecurityHeaders } = await import("../.tmp-test/security.js");
+  // Build a response the way auth libraries do (append each cookie).
+  const headers = new Headers({ "content-type": "application/json" });
+  headers.append("Set-Cookie", "a=1; Path=/; HttpOnly");
+  headers.append("Set-Cookie", "b=2; Path=/; HttpOnly");
+  headers.append("Set-Cookie", "c=; Max-Age=0; Path=/");
+  const res = withSecurityHeaders(new Response("{}", { headers }));
+  const cookies =
+    typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
+  assert.ok(cookies.length >= 2, "expected multiple Set-Cookie headers, got " + cookies.length);
+  assert.ok(cookies.some((c) => c.startsWith("a=")));
+  assert.ok(cookies.some((c) => c.startsWith("b=")));
+});
+
 test("ingest batch cap is finite", () => {
   assert.ok(MAX_SESSIONS_PER_REQUEST > 0);
   assert.ok(MAX_SESSIONS_PER_REQUEST <= 1000);

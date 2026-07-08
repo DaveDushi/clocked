@@ -1041,6 +1041,14 @@ function show(loggedIn) {
   $("app").classList.toggle("hidden", !loggedIn);
   $("signout").classList.toggle("hidden", !loggedIn);
   $("topAuth").classList.toggle("hidden", loggedIn);
+  if (!loggedIn) {
+    // Plan chip lives in the top bar (outside #app) — hide on sign-out.
+    if ($("teamCard")) $("teamCard").classList.add("hidden");
+    if (typeof closeAcctMenu === "function") closeAcctMenu();
+    if ($("appMain")) $("appMain").classList.add("hidden");
+    if ($("planGate")) $("planGate").classList.add("hidden");
+    if ($("verifyGate")) $("verifyGate").classList.add("hidden");
+  }
 }
 
 // ---- dashboard tabs ----
@@ -2116,9 +2124,19 @@ function renderEmailReadonly(recipients, sendDay) {
 
 $("signout").onclick = async () => {
   closeAcctMenu();
-  await api("/api/auth/sign-out", { method: "POST" });
+  try {
+    await api("/api/auth/sign-out", {
+      method: "POST",
+      body: JSON.stringify({}),
+      headers: { "content-type": "application/json" },
+    });
+  } catch (e) { /* still clear UI */ }
+  // Reset client state, then full reload so no cached session UI sticks around.
   show(false);
   setMode("signin");
+  orgId = ""; orgName = ""; orgRole = ""; meEmail = "";
+  orgPlanKey = ""; billingStatus = ""; canEditTimes = true; emailMode = "solo";
+  window.location.assign("/");
 };
 $("month").addEventListener("change", loadHours);
 $("prev").onclick = () => shiftMonth(-1);

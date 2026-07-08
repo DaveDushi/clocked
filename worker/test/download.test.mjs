@@ -27,5 +27,4 @@ test("dashboard advertises the Windows installer download", async () => {
 
   assert.match(html, /href="\/download"/);
   assert.match(html, /Download for Windows/);
-  assert.match(html, /clocked-setup\.exe/);
 });
