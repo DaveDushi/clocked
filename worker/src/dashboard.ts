@@ -860,6 +860,7 @@ async function afterLogin(fresh) {
     return;
   }
   if (!me.user.emailVerified) {
+    meEmail = me.user.email || "";
     setAccessStage("verify");
     return;
   }
@@ -964,8 +965,21 @@ document.querySelectorAll(".gatePlanCta").forEach((b) => {
 if ($("planGateRefresh")) $("planGateRefresh").onclick = () => afterLogin(false);
 if ($("resendVerifyGate")) {
   $("resendVerifyGate").onclick = async () => {
-    const r = await api("/api/auth/send-verification-email", { method: "POST", body: JSON.stringify({}) });
-    $("verifyGateMsg").textContent = r.ok ? "Verification email sent." : "Could not send verification email.";
+    const email = meEmail || ($("email") && $("email").value) || "";
+    if (!email) {
+      $("verifyGateMsg").textContent = "Missing account email — sign out and sign in again.";
+      $("verifyGateMsg").className = "msg err";
+      return;
+    }
+    // better-auth requires `email` in the body (optional callbackURL).
+    const r = await api("/api/auth/send-verification-email", {
+      method: "POST",
+      body: JSON.stringify({ email, callbackURL: "/" }),
+    });
+    const d = await r.json().catch(() => ({}));
+    $("verifyGateMsg").textContent = r.ok
+      ? "Verification email sent — check your inbox."
+      : (d.message || d.error || "Could not send verification email.");
     $("verifyGateMsg").className = r.ok ? "msg ok" : "msg err";
   };
 }
@@ -1302,8 +1316,20 @@ async function loadToken() {
 }
 const resendBtn = $("resendVerify");
 if (resendBtn) resendBtn.onclick = async () => {
-  const r = await api("/api/auth/send-verification-email", { method:"POST", body: JSON.stringify({}) });
-  $("tokenMsg").textContent = r.ok ? "Verification email sent." : "Could not send verification email.";
+  const email = meEmail || "";
+  if (!email) {
+    $("tokenMsg").textContent = "Missing account email — sign out and sign in again.";
+    $("tokenMsg").className = "msg err";
+    return;
+  }
+  const r = await api("/api/auth/send-verification-email", {
+    method: "POST",
+    body: JSON.stringify({ email, callbackURL: "/" }),
+  });
+  const d = await r.json().catch(() => ({}));
+  $("tokenMsg").textContent = r.ok
+    ? "Verification email sent — check your inbox."
+    : (d.message || d.error || "Could not send verification email.");
   $("tokenMsg").className = r.ok ? "msg ok" : "msg err";
 };
 $("copyToken").onclick = async () => {
