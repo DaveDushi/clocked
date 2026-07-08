@@ -42,7 +42,66 @@ const HTML = /* html */ `<!doctype html>
     content:""; position:fixed; top:0; left:0; right:0; height:2px; z-index:10;
     background:linear-gradient(90deg, transparent, var(--amber) 30%, var(--amber2) 70%, transparent);
   }
-  .wrap { max-width:760px; margin:0 auto; padding:28px 20px 72px; }
+  .wrap { max-width:800px; margin:0 auto; padding:22px 20px 64px; }
+  #appMain { animation:fadein .2s ease; }
+  @keyframes fadein { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+
+  /* ---------- dashboard nav ---------- */
+  .dash-nav {
+    display:flex; gap:4px; margin:0 0 18px; padding:4px;
+    background:#0b0d13; border:1px solid var(--border); border-radius:14px;
+    overflow-x:auto; -webkit-overflow-scrolling:touch;
+  }
+  .dash-nav button {
+    flex:1; min-width:0; padding:10px 12px; border-radius:10px; font-weight:500;
+    background:transparent; color:var(--muted); box-shadow:none; font-size:13.5px;
+  }
+  .dash-nav button:hover { color:var(--fg); transform:none; box-shadow:none; }
+  .dash-nav button.active {
+    background:linear-gradient(180deg, var(--amber), var(--amber2)); color:#221503; font-weight:700;
+    box-shadow:0 2px 10px rgba(242,169,80,.25);
+  }
+  .dash-panel { display:none; }
+  .dash-panel.active { display:block; animation:fadein .18s ease; }
+
+  /* compact plan strip */
+  .plan-strip {
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    padding:12px 14px; margin-bottom:14px;
+    background:linear-gradient(180deg, var(--panel), var(--panel2));
+    border:1px solid var(--border); border-radius:14px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+  }
+  .plan-strip .plan-badge { margin:0; }
+  .plan-strip-meta { flex:1; min-width:140px; display:flex; flex-direction:column; gap:2px; }
+  .plan-strip-meta strong { font-size:14px; font-weight:600; }
+  .plan-strip-meta span { font-size:12px; color:var(--muted); }
+  .plan-strip-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .plan-strip-actions button { padding:8px 12px; font-size:13px; }
+  .plan-strip #planStatusPill { margin-left:auto; }
+  @media (max-width:560px) {
+    .plan-strip #planStatusPill { margin-left:0; }
+    .plan-strip { align-items:flex-start; }
+  }
+
+  .section-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:12px; }
+  .section-head h3 { margin:0; font-size:16px; }
+  .section-head .hint { margin:0; color:var(--muted); font-size:13px; }
+  details.soft {
+    border:1px solid var(--border); border-radius:12px; background:#0b0d13; padding:0 14px; margin-top:14px;
+  }
+  details.soft > summary {
+    cursor:pointer; list-style:none; padding:12px 0; font-size:13.5px; font-weight:600; color:var(--fg);
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+  }
+  details.soft > summary::-webkit-details-marker { display:none; }
+  details.soft > summary::after { content:"+"; color:var(--muted); font-family:var(--mono); font-weight:500; }
+  details.soft[open] > summary::after { content:"–"; }
+  details.soft .soft-body { padding:0 0 14px; }
+  .hours-toolbar { display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; }
+  .hours-toolbar .month-field { flex:1; min-width:160px; }
+  .inline-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+  .token-help { font-size:12.5px; color:var(--muted); margin:10px 0 0; line-height:1.5; }
 
   /* ---------- header ---------- */
   .top { display:flex; align-items:center; gap:12px; margin-bottom:4px; }
@@ -565,40 +624,151 @@ const HTML = /* html */ `<!doctype html>
       <div id="planGateMsg" class="msg" role="status" style="text-align:center"></div>
     </div>
 
-    <!-- Product UI — only after paid access. -->
+    <!-- Product UI — only after paid access. Tabbed to keep the page short. -->
     <div id="appMain" class="hidden">
 
-    <!-- Plan + team (managers). Solo hides invite/roster; team shows them below. -->
-    <div id="teamCard" class="card hidden">
-      <div class="plan-hero">
-        <div class="plan-hero-top">
-          <div>
-            <span id="planBadge" class="plan-badge">Solo</span>
-            <h3 class="plan-title" id="teamCardTitle">Your plan</h3>
-            <p class="hint" id="teamCardHint" style="margin:0">Personal subscription for one person.</p>
-          </div>
-          <span id="planStatusPill" class="plan-status-pill">—</span>
-        </div>
-        <div class="plan-facts">
-          <div class="plan-fact"><label>Plan</label><b id="planFactName">Solo</b></div>
-          <div class="plan-fact"><label>Seats</label><b id="planFactSeats">1 of 1</b></div>
-          <div class="plan-fact"><label>Billing</label><b id="planFactBilling">—</b></div>
-        </div>
-        <div class="plan-actions">
-          <button id="billingBtn" class="ghost" type="button">Manage billing</button>
-          <button id="upgradeBtn" type="button">Upgrade plan</button>
-          <span class="rspacer"></span>
-          <span id="teamOrgName" class="muted" style="font-size:13px"></span>
-        </div>
-        <div id="billingMsg" class="msg" role="status"></div>
+    <!-- Compact plan strip (managers / personal owners). -->
+    <div id="teamCard" class="plan-strip hidden">
+      <span id="planBadge" class="plan-badge">Solo</span>
+      <div class="plan-strip-meta">
+        <strong id="teamCardTitle">Your plan</strong>
+        <span id="teamCardHint">Personal subscription</span>
+        <span class="hidden" id="planFactName"></span>
+        <span class="hidden" id="planFactSeats"></span>
+        <span class="hidden" id="planFactBilling"></span>
+        <span class="hidden" id="teamOrgName"></span>
       </div>
+      <span id="planStatusPill" class="plan-status-pill">—</span>
+      <div class="plan-strip-actions">
+        <button id="billingBtn" class="ghost" type="button">Billing</button>
+        <button id="upgradeBtn" type="button">Upgrade</button>
+      </div>
+      <div id="billingMsg" class="msg" role="status" style="flex-basis:100%;margin:0;min-height:0"></div>
+    </div>
 
-      <div id="teamSection" class="hidden">
-        <h3 style="margin:0 0 4px;font-size:15px">Team members</h3>
-        <p class="hint" id="teamSectionHint">Invite people and open anyone&rsquo;s timesheet. The invite link is only for teammates you invite — not a public share link.</p>
+    <nav class="dash-nav" id="dashNav" aria-label="Dashboard sections">
+      <button type="button" class="dashTab active" data-tab="hours">Hours</button>
+      <button type="button" class="dashTab" data-tab="desktop">Desktop</button>
+      <button type="button" class="dashTab" data-tab="email">Email</button>
+      <button type="button" class="dashTab hidden" data-tab="team" id="tabTeam">Team</button>
+    </nav>
+
+    <!-- Hours (default) -->
+    <div id="panel-hours" class="dash-panel active">
+      <div class="stats">
+        <div class="tile big"><label>Total</label><b id="total">–</b></div>
+        <div class="tile"><label>Days</label><b id="statDays">–</b></div>
+        <div class="tile"><label>Avg / day</label><b id="statAvg">–</b></div>
+      </div>
+      <div class="card">
+        <div class="hours-toolbar">
+          <button id="prev" class="ghost nav" aria-label="Previous month" type="button">&#8249;</button>
+          <div class="month-field">
+            <label for="month">Month</label>
+            <input id="month" type="month" />
+          </div>
+          <button id="next" class="ghost nav" aria-label="Next month" type="button">&#8250;</button>
+        </div>
+        <div id="tablewrap" class="tablewrap">
+          <table>
+            <thead><tr><th>Day</th><th></th><th class="num">Hours</th></tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <div class="total"><span class="muted">Total</span><b id="totalRow">0:00</b></div>
+        <div id="hoursMsg" class="msg" role="status"></div>
+        <details class="soft">
+          <summary>Add time manually</summary>
+          <div class="soft-body">
+            <p class="hint" style="margin:0 0 10px">For a day the tray app missed.</p>
+            <div class="row">
+              <div>
+                <label for="mDate">Date</label>
+                <input id="mDate" type="date" />
+              </div>
+              <div>
+                <label for="mStart">In</label>
+                <input id="mStart" type="time" />
+              </div>
+              <div>
+                <label for="mEnd">Out</label>
+                <input id="mEnd" type="time" />
+              </div>
+              <button id="mAdd" type="button">Add</button>
+            </div>
+            <div id="manualMsg" class="msg" role="status"></div>
+            <div id="manualList" class="mentries"></div>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <!-- Desktop sync -->
+    <div id="panel-desktop" class="dash-panel">
+      <div class="card">
+        <div class="section-head">
+          <h3>Desktop app</h3>
+          <p class="hint">Connect the Windows tray app</p>
+        </div>
+        <div id="verifyBanner" class="msg err hidden" role="status" style="margin-bottom:12px">
+          Verify your email to create a sync token.
+          <button id="resendVerify" class="ghost" style="margin-left:8px" type="button">Resend</button>
+        </div>
+        <div class="setupbox">
+          <a class="btn" href="/download">Download for Windows</a>
+          <span class="muted">Install, then paste the token into Settings.</span>
+        </div>
+        <label style="margin-top:14px">Sync token</label>
+        <div class="tokenbox">
+          <div id="token" class="token" title="Your Bearer token">&middot;&middot;&middot;&middot;&middot;&middot;&middot;&middot;</div>
+          <button id="copyToken" class="ghost" type="button">Copy</button>
+          <button id="regenToken" class="ghost" type="button" title="Revoke and issue a new token">Regenerate</button>
+        </div>
+        <p class="token-help">Treat this like a password. It can sync sessions and open your dashboard from the tray app. Shown in full only when created or regenerated.</p>
+        <div id="tokenMsg" class="msg" role="status"></div>
+      </div>
+    </div>
+
+    <!-- Email / delivery -->
+    <div id="panel-email" class="dash-panel">
+      <div class="card">
+        <div class="section-head">
+          <h3 id="emailTitle">Monthly timesheet</h3>
+          <p class="hint" id="emailHint">Where the report is emailed</p>
+        </div>
+        <div id="emailReadonly" class="hidden"></div>
+        <div id="emailEdit">
+          <div id="recipients" class="recipients"></div>
+          <div class="schedule">
+            <label class="check"><input type="checkbox" id="autoSend"> Email automatically each month</label>
+            <div id="sendDayWrap" class="sendday">
+              <span>Send on the</span>
+              <select id="sendDay"></select>
+              <span>of each month</span>
+            </div>
+          </div>
+          <div class="inline-actions">
+            <button id="addRecipient" class="ghost" type="button">+ Recipient</button>
+            <button id="previewBtn" class="ghost" type="button">Preview</button>
+            <button id="saveEmail" type="button">Save</button>
+            <button id="sendNow" class="ghost" type="button">Send now</button>
+          </div>
+        </div>
+        <div id="emailMsg" class="msg" role="status"></div>
+        <div id="previewPanel" class="preview hidden"></div>
+      </div>
+    </div>
+
+    <!-- Team (managers on multi-seat plans) -->
+    <div id="panel-team" class="dash-panel">
+      <div id="teamSection" class="card hidden">
+        <div class="section-head">
+          <h3>Team members</h3>
+          <p class="hint" id="teamSectionHint">Invite people and open their hours</p>
+        </div>
         <div id="inviteRow" class="row">
           <div>
-            <label for="inviteEmail">Invite by email</label>
+            <label for="inviteEmail">Email</label>
             <input id="inviteEmail" type="email" placeholder="teammate@example.com" />
           </div>
           <div style="flex:0 0 140px">
@@ -612,11 +782,18 @@ const HTML = /* html */ `<!doctype html>
         </div>
         <div id="inviteMsg" class="msg" role="status"></div>
         <div id="inviteLinkBox" class="invitelink hidden">
-          <input id="inviteLink" type="text" readonly aria-label="Invite link for the person you invited" />
+          <input id="inviteLink" type="text" readonly aria-label="Invite link" />
           <button id="copyInvite" class="ghost" type="button">Copy invite link</button>
         </div>
         <div id="roster" class="roster"></div>
         <div id="teamMemberPanel" class="preview hidden"></div>
+      </div>
+      <div id="teamEmpty" class="card hidden">
+        <h3>Team</h3>
+        <p class="hint" style="margin:0">Upgrade to Team to invite members and review their hours.</p>
+        <div class="inline-actions">
+          <button type="button" id="teamEmptyUpgrade">Upgrade plan</button>
+        </div>
       </div>
     </div>
 
@@ -626,7 +803,7 @@ const HTML = /* html */ `<!doctype html>
       <div class="card modal-card" style="max-width:440px">
         <button id="upgradeClose" class="ghost modal-close" aria-label="Close" type="button">&times;</button>
         <h3 style="margin:0 0 6px">Upgrade your plan</h3>
-        <p class="hint" id="upgradeHint">Add seats so you can invite teammates. You&rsquo;ll finish on Stripe&rsquo;s secure checkout.</p>
+        <p class="hint" id="upgradeHint">Add seats so you can invite teammates. Checkout opens on Stripe.</p>
         <div class="upgrade-options">
           <button type="button" class="upgrade-opt" data-plan="team" id="upgradeTeam">
             <div>
@@ -652,102 +829,6 @@ const HTML = /* html */ `<!doctype html>
         </div>
         <div id="upgradeMsg" class="msg" role="status"></div>
       </div>
-    </div>
-
-    <div class="stats">
-      <div class="tile big"><label>Total</label><b id="total">–</b></div>
-      <div class="tile"><label>Days</label><b id="statDays">–</b></div>
-      <div class="tile"><label>Avg / day</label><b id="statAvg">–</b></div>
-    </div>
-
-    <div class="card">
-      <div class="row">
-        <button id="prev" class="ghost nav" aria-label="Previous month">&#8249;</button>
-        <div>
-          <label for="month">Month</label>
-          <input id="month" type="month" />
-        </div>
-        <button id="next" class="ghost nav" aria-label="Next month">&#8250;</button>
-      </div>
-      <div id="tablewrap" class="tablewrap">
-        <table>
-          <thead><tr><th>Day</th><th></th><th class="num">Hours</th></tr></thead>
-          <tbody id="rows"></tbody>
-        </table>
-      </div>
-      <div class="total"><span class="muted">Total</span><b id="totalRow">0:00</b></div>
-      <div id="hoursMsg" class="msg" role="status"></div>
-    </div>
-
-    <div class="card">
-      <h3>Add time manually</h3>
-      <p class="hint">Log a clock-in and clock-out for a day the app missed.</p>
-      <div class="row">
-        <div>
-          <label for="mDate">Date</label>
-          <input id="mDate" type="date" />
-        </div>
-        <div>
-          <label for="mStart">Clock in</label>
-          <input id="mStart" type="time" />
-        </div>
-        <div>
-          <label for="mEnd">Clock out</label>
-          <input id="mEnd" type="time" />
-        </div>
-        <button id="mAdd">Add</button>
-      </div>
-      <div id="manualMsg" class="msg" role="status"></div>
-      <div id="manualList" class="mentries"></div>
-    </div>
-
-    <div class="card">
-      <h3>Desktop sync token</h3>
-      <p class="hint">Your account's Bearer token. Shown in full only when created or regenerated — copy it into the desktop app immediately. Treat it like a password: anyone with it can sync sessions <b>and</b> open your dashboard from the tray app. Regenerate if it leaks.</p>
-      <div id="verifyBanner" class="msg err hidden" role="status" style="margin-bottom:12px">
-        Verify your email to use the dashboard, create a sync token, and send timesheets.
-        <button id="resendVerify" class="ghost" style="margin-left:8px">Resend email</button>
-      </div>
-      <div class="setupbox">
-        <a class="btn" href="/download">Download for Windows</a>
-        <span class="muted">Install Clocked, then paste this token into the tray app Settings.</span>
-      </div>
-      <div class="tokenbox">
-        <div id="token" class="token" title="Your Bearer token">&middot;&middot;&middot;&middot;&middot;&middot;&middot;&middot;</div>
-        <button id="copyToken" class="ghost">Copy</button>
-        <button id="regenToken" class="ghost" title="Revoke this token and issue a new one">Regenerate</button>
-      </div>
-      <ol class="steps">
-        <li>Right-click the clocked tray icon &rarr; <b>Settings&hellip;</b></li>
-        <li>Paste the token above into <b>Bearer token</b>.</li>
-        <li>Click <b>Save</b> &mdash; syncing starts automatically.</li>
-      </ol>
-      <div id="tokenMsg" class="msg" role="status"></div>
-    </div>
-
-    <div class="card">
-      <h3 id="emailTitle">Monthly timesheet</h3>
-      <p class="hint" id="emailHint">Where your report is emailed. Add as many recipients as you like.</p>
-      <div id="emailReadonly" class="hidden"></div>
-      <div id="emailEdit">
-        <div id="recipients" class="recipients"></div>
-        <div class="schedule">
-          <label class="check"><input type="checkbox" id="autoSend"> Email the timesheet automatically each month</label>
-          <div id="sendDayWrap" class="sendday">
-            <span>Send on the</span>
-            <select id="sendDay"></select>
-            <span>of each month.</span>
-          </div>
-        </div>
-        <div class="row">
-          <button id="addRecipient" class="ghost">+ Add recipient</button>
-          <button id="previewBtn" class="ghost">Preview</button>
-          <button id="saveEmail">Save</button>
-          <button id="sendNow">Send now</button>
-        </div>
-      </div>
-      <div id="emailMsg" class="msg" role="status"></div>
-      <div id="previewPanel" class="preview hidden"></div>
     </div>
     </div><!-- /appMain -->
   </div><!-- /app -->
@@ -805,6 +886,23 @@ function show(loggedIn) {
   $("app").classList.toggle("hidden", !loggedIn);
   $("signout").classList.toggle("hidden", !loggedIn);
   $("topAuth").classList.toggle("hidden", loggedIn);
+}
+
+// ---- dashboard tabs ----
+function setDashTab(name) {
+  const tab = name || "hours";
+  document.querySelectorAll(".dashTab").forEach((b) => {
+    b.classList.toggle("active", b.getAttribute("data-tab") === tab);
+  });
+  document.querySelectorAll(".dash-panel").forEach((p) => {
+    p.classList.toggle("active", p.id === "panel-" + tab);
+  });
+}
+document.querySelectorAll(".dashTab").forEach((b) => {
+  b.onclick = () => setDashTab(b.getAttribute("data-tab"));
+});
+if ($("teamEmptyUpgrade")) {
+  $("teamEmptyUpgrade").onclick = () => openUpgradeModal();
 }
 
 // ---- auth mode (sign up / sign in) ----
@@ -976,6 +1074,7 @@ async function afterLogin(fresh) {
   }
 
   setAccessStage("app");
+  setDashTab("hours");
   await applyTeamFromMe(me);
   await Promise.all([loadToken(), loadHours(), loadEmailSettings()]);
   if (billingRet === "success") {
@@ -1111,6 +1210,7 @@ async function applyTeamFromMe(me) {
   orgId = ""; orgName = ""; orgRole = ""; openMemberId = ""; emailMode = "solo";
   orgPlanKey = ""; billingStatus = ""; memberCount = 0;
   $("teamCard").classList.add("hidden");
+  $("tabTeam").classList.add("hidden");
   if ($("teamMemberPanel")) { $("teamMemberPanel").classList.add("hidden"); $("teamMemberPanel").innerHTML = ""; }
   if ($("inviteLinkBox")) $("inviteLinkBox").classList.add("hidden");
   if ($("inviteMsg")) { $("inviteMsg").textContent = ""; $("inviteMsg").className = "msg"; }
@@ -1123,6 +1223,7 @@ async function applyTeamFromMe(me) {
     orgPlanKey = mgr.plan || ""; billingStatus = mgr.billingStatus || "";
     memberCount = mgr.memberCount || 1;
     $("teamCard").classList.remove("hidden");
+    $("tabTeam").classList.remove("hidden");
     configureBillingUI();
     updateTeamUsage(memberCount);
     if (orgPlanKey !== "single") await loadRoster();
@@ -1133,7 +1234,10 @@ async function applyTeamFromMe(me) {
     orgRole = mem.role || "";
     billingStatus = mem.billingStatus || "";
     orgPlanKey = mem.plan || "";
-    // Workers do not manage billing — hide plan admin card.
+    // Workers: no billing strip / team admin tab.
+    if ($("panel-team") && $("panel-team").classList.contains("active")) setDashTab("hours");
+  } else {
+    if ($("panel-team") && $("panel-team").classList.contains("active")) setDashTab("hours");
   }
   configureEmailCard();
 }
@@ -1142,7 +1246,7 @@ function isBillingActive() {
   return billingStatus === "active" || billingStatus === "trialing" || billingStatus === "past_due";
 }
 
-/** Paint the plan card: Solo hides team invites; Team shows roster + invite link only after inviting. */
+/** Compact plan strip + team tab content. */
 function configureBillingUI() {
   const single = orgPlanKey === "single" || !orgPlanKey;
   const team = orgPlanKey === "team";
@@ -1150,20 +1254,18 @@ function configureBillingUI() {
   const active = isBillingActive();
 
   $("teamSection").classList.toggle("hidden", single);
+  if ($("teamEmpty")) $("teamEmpty").classList.toggle("hidden", !single);
   $("inviteLinkBox").classList.add("hidden");
   $("inviteMsg").textContent = "";
   $("inviteMsg").className = "msg";
 
   const badge = $("planBadge");
-  badge.textContent = single ? "Solo" : teamplus ? "Team+" : team ? "Team" : (orgPlanLabel || "Plan");
+  const planName = single ? "Solo" : teamplus ? "Team+" : team ? "Team" : (orgPlanLabel || "Plan");
+  badge.textContent = planName;
   badge.className = "plan-badge" + (teamplus ? " teamplus" : team ? " team" : "");
 
-  $("teamCardTitle").textContent = single ? "Your plan" : (orgName ? orgName : "Your team");
-  $("teamCardHint").textContent = single
-    ? "Personal subscription — sync, dashboard, and monthly timesheets for one person."
-    : "Invite teammates and open their hours. Invite links are private one-time links for people you invite — not a public share URL.";
-
-  $("planFactName").textContent = single ? "Solo" : (orgPlanLabel || "Team");
+  $("teamCardTitle").textContent = single ? "Solo plan" : (orgName || "Team plan");
+  $("planFactName").textContent = planName;
   $("planFactBilling").textContent = active
     ? (billingStatus === "past_due" ? "Past due" : billingStatus === "trialing" ? "Trialing" : "Active")
     : "Inactive";
@@ -1174,13 +1276,10 @@ function configureBillingUI() {
     : "Inactive";
   pill.className = "plan-status-pill " + (billingStatus === "past_due" ? "warn" : active ? "ok" : "bad");
 
-  $("billingBtn").textContent = active ? "Manage billing" : "Subscribe";
-  // Solo / Team can upgrade; Team+ can still reach sales for Enterprise.
+  $("billingBtn").textContent = active ? "Billing" : "Subscribe";
   $("upgradeBtn").classList.remove("hidden");
-  $("upgradeBtn").textContent = teamplus ? "Contact sales" : "Upgrade plan";
-  $("teamOrgName").textContent = single ? "" : (orgName ? "" : "");
+  $("upgradeBtn").textContent = teamplus ? "Sales" : "Upgrade";
 
-  // Modal option visibility: hide plans you already have or are below.
   $("upgradeTeam").classList.toggle("hidden", !single);
   $("upgradeTeamPlus").classList.toggle("hidden", teamplus);
   $("upgradeHint").textContent = single
@@ -1188,6 +1287,15 @@ function configureBillingUI() {
     : team
       ? "Move up to Team+ for more seats, or talk to us about Enterprise."
       : "Need more than 30 seats? Enterprise is custom-quoted.";
+
+  refreshPlanStripMeta();
+}
+
+function refreshPlanStripMeta() {
+  const single = orgPlanKey === "single" || !orgPlanKey;
+  const seats = $("planFactSeats").textContent || (single ? "1 of 1" : "—");
+  const billing = $("planFactBilling").textContent || "—";
+  $("teamCardHint").textContent = seats + " seats · " + billing;
 }
 
 $("billingBtn").onclick = async () => {
@@ -1270,12 +1378,15 @@ function updateTeamUsage(count) {
   const cap = unlimited ? null : (orgCap || 1);
   if (orgPlanKey === "single" || !orgPlanKey) {
     $("planFactSeats").textContent = "1 of 1";
-    return;
+  } else {
+    $("planFactSeats").textContent = count + " of " + (cap == null ? "∞" : String(cap));
+    const full = cap != null && count >= cap;
+    if ($("inviteBtn")) {
+      $("inviteBtn").disabled = full;
+      $("inviteBtn").title = full ? "Upgrade your plan to invite more members" : "";
+    }
   }
-  $("planFactSeats").textContent = count + " of " + (cap == null ? "∞" : String(cap));
-  const full = cap != null && count >= cap;
-  $("inviteBtn").disabled = full;
-  $("inviteBtn").title = full ? "Upgrade your plan to invite more members" : "";
+  refreshPlanStripMeta();
 }
 
 async function loadRoster() {
