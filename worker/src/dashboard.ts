@@ -63,7 +63,7 @@ const HTML = /* html */ `<!doctype html>
     background:
       radial-gradient(circle, var(--amber) 0 1.6px, transparent 1.7px),
       repeating-conic-gradient(rgba(233,234,240,.28) 0 2deg, transparent 2deg 30deg);
-    box-shadow:0 0 18px rgba(242,169,80,.25), inset 0 0 6px rgba(0,0,0,.5);
+    box-shadow:0 0 9px rgba(242,169,80,.14), inset 0 0 6px rgba(0,0,0,.5);
   }
   .logo::before { /* hour hand */
     content:""; position:absolute; left:calc(50% - 1px); bottom:50%; width:2px; height:8px;
@@ -106,16 +106,17 @@ const HTML = /* html */ `<!doctype html>
   }
   .tile label { display:block; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); margin-bottom:4px; }
   .tile b { font-family:var(--mono); font-size:24px; font-weight:600; font-variant-numeric:tabular-nums; }
-  .tile.big b { color:var(--amber); text-shadow:0 0 22px rgba(242,169,80,.45); }
+  .tile.big b { color:var(--amber); text-shadow:0 0 12px rgba(242,169,80,.22); }
   @media (max-width:480px) { .tile b { font-size:19px; } }
 
   /* ---------- forms ---------- */
   label { display:block; font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); margin-bottom:7px; }
-  input {
+  input, textarea {
     width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border);
     background:#0b0d13; color:var(--fg); font:inherit; transition:border-color .15s, box-shadow .15s;
   }
-  input:focus { outline:none; border-color:var(--amber); box-shadow:0 0 0 3px rgba(242,169,80,.16); }
+  textarea { resize:vertical; min-height:74px; }
+  input:focus, textarea:focus { outline:none; border-color:var(--amber); box-shadow:0 0 0 3px rgba(242,169,80,.16); }
   input[type=month], input[type=date], input[type=time] { font-family:var(--mono); font-size:14px; }
   ::-webkit-calendar-picker-indicator { filter:invert(.75); cursor:pointer; }
   .row { display:flex; gap:10px; align-items:flex-end; }
@@ -191,14 +192,14 @@ const HTML = /* html */ `<!doctype html>
   .bar {
     height:100%; border-radius:3px; min-width:3px;
     background:linear-gradient(90deg, var(--amber), var(--amber2));
-    box-shadow:0 0 10px rgba(242,169,80,.4);
+    box-shadow:0 0 6px rgba(242,169,80,.22);
     animation:grow .5s cubic-bezier(.2,.7,.2,1) backwards;
   }
   @keyframes grow { from { width:0; } }
   tr.empty td { color:var(--muted); padding:22px 6px; text-align:center; }
 
   .total { display:flex; justify-content:space-between; align-items:baseline; margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
-  .total b { font-family:var(--mono); font-size:26px; font-weight:600; color:var(--amber); text-shadow:0 0 22px rgba(242,169,80,.4); font-variant-numeric:tabular-nums; }
+  .total b { font-family:var(--mono); font-size:26px; font-weight:600; color:var(--amber); text-shadow:0 0 12px rgba(242,169,80,.2); font-variant-numeric:tabular-nums; }
 
   /* ---------- landing / auth ---------- */
   .hero { text-align:center; margin:7vh auto 24px; max-width:560px; }
@@ -243,7 +244,43 @@ const HTML = /* html */ `<!doctype html>
   .setupbox { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
   .setupbox .muted { font-size:13px; flex:1; min-width:220px; }
 
-  .top.bare .logo, .top.bare .wordmark { display:none; }
+  /* landing header: brand stays, live clock hides, auth buttons appear right */
+  .top.bare #now { display:none; }
+  #topAuth { display:flex; gap:8px; }
+  #topAuth button { padding:8px 14px; font-size:14px; }
+
+  /* ---------- auth modal ---------- */
+  .modal { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; padding:20px; }
+  .modal.hidden { display:none; }
+  .modal-backdrop { position:absolute; inset:0; background:rgba(4,5,9,.72); -webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px); }
+  .modal-card { position:relative; z-index:1; width:100%; max-width:400px; margin:0; padding-top:48px; animation:pop .18s cubic-bezier(.2,.7,.2,1); }
+  @keyframes pop { from { opacity:0; transform:translateY(8px) scale(.98); } }
+  .modal-close { position:absolute; top:12px; right:12px; width:32px; height:32px; padding:0; font-size:18px; line-height:1; }
+
+  /* ---------- pricing ---------- */
+  .price-head { text-align:center; margin:36px auto 18px; max-width:560px; }
+  .price-head h2 { font-size:23px; margin:0 0 6px; letter-spacing:.02em; }
+  .price-head p { color:var(--muted); font-size:15px; margin:0; }
+  .pricing { display:grid; grid-template-columns:repeat(2,1fr); gap:14px; max-width:680px; margin:0 auto 26px; }
+  @media (max-width:560px) { .pricing { grid-template-columns:1fr; } }
+  .price-card {
+    position:relative; overflow:hidden; display:flex; flex-direction:column;
+    background:linear-gradient(180deg, var(--panel), var(--panel2));
+    border:1px solid var(--border); border-radius:16px; padding:22px 22px 24px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 10px 26px rgba(0,0,0,.3);
+  }
+  .price-card::before { content:""; position:absolute; top:0; left:0; right:0; height:2px; background:linear-gradient(90deg, transparent, var(--amber) 30%, var(--amber2) 70%, transparent); }
+  .price-card.enterprise { border-color:rgba(242,169,80,.35); }
+  .plan-name { font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); margin-bottom:10px; }
+  .price-tag { display:flex; align-items:baseline; gap:6px; min-height:40px; }
+  .price-num { font-family:var(--mono); font-size:40px; font-weight:600; color:var(--amber); text-shadow:0 0 12px rgba(242,169,80,.2); line-height:1; font-variant-numeric:tabular-nums; }
+  .price-num.sm { font-size:26px; }
+  .price-per { color:var(--muted); font-size:15px; }
+  .plan-meta { color:var(--fg); font-size:14px; margin:9px 0 14px; }
+  .price-list { list-style:none; margin:0 0 20px; padding:0; text-align:left; display:flex; flex-direction:column; gap:9px; flex:1; }
+  .price-list li { position:relative; padding-left:24px; font-size:13.5px; color:var(--fg); }
+  .price-list li::before { content:"✓"; position:absolute; left:0; top:0; color:var(--ok); font-weight:700; }
+  .price-card button { margin-top:auto; }
 
   .muted { color:var(--muted); }
   .msg { font-size:13px; margin-top:10px; min-height:18px; }
@@ -264,6 +301,19 @@ const HTML = /* html */ `<!doctype html>
   table.pv tr.pv-vac td { color:var(--muted); }
   .pv-empty { padding:16px; color:var(--muted); font-size:14px; }
 
+  /* ---------- team / roster ---------- */
+  .roster { display:flex; flex-direction:column; gap:8px; margin-top:14px; }
+  .rosterrow { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--border); border-radius:10px; background:var(--panel2); }
+  .rosterrow .rname { font-weight:500; }
+  .rosterrow .remail { font-size:12px; }
+  .rosterrow .rspacer { flex:1; }
+  .rosterrow button { padding:6px 10px; font-size:13px; }
+  .badge { font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:3px 8px; border-radius:999px; border:1px solid var(--border); color:var(--muted); }
+  .badge.mgr { color:var(--amber); border-color:rgba(242,169,80,.4); }
+  .invitelink { display:flex; gap:8px; margin-top:10px; }
+  .invitelink input { flex:1; font-family:var(--mono); font-size:12px; }
+  #inviteRole, #orgPlan { width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:#0b0d13; color:var(--fg); font:inherit; }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation:none !important; transition:none !important; }
   }
@@ -276,6 +326,10 @@ const HTML = /* html */ `<!doctype html>
     <div class="wordmark">clocked<small>.</small></div>
     <div class="spacer"></div>
     <div id="now" title="Current time" aria-label="Current time"></div>
+    <div id="topAuth" class="hidden">
+      <button id="navSignin" class="ghost">Sign in</button>
+      <button id="navSignup">Sign up</button>
+    </div>
     <button id="signout" class="ghost hidden">Sign out</button>
   </div>
   <div class="ruler" aria-hidden="true"></div>
@@ -301,7 +355,61 @@ const HTML = /* html */ `<!doctype html>
       <div class="feature"><div class="k">Monthly report</div><div class="v">A tidy timesheet emailed to you on the 1st, awake or not.</div></div>
     </div>
 
-    <div id="auth" class="card">
+    <div class="price-head">
+      <h2>Simple pricing</h2>
+      <p>Just you or a whole team &mdash; pick a plan and start tracking.</p>
+    </div>
+    <div class="pricing">
+      <div class="price-card">
+        <div class="plan-name">Solo</div>
+        <div class="price-tag"><span class="price-num">25&cent;</span><span class="price-per">/ day</span></div>
+        <div class="plan-meta">Just you</div>
+        <ul class="price-list">
+          <li>Automatic clock in &amp; clock out</li>
+          <li>Private account &amp; sync token</li>
+          <li>Monthly timesheet by email</li>
+        </ul>
+        <button class="planCta" style="width:100%">Get started</button>
+      </div>
+      <div class="price-card">
+        <div class="plan-name">Team</div>
+        <div class="price-tag"><span class="price-num">50&cent;</span><span class="price-per">/ day</span></div>
+        <div class="plan-meta">Up to 5 members</div>
+        <ul class="price-list">
+          <li>Everything in Solo</li>
+          <li>Up to 5 members</li>
+          <li>Shared timesheets</li>
+        </ul>
+        <button class="planCta" style="width:100%">Get started</button>
+      </div>
+      <div class="price-card">
+        <div class="plan-name">Team+</div>
+        <div class="price-tag"><span class="price-num">$1</span><span class="price-per">/ day</span></div>
+        <div class="plan-meta">Up to 30 members</div>
+        <ul class="price-list">
+          <li>Everything in Team</li>
+          <li>Up to 30 members</li>
+          <li>Priority support</li>
+        </ul>
+        <button class="planCta" style="width:100%">Get started</button>
+      </div>
+      <div class="price-card enterprise">
+        <div class="plan-name">Enterprise</div>
+        <div class="price-tag"><span class="price-num sm">Let&rsquo;s talk</span></div>
+        <div class="plan-meta">30+ members</div>
+        <ul class="price-list">
+          <li>Everything in Team+</li>
+          <li>Unlimited members</li>
+          <li>Custom invoicing &amp; SLA</li>
+        </ul>
+        <button id="salesCta" style="width:100%">Contact sales</button>
+      </div>
+    </div>
+
+    <div id="authModal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div id="auth" class="card modal-card">
+        <button id="authClose" class="ghost modal-close" aria-label="Close">&times;</button>
       <div class="tabs">
         <button id="tabSignup" class="active">Create account</button>
         <button id="tabSignin">Sign in</button>
@@ -321,8 +429,42 @@ const HTML = /* html */ `<!doctype html>
       </div>
       <button id="authBtn" style="width:100%">Create account</button>
       <div class="or"><span>or</span></div>
-      <button id="googleBtn" class="ghost" style="width:100%">Continue with Google</button>
+      <button id="googleBtn" class="ghost" style="width:100%;gap:10px"><svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571l6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg>Continue with Google</button>
       <div id="authMsg" class="msg" role="status"></div>
+      </div>
+    </div>
+
+    <div id="salesModal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="card modal-card">
+        <button id="salesClose" class="ghost modal-close" aria-label="Close">&times;</button>
+        <h3>Contact sales</h3>
+        <p class="hint">Tell us about your team and we&rsquo;ll be in touch.</p>
+        <div class="field">
+          <label for="sName">Name</label>
+          <input id="sName" type="text" autocomplete="name" />
+        </div>
+        <div class="field">
+          <label for="sEmail">Work email</label>
+          <input id="sEmail" type="email" autocomplete="email" />
+        </div>
+        <div class="row">
+          <div>
+            <label for="sCompany">Company</label>
+            <input id="sCompany" type="text" autocomplete="organization" />
+          </div>
+          <div>
+            <label for="sTeam">Team size</label>
+            <input id="sTeam" type="text" inputmode="numeric" placeholder="e.g. 45" />
+          </div>
+        </div>
+        <div class="field" style="margin-top:14px">
+          <label for="sMsg">Message <span class="muted" style="text-transform:none;letter-spacing:0">(optional)</span></label>
+          <textarea id="sMsg" rows="3"></textarea>
+        </div>
+        <button id="sSubmit" style="width:100%">Send message</button>
+        <div id="salesMsg" class="msg" role="status"></div>
+      </div>
     </div>
   </div>
 
@@ -331,6 +473,56 @@ const HTML = /* html */ `<!doctype html>
     <div id="freshBanner" class="banner hidden">
       <b>Account created.</b> Your desktop sync token is below — copy it now and
       paste it into the app. You can always find it again here.
+    </div>
+
+    <!-- Org onboarding — shown only when the user belongs to no organization. -->
+    <div id="orgSetupCard" class="card hidden">
+      <h3>Create a team</h3>
+      <p class="hint">Start an organization to invite people and see everyone&rsquo;s hours. You&rsquo;ll be its manager. Optional — skip it to keep using clocked solo.</p>
+      <div class="row">
+        <div>
+          <label for="orgName">Organization name</label>
+          <input id="orgName" type="text" placeholder="Acme Inc." />
+        </div>
+        <div style="flex:0 0 170px">
+          <label for="orgPlan">Plan</label>
+          <select id="orgPlan">
+            <option value="team">Team &middot; up to 5</option>
+            <option value="teamplus">Team+ &middot; up to 30</option>
+          </select>
+        </div>
+        <button id="orgCreateBtn">Create</button>
+      </div>
+      <p class="hint" style="margin:8px 0 0">Need more than 30 seats? Enterprise plans are unlimited &mdash; contact sales.</p>
+      <div id="orgMsg" class="msg" role="status"></div>
+    </div>
+
+    <!-- Team — shown only to managers (org role owner/admin). -->
+    <div id="teamCard" class="card hidden">
+      <h3>Team <span id="teamOrgName" class="muted"></span></h3>
+      <p class="hint">Invite members and open anyone&rsquo;s timesheet. Members only ever see their own hours.</p>
+      <div id="teamPlanInfo" class="muted" style="font-size:13px;margin:-8px 0 12px"></div>
+      <div class="row">
+        <div>
+          <label for="inviteEmail">Invite by email</label>
+          <input id="inviteEmail" type="email" placeholder="teammate@example.com" />
+        </div>
+        <div style="flex:0 0 140px">
+          <label for="inviteRole">Role</label>
+          <select id="inviteRole">
+            <option value="member">Worker</option>
+            <option value="admin">Manager</option>
+          </select>
+        </div>
+        <button id="inviteBtn">Invite</button>
+      </div>
+      <div id="inviteMsg" class="msg" role="status"></div>
+      <div id="inviteLinkBox" class="invitelink hidden">
+        <input id="inviteLink" type="text" readonly aria-label="Invite link" />
+        <button id="copyInvite" class="ghost">Copy link</button>
+      </div>
+      <div id="roster" class="roster"></div>
+      <div id="teamMemberPanel" class="preview hidden"></div>
     </div>
 
     <div class="stats">
@@ -441,6 +633,7 @@ function show(loggedIn) {
   $("landingView").classList.toggle("hidden", loggedIn);
   $("app").classList.toggle("hidden", !loggedIn);
   $("signout").classList.toggle("hidden", !loggedIn);
+  $("topAuth").classList.toggle("hidden", loggedIn);
 }
 
 // ---- auth mode (sign up / sign in) ----
@@ -457,6 +650,57 @@ function setMode(m) {
 }
 $("tabSignup").onclick = () => setMode("signup");
 $("tabSignin").onclick = () => setMode("signin");
+
+// ---- auth modal (opened from the top-right nav + pricing CTA) ----
+function openAuth(m) {
+  setMode(m);
+  $("authModal").classList.remove("hidden");
+  const first = m === "signup" ? "name" : "email";
+  setTimeout(() => $(first).focus(), 30);
+}
+function closeAuth() { $("authModal").classList.add("hidden"); }
+$("navSignin").onclick = () => openAuth("signin");
+$("navSignup").onclick = () => openAuth("signup");
+// Remember which pricing tier the visitor clicked so onboarding preselects it.
+let pendingPlan = "team";
+document.querySelectorAll(".planCta").forEach((b) => {
+  b.onclick = () => {
+    const card = b.closest(".price-card");
+    const nm = (card && card.querySelector(".plan-name") ? card.querySelector(".plan-name").textContent : "") || "";
+    pendingPlan = /team\+/i.test(nm) ? "teamplus" : (/solo/i.test(nm) ? "solo" : "team");
+    openAuth("signup");
+  };
+});
+$("authClose").onclick = closeAuth;
+$("authModal").querySelector(".modal-backdrop").onclick = closeAuth;
+
+// ---- contact sales (Enterprise tier) ----
+function openSales() { $("salesModal").classList.remove("hidden"); setTimeout(() => $("sName").focus(), 30); }
+function closeSales() { $("salesModal").classList.add("hidden"); }
+$("salesCta").onclick = openSales;
+$("salesClose").onclick = closeSales;
+$("salesModal").querySelector(".modal-backdrop").onclick = closeSales;
+$("sSubmit").onclick = async () => {
+  const name = $("sName").value.trim();
+  const email = $("sEmail").value.trim();
+  const company = $("sCompany").value.trim();
+  const teamSize = $("sTeam").value.trim();
+  const message = $("sMsg").value.trim();
+  $("salesMsg").textContent = ""; $("salesMsg").className = "msg";
+  if (!name || !email) { $("salesMsg").textContent = "Name and work email are required."; $("salesMsg").className = "msg err"; return; }
+  $("sSubmit").disabled = true; $("sSubmit").textContent = "Sending…";
+  const r = await api("/api/contact-sales", { method:"POST", body: JSON.stringify({ name, email, company, teamSize, message }) });
+  $("sSubmit").disabled = false; $("sSubmit").textContent = "Send message";
+  const d = await r.json().catch(()=>({}));
+  if (r.ok) {
+    $("salesMsg").textContent = "Thanks — we'll be in touch shortly."; $("salesMsg").className = "msg ok";
+    $("sName").value = $("sEmail").value = $("sCompany").value = $("sTeam").value = $("sMsg").value = "";
+  } else {
+    $("salesMsg").textContent = d.error || "Could not send. Please try again."; $("salesMsg").className = "msg err";
+  }
+};
+
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeAuth(); closeSales(); } });
 
 async function submitAuth() {
   const email = $("email").value.trim();
@@ -478,6 +722,7 @@ async function submitAuth() {
   if (r.ok) {
     $("password").value = "";
     const fresh = mode === "signup";
+    closeAuth();
     show(true);
     await afterLogin(fresh);
   } else {
@@ -506,7 +751,7 @@ async function init() {
   const r = await api("/api/auth/get-session");
   const data = r.ok ? await r.json() : null;
   if (data && data.user) { show(true); await afterLogin(false); }
-  else { show(false); setMode("signup"); $("email").focus(); }
+  else { show(false); setMode("signup"); }
 }
 
 async function afterLogin(fresh) {
@@ -514,8 +759,185 @@ async function afterLogin(fresh) {
   const now = new Date();
   $("month").value = now.getFullYear() + "-" + pad(now.getMonth()+1);
   $("mDate").value = now.getFullYear() + "-" + pad(now.getMonth()+1) + "-" + pad(now.getDate());
-  await Promise.all([loadHours(), loadSettings(), loadToken()]);
+  await acceptPendingInvite();
+  await Promise.all([loadHours(), loadSettings(), loadToken(), loadTeam()]);
 }
+
+// ---- teams / organizations ----------------------------------------------
+// A manager (org role owner/admin) sees the Team card: invite members and open
+// any member's timesheet. Membership actions hit better-auth's own
+// /api/auth/organization/* endpoints; hours reads hit our guarded /api/team/*.
+let orgId = "", orgName = "", meEmail = "", openMemberId = "", openMemberName = "";
+let orgCap = 0, orgPlanLabel = "";
+
+function isManagerRoleC(role) {
+  return String(role || "").split(",").some((r) => { const t = r.trim(); return t === "owner" || t === "admin"; });
+}
+function roleLabel(role) { return isManagerRoleC(role) ? "Manager" : "Worker"; }
+
+// If arriving from an invite link (/?invitation=ID) while signed in, accept it.
+async function acceptPendingInvite() {
+  const inv = new URLSearchParams(location.search).get("invitation");
+  if (!inv) return;
+  await api("/api/auth/organization/accept-invitation", { method:"POST", body: JSON.stringify({ invitationId: inv }) });
+  history.replaceState({}, "", location.pathname);
+}
+
+async function loadTeam() {
+  orgId = ""; orgName = ""; openMemberId = "";
+  $("teamCard").classList.add("hidden");
+  $("orgSetupCard").classList.add("hidden");
+  $("teamMemberPanel").classList.add("hidden");
+  $("inviteLinkBox").classList.add("hidden");
+  const r = await api("/api/me");
+  if (!r.ok) return;
+  const me = await r.json();
+  meEmail = (me.user && me.user.email) || "";
+  const mgr = (me.orgs || []).find((o) => isManagerRoleC(o.role));
+  if (mgr) {
+    orgId = mgr.organizationId; orgName = mgr.name || "";
+    orgCap = mgr.cap || 0; orgPlanLabel = mgr.planLabel || "Team";
+    $("teamOrgName").textContent = orgName ? "· " + orgName : "";
+    $("teamCard").classList.remove("hidden");
+    updateTeamUsage(mgr.memberCount || 0);
+    await loadRoster();
+  } else if (!(me.orgs && me.orgs.length)) {
+    if (pendingPlan === "teamplus") $("orgPlan").value = "teamplus"; else $("orgPlan").value = "team";
+    $("orgSetupCard").classList.remove("hidden");
+  }
+}
+
+// Reflect the pricing tier: "Team plan · 3 / 5 members" and gate invites at cap.
+function updateTeamUsage(count) {
+  const unlimited = orgCap >= 1000000;
+  const capTxt = unlimited ? "unlimited" : String(orgCap);
+  const full = !unlimited && count >= orgCap;
+  $("teamPlanInfo").textContent = orgPlanLabel + " plan · " + count + " / " + capTxt + " member" + (count === 1 ? "" : "s") + (full ? " · seat limit reached" : "");
+  $("inviteBtn").disabled = full;
+  $("inviteBtn").title = full ? "Upgrade your plan to invite more members" : "";
+}
+
+async function loadRoster() {
+  const box = $("roster");
+  box.innerHTML = "<div class='muted' style='font-size:13px'>Loading members…</div>";
+  const r = await api("/api/team/members?organizationId=" + encodeURIComponent(orgId));
+  if (!r.ok) { box.innerHTML = "<div class='msg err'>Could not load members.</div>"; return; }
+  const d = await r.json();
+  renderRoster(d.members || []);
+  updateTeamUsage((d.members || []).length);
+}
+
+function renderRoster(members) {
+  const box = $("roster");
+  box.innerHTML = "";
+  members.forEach((m) => {
+    const row = document.createElement("div");
+    row.className = "rosterrow";
+    const name = document.createElement("span"); name.className = "rname"; name.textContent = m.name || m.email;
+    const email = document.createElement("span"); email.className = "remail muted"; email.textContent = m.email;
+    const spacer = document.createElement("span"); spacer.className = "rspacer";
+    const badge = document.createElement("span");
+    badge.className = "badge" + (isManagerRoleC(m.role) ? " mgr" : ""); badge.textContent = roleLabel(m.role);
+    const view = document.createElement("button");
+    view.type = "button"; view.className = "ghost"; view.textContent = "View hours";
+    view.onclick = () => openMember(m.id, m.name || m.email);
+    row.appendChild(name); row.appendChild(email); row.appendChild(spacer); row.appendChild(badge); row.appendChild(view);
+    if (m.email && m.email !== meEmail) {
+      const del = document.createElement("button");
+      del.type = "button"; del.className = "ghost del"; del.textContent = "×"; del.title = "Remove from team";
+      del.onclick = () => removeMember(m.email);
+      row.appendChild(del);
+    }
+    box.appendChild(row);
+  });
+}
+
+async function removeMember(email) {
+  $("inviteMsg").textContent = ""; $("inviteMsg").className = "msg";
+  const r = await api("/api/auth/organization/remove-member", { method:"POST", body: JSON.stringify({ memberIdOrEmail: email, organizationId: orgId }) });
+  if (r.ok) { loadRoster(); }
+  else { const d = await r.json().catch(()=>({})); $("inviteMsg").textContent = d.message || d.error || "Could not remove member."; $("inviteMsg").className = "msg err"; }
+}
+
+function openMember(id, name) {
+  openMemberId = id; openMemberName = name;
+  loadTeamMemberHours();
+}
+function closeMember() {
+  openMemberId = "";
+  const p = $("teamMemberPanel"); p.classList.add("hidden"); p.innerHTML = "";
+}
+
+async function loadTeamMemberHours() {
+  if (!openMemberId) return;
+  const period = $("month").value || currentPeriod();
+  const panel = $("teamMemberPanel");
+  panel.classList.remove("hidden");
+  panel.innerHTML = "<div class='pv-head'><b>" + pvEsc(openMemberName) + " — " + pvEsc(period) + "</b><button id='tmClose' class='ghost'>Close</button></div><div class='pv-empty'>Loading…</div>";
+  $("tmClose").onclick = closeMember;
+  const r = await api("/api/team/hours?organizationId=" + encodeURIComponent(orgId) + "&userId=" + encodeURIComponent(openMemberId) + "&period=" + period);
+  if (!r.ok) {
+    panel.innerHTML = "<div class='pv-head'><b>" + pvEsc(openMemberName) + "</b><button id='tmClose' class='ghost'>Close</button></div><div class='pv-empty'>Could not load hours.</div>";
+    $("tmClose").onclick = closeMember;
+    return;
+  }
+  renderTeamMember(await r.json(), period);
+}
+
+function renderTeamMember(d, period) {
+  const panel = $("teamMemberPanel");
+  const head = "<div class='pv-head'><b>" + pvEsc(openMemberName) + " — " + pvEsc(period) + "</b><button id='tmClose' class='ghost'>Close</button></div>";
+  const max = d.days.reduce((a,x) => Math.max(a, x.minutes), 0) || 1;
+  const rows = d.days.length
+    ? d.days.map((x,i) => rowHtml(x, max, i)).join("")
+    : "<tr class='empty'><td colspan='3'>No days to show for this month.</td></tr>";
+  const activeDays = d.activeDays ?? d.days.filter((x) => x.minutes > 0).length;
+  const summary = "<div class='muted' style='padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px'>Total <b style='color:var(--amber)'>" + fmt(d.totalMinutes) + "</b> &middot; " + activeDays + " day(s)</div>";
+  panel.innerHTML = head + summary + "<div class='tablewrap'><table><thead><tr><th>Day</th><th></th><th class='num'>Hours</th></tr></thead><tbody>" + rows + "</tbody></table></div>";
+  $("tmClose").onclick = closeMember;
+}
+
+$("inviteBtn").onclick = async () => {
+  const email = $("inviteEmail").value.trim();
+  const role = $("inviteRole").value;
+  $("inviteMsg").textContent = ""; $("inviteMsg").className = "msg";
+  $("inviteLinkBox").classList.add("hidden");
+  if (!email) { $("inviteMsg").textContent = "Enter an email to invite."; $("inviteMsg").className = "msg err"; return; }
+  $("inviteBtn").disabled = true;
+  const r = await api("/api/auth/organization/invite-member", { method:"POST", body: JSON.stringify({ email, role, organizationId: orgId }) });
+  $("inviteBtn").disabled = false;
+  const d = await r.json().catch(()=>({}));
+  if (!r.ok) { $("inviteMsg").textContent = d.message || d.error || "Could not create invite."; $("inviteMsg").className = "msg err"; return; }
+  const invId = d.id || (d.invitation && d.invitation.id) || "";
+  if (invId) {
+    $("inviteLink").value = location.origin + "/?invitation=" + invId;
+    $("inviteLinkBox").classList.remove("hidden");
+    $("inviteMsg").textContent = "Invite created — send this link to " + email + "."; $("inviteMsg").className = "msg ok";
+  } else {
+    $("inviteMsg").textContent = "Invite sent to " + email + "."; $("inviteMsg").className = "msg ok";
+  }
+  $("inviteEmail").value = "";
+  loadRoster();
+};
+
+$("copyInvite").onclick = async () => {
+  try { await navigator.clipboard.writeText($("inviteLink").value); $("inviteMsg").textContent = "Link copied."; $("inviteMsg").className = "msg ok"; }
+  catch { $("inviteLink").select(); }
+};
+
+$("orgCreateBtn").onclick = async () => {
+  const name = $("orgName").value.trim();
+  $("orgMsg").textContent = ""; $("orgMsg").className = "msg";
+  if (!name) { $("orgMsg").textContent = "Enter an organization name."; $("orgMsg").className = "msg err"; return; }
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "org";
+  const slug = base + "-" + Math.random().toString(36).slice(2, 6);
+  const plan = $("orgPlan").value || "team";
+  $("orgCreateBtn").disabled = true;
+  const r = await api("/api/auth/organization/create", { method:"POST", body: JSON.stringify({ name, slug, metadata: { plan } }) });
+  $("orgCreateBtn").disabled = false;
+  if (r.ok) { $("orgName").value = ""; await loadTeam(); }
+  else { const d = await r.json().catch(()=>({})); $("orgMsg").textContent = d.message || d.error || "Could not create organization."; $("orgMsg").className = "msg err"; }
+};
 
 // ---- token ----
 function setToken(t) {
@@ -589,6 +1011,7 @@ async function loadHours() {
   $("statDays").textContent = String(activeDays);
   $("statAvg").textContent = activeDays ? fmt(Math.round(d.totalMinutes / activeDays)) : "0:00";
   loadManualEntries();
+  if (openMemberId) loadTeamMemberHours(); // keep an open team member in sync with the month
 }
 
 function shiftMonth(delta) {

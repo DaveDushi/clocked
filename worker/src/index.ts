@@ -3,12 +3,13 @@ import { makeAuth } from "./auth-server";
 import { dashboardResponse } from "./dashboard";
 import { downloadResponse, isDownloadMethod } from "./download";
 import { faviconResponse } from "./favicon";
-import { buildAndSendReport, sendMonthlyReports, SEND_DAY_LAST } from "./email";
+import { buildAndSendReport, sendContactSales, sendMonthlyReports, SEND_DAY_LAST } from "./email";
 import { handleIngest } from "./ingest";
 import { buildHoursReport, buildReportCsv } from "./report";
 import { getRecipients, getSendDay, setMailTo, setSendDay } from "./settings";
 import { getOrCreateToken, rotateToken, userIdForToken } from "./tokens";
 import { formatHM, localYMD, monthBoundsUtc, previousMonthPeriod, wallToUtc } from "./time";
+import { orgPlan, planCap, planLabel } from "./plans";
 import type { Env } from "./types";
 
 export default {
@@ -23,6 +24,31 @@ export default {
     }
     if (req.method === "GET" && url.pathname === "/health") {
       return new Response("clocked-worker ok\n", { status: 200 });
+    }
+
+    // Public "Contact sales" lead form (Enterprise pricing tier). No auth — any
+    // visitor can submit; it just emails the fixed sales inbox.
+    if (req.method === "POST" && url.pathname === "/api/contact-sales") {
+      const body = (await req.json().catch(() => ({}))) as {
+        name?: unknown;
+        email?: unknown;
+        company?: unknown;
+        teamSize?: unknown;
+        message?: unknown;
+      };
+      const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+      const name = str(body.name, 200);
+      const email = str(body.email, 200);
+      if (!name || !email) return json({ error: "name and email are required" }, 400);
+      if (!isEmail(email)) return json({ error: "invalid email" }, 400);
+      const result = await sendContactSales(env, {
+        name,
+        email,
+        company: str(body.company, 200),
+        teamSize: str(body.teamSize, 100),
+        message: str(body.message, 4000),
+      });
+      return json(result, result.ok ? 200 : 500);
     }
 
     // better-auth handles all its own endpoints (sign-up, sign-in, session, ...).
@@ -47,6 +73,55 @@ export default {
       if (!user) return json({ error: "unauthorized" }, 401);
       const period = url.searchParams.get("period") ?? previousMonthPeriod(new Date(), env.REPORT_TZ);
       return json(await buildHoursReport(env, period, user.id));
+    }
+
+    // ---- Team (manager) API. A manager — a member whose org role is owner/admin
+    // — sees their org's roster and each member's hours. Every read is guarded:
+    // the caller must manage `organizationId` and the target must belong to it.
+    // Membership mutations (create org, invite, remove) go straight to
+    // better-auth's own /api/auth/organization/* endpoints, so there's no code
+    // for them here.
+    if (url.pathname === "/api/me" && req.method === "GET") {
+      const user = await sessionUser(req, env);
+      if (!user) return json({ error: "unauthorized" }, 401);
+      const orgs = await membershipsFor(env, user.id);
+      return json({ user, orgs, manager: orgs.some((o) => isManagerRole(o.role)) });
+    }
+
+    if (url.pathname === "/api/team/members" && req.method === "GET") {
+      const user = await sessionUser(req, env);
+      if (!user) return json({ error: "unauthorized" }, 401);
+      const orgId = url.searchParams.get("organizationId") ?? "";
+      if (!(await isManagerOf(env, user.id, orgId))) return json({ error: "forbidden" }, 403);
+      const res = await env.DB.prepare(
+        `SELECT u.id AS id, u.name AS name, u.email AS email, m.role AS role
+           FROM member m JOIN user u ON u.id = m.userId
+          WHERE m.organizationId = ?
+          ORDER BY u.name`,
+      )
+        .bind(orgId)
+        .all<{ id: string; name: string; email: string; role: string }>();
+      return json({ members: res.results ?? [] });
+    }
+
+    if (
+      (url.pathname === "/api/team/hours" || url.pathname === "/api/team/preview") &&
+      req.method === "GET"
+    ) {
+      const user = await sessionUser(req, env);
+      if (!user) return json({ error: "unauthorized" }, 401);
+      const orgId = url.searchParams.get("organizationId") ?? "";
+      const targetId = url.searchParams.get("userId") ?? "";
+      if (!(await isManagerOf(env, user.id, orgId))) return json({ error: "forbidden" }, 403);
+      if (!targetId || !(await isMemberOf(env, targetId, orgId))) {
+        return json({ error: "user is not in your organization" }, 403);
+      }
+      const period = url.searchParams.get("period") ?? previousMonthPeriod(new Date(), env.REPORT_TZ);
+      if (url.pathname === "/api/team/preview") {
+        const csv = await buildReportCsv(env, period, targetId);
+        return new Response(csv, { status: 200, headers: { "content-type": "text/csv" } });
+      }
+      return json(await buildHoursReport(env, period, targetId));
     }
 
     // Manual time entries: log (POST), list (GET), or remove (DELETE) days the
@@ -218,6 +293,72 @@ async function sessionUser(req: Request, env: Env): Promise<{ id: string; email:
   const data = await makeAuth(env).api.getSession({ headers: req.headers });
   const u = data?.user;
   return u ? { id: u.id, email: u.email } : null;
+}
+
+interface MembershipRow {
+  organizationId: string;
+  role: string;
+  name: string;
+  metadata: string | null;
+  memberCount: number;
+}
+
+/** Every organization the user belongs to, with their role, the org name, and
+ * the pricing tier (plan key, label, member cap, and current member count) so
+ * the dashboard can show usage and gate invites at the cap. */
+async function membershipsFor(env: Env, userId: string) {
+  const res = await env.DB.prepare(
+    `SELECT m.organizationId AS organizationId, m.role AS role, o.name AS name, o.metadata AS metadata,
+            (SELECT COUNT(*) FROM member m2 WHERE m2.organizationId = o.id) AS memberCount
+       FROM member m JOIN organization o ON o.id = m.organizationId
+      WHERE m.userId = ?
+      ORDER BY o.name`,
+  )
+    .bind(userId)
+    .all<MembershipRow>();
+  return (res.results ?? []).map((r) => {
+    const plan = orgPlan(r.metadata);
+    return {
+      organizationId: r.organizationId,
+      role: r.role,
+      name: r.name,
+      plan,
+      planLabel: planLabel(plan),
+      cap: planCap(plan),
+      memberCount: r.memberCount,
+    };
+  });
+}
+
+/** True when the role string grants manager rights (better-auth may store a
+ * comma-separated list, so check each). */
+function isManagerRole(role: string): boolean {
+  return role.split(",").some((r) => {
+    const t = r.trim();
+    return t === "owner" || t === "admin";
+  });
+}
+
+/** True when `userId` is an owner/admin member of `organizationId`. */
+async function isManagerOf(env: Env, userId: string, organizationId: string): Promise<boolean> {
+  if (!organizationId) return false;
+  const row = await env.DB.prepare(
+    `SELECT role FROM member WHERE userId = ? AND organizationId = ?`,
+  )
+    .bind(userId, organizationId)
+    .first<{ role: string }>();
+  return !!row && isManagerRole(row.role);
+}
+
+/** True when `userId` belongs to `organizationId` (any role). */
+async function isMemberOf(env: Env, userId: string, organizationId: string): Promise<boolean> {
+  if (!organizationId) return false;
+  const row = await env.DB.prepare(
+    `SELECT 1 AS ok FROM member WHERE userId = ? AND organizationId = ?`,
+  )
+    .bind(userId, organizationId)
+    .first<{ ok: number }>();
+  return !!row;
 }
 
 function isEmail(s: string): boolean {

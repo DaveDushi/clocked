@@ -1,0 +1,32 @@
+// Pricing tiers (see the landing page). Solo = no organization (just the personal
+// dashboard). The org plans map to a hard member cap enforced by better-auth's
+// membershipLimit and surfaced in the dashboard. Enterprise is effectively
+// unlimited and is sales-provisioned (not offered in the self-serve create form).
+export const PLAN_CAPS: Record<string, number> = {
+  team: 5,
+  teamplus: 30,
+  enterprise: 1_000_000,
+};
+
+/** Member cap for a plan key; defaults to the most restrictive self-serve tier
+ * (team = 5) for unknown/missing plans so a cap is never accidentally unlimited. */
+export function planCap(plan: string | null | undefined): number {
+  return (plan && PLAN_CAPS[plan]) || PLAN_CAPS.team;
+}
+
+/** Human label for a plan key. */
+export function planLabel(plan: string | null | undefined): string {
+  return plan === "teamplus" ? "Team+" : plan === "enterprise" ? "Enterprise" : "Team";
+}
+
+/** Extract the plan key from an org's `metadata` (a JSON string or object),
+ * defaulting to "team". */
+export function orgPlan(metadata: unknown): string {
+  try {
+    const o = typeof metadata === "string" ? JSON.parse(metadata) : metadata;
+    const p = o && (o as { plan?: unknown }).plan;
+    return typeof p === "string" && PLAN_CAPS[p] ? p : "team";
+  } catch {
+    return "team";
+  }
+}

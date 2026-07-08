@@ -160,6 +160,94 @@ export async function buildAndSendReport(
   return { ok: true, period, rows };
 }
 
+/** Fixed recipient for Enterprise "Contact sales" leads. */
+const SALES_INBOX = "ddusi@easytomanage.com";
+
+export interface SalesLead {
+  name: string;
+  email: string;
+  company?: string;
+  teamSize?: string;
+  message?: string;
+}
+
+/**
+ * Email an Enterprise "Contact sales" lead to the sales inbox. Sends from the
+ * verified MAIL_FROM domain (Resend requires the from-address be verified) with
+ * the lead's own address as reply-to, so hitting reply reaches them directly.
+ */
+export async function sendContactSales(
+  env: Env,
+  lead: SalesLead,
+): Promise<{ ok: boolean; error?: string }> {
+  const fields: [string, string][] = [
+    ["Name", lead.name],
+    ["Email", lead.email],
+    ["Company", lead.company || "—"],
+    ["Team size", lead.teamSize || "—"],
+  ];
+
+  const html = `<!doctype html>
+<html>
+<body style="margin:0;background:#f0f1f3;padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);">
+    <tr><td style="padding:26px 28px 8px;">
+      <div style="font-size:13px;color:#6b7280;letter-spacing:.04em;text-transform:uppercase;">New enterprise lead</div>
+      <div style="font-size:22px;font-weight:700;color:#111827;margin-top:2px;">${esc(lead.name)}</div>
+    </td></tr>
+    <tr><td style="padding:8px 28px 4px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#111827;">
+        ${fields
+          .map(
+            ([k, v]) =>
+              `<tr><td style="padding:6px 0;color:#6b7280;width:120px;">${esc(k)}</td><td style="padding:6px 0;">${esc(v)}</td></tr>`,
+          )
+          .join("")}
+      </table>
+    </td></tr>
+    <tr><td style="padding:16px 28px 26px;">
+      <div style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Message</div>
+      <div style="font-size:14px;color:#111827;line-height:1.6;white-space:pre-wrap;">${esc(lead.message || "—")}</div>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+  const text = [
+    `New enterprise lead`,
+    ``,
+    `Name: ${lead.name}`,
+    `Email: ${lead.email}`,
+    `Company: ${lead.company || "—"}`,
+    `Team size: ${lead.teamSize || "—"}`,
+    ``,
+    `Message:`,
+    lead.message || "—",
+  ].join("\n");
+
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        from: `clocked <${env.MAIL_FROM}>`,
+        to: [SALES_INBOX],
+        reply_to: lead.email,
+        subject: `Enterprise enquiry — ${lead.name}`,
+        html,
+        text,
+      }),
+    });
+    if (!res.ok) return { ok: false, error: `resend ${res.status}: ${await res.text()}` };
+  } catch (e) {
+    return { ok: false, error: String((e as Error)?.message ?? e) };
+  }
+  return { ok: true };
+}
+
 /** Sentinel `send_day` meaning "the last day of the month". */
 export const SEND_DAY_LAST = 99;
 

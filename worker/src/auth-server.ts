@@ -1,6 +1,8 @@
 import { betterAuth } from "better-auth";
+import { organization } from "better-auth/plugins";
 
 import { desktopAuth } from "./desktop-auth";
+import { orgPlan, planCap } from "./plans";
 import type { Env } from "./types";
 
 // --- Workers-native password hashing (PBKDF2 via Web Crypto) --------------
@@ -77,7 +79,34 @@ export function makeAuth(env: Env, allowSignUp = true) {
         : undefined,
     // Desktop "Open timesheet" auto-login: exchange the sync Bearer token for a
     // browser session cookie (see desktop-auth.ts).
-    plugins: [desktopAuth(env)],
+    plugins: [
+      desktopAuth(env),
+      // Organizations, teams & roles. A manager = a member whose org role is
+      // "owner"/"admin"; a worker = "member". The org creator becomes an owner.
+      // Sub-teams are enabled but optional. v1 surfaces the invite link in the
+      // dashboard; emailing invites via Resend (email.ts) is a fast-follow, so
+      // sendInvitationEmail is a no-op that must resolve (not throw) for invites
+      // to succeed.
+      organization({
+        creatorRole: "owner",
+        teams: { enabled: true },
+        // Enforce the pricing tier's member cap. The org's plan lives in its
+        // metadata (set at create time); look it up authoritatively by id so the
+        // limit holds even if the passed org omits metadata. Solo isn't an org
+        // plan (it means no org), so the floor is Team (5).
+        membershipLimit: async (_user, org) => {
+          const id = (org as { id?: string } | null)?.id;
+          if (!id) return planCap("team");
+          const row = await env.DB.prepare("SELECT metadata FROM organization WHERE id = ?")
+            .bind(id)
+            .first<{ metadata: string | null }>();
+          return planCap(orgPlan(row?.metadata));
+        },
+        async sendInvitationEmail() {
+          /* no-op for v1 — the dashboard shows a copyable invite link */
+        },
+      }),
+    ],
     session: {
       expiresIn: 60 * 60 * 24 * 30, // 30d — rarely re-run the CPU-heavy login
       updateAge: 60 * 60 * 24 * 7, // slide expiry at most weekly -> ~0 refresh writes
