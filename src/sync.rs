@@ -25,15 +25,26 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 /// worker thread with an `AtomicBool` guard instead.
 #[cfg(windows)]
 pub fn spawn(hwnd_raw: isize, done_msg: u32, config: Config) {
+    // Posts `done_msg` back to the window on drop — including if `run` panics —
+    // so the UI's `syncing` overlap guard is always released. Otherwise a single
+    // panic in the sync path would strand the guard and silently disable every
+    // future background sync until the app restarts.
+    struct SignalDone(isize, u32);
+    impl Drop for SignalDone {
+        fn drop(&mut self) {
+            unsafe {
+                let hwnd = HWND(self.0 as *mut c_void);
+                let _ = PostMessageW(Some(hwnd), self.1, WPARAM(0), LPARAM(0));
+            }
+        }
+    }
+
     std::thread::spawn(move || {
+        let _done = SignalDone(hwnd_raw, done_msg);
         match run(&config, DEFAULT_TIMEOUT) {
             Ok(n) if n > 0 => crate::logln!("synced {n} session(s)"),
             Ok(_) => {}
             Err(e) => crate::logln!("sync error: {e}"),
-        }
-        unsafe {
-            let hwnd = HWND(hwnd_raw as *mut c_void);
-            let _ = PostMessageW(Some(hwnd), done_msg, WPARAM(0), LPARAM(0));
         }
     });
 }

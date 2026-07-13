@@ -70,13 +70,23 @@ pub(super) fn defer_reclaim_prompt() {
 
 /// Run a sync on a worker thread; it clears the overlap guard when done.
 pub(super) fn spawn_sync(config: Config, flag: Arc<AtomicBool>) {
+    // Clears the overlap guard on drop — including if `run_blocking` panics — so a
+    // single panic in the sync path can't strand the guard and silently disable
+    // every future background sync until the app restarts.
+    struct ClearOnDrop(Arc<AtomicBool>);
+    impl Drop for ClearOnDrop {
+        fn drop(&mut self) {
+            self.0.store(false, Ordering::SeqCst);
+        }
+    }
+
     std::thread::spawn(move || {
+        let _guard = ClearOnDrop(flag);
         match crate::sync::run_blocking(&config, Duration::from_secs(30)) {
             Ok(n) if n > 0 => crate::logln!("synced {n} session(s)"),
             Ok(_) => {}
             Err(e) => crate::logln!("sync error: {e}"),
         }
-        flag.store(false, Ordering::SeqCst);
     });
 }
 
