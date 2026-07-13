@@ -127,14 +127,11 @@ pub enum OpenDecision {
 /// `Config::within_working_hours` (`None` = feature disabled). `remembered` is
 /// the after-hours answer already normalized for the current local day by the
 /// caller (`None` once a new day resets it).
-pub fn decide_open(
-    paused: bool,
-    within_hours: Option<bool>,
-    remembered: Option<bool>,
-) -> OpenDecision {
-    if paused {
-        return OpenDecision::Skip; // manual pause wins; nothing reopens
-    }
+///
+/// A manual pause is deliberately *not* an input here: opening the machine always
+/// resumes tracking, so the caller clears the pause before deciding and the user
+/// never has to remember to unpause.
+pub fn decide_open(within_hours: Option<bool>, remembered: Option<bool>) -> OpenDecision {
     match within_hours {
         None | Some(true) => OpenDecision::ClockIn,
         Some(false) => match remembered {
@@ -271,26 +268,17 @@ mod tests {
 
     #[test]
     fn open_inside_hours_or_disabled_clocks_in() {
-        assert_eq!(decide_open(false, None, None), OpenDecision::ClockIn);
-        assert_eq!(decide_open(false, Some(true), None), OpenDecision::ClockIn);
+        assert_eq!(decide_open(None, None), OpenDecision::ClockIn);
+        assert_eq!(decide_open(Some(true), None), OpenDecision::ClockIn);
     }
 
     #[test]
     fn open_after_hours_respects_memory() {
-        assert_eq!(decide_open(false, Some(false), None), OpenDecision::Prompt);
+        assert_eq!(decide_open(Some(false), None), OpenDecision::Prompt);
         assert_eq!(
-            decide_open(false, Some(false), Some(true)),
+            decide_open(Some(false), Some(true)),
             OpenDecision::ClockInAfterHours
         );
-        assert_eq!(
-            decide_open(false, Some(false), Some(false)),
-            OpenDecision::Skip
-        );
-    }
-
-    #[test]
-    fn open_while_paused_skips() {
-        assert_eq!(decide_open(true, None, None), OpenDecision::Skip);
-        assert_eq!(decide_open(true, Some(false), Some(true)), OpenDecision::Skip);
+        assert_eq!(decide_open(Some(false), Some(false)), OpenDecision::Skip);
     }
 }

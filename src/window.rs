@@ -81,9 +81,10 @@ struct AppState {
     /// bare keypress resume tracking; lock/suspend clock-outs still require their
     /// matching unlock/resume event.
     idle_out: bool,
-    /// True while the user has manually paused tracking. Blocks every automatic
-    /// clock-in until they resume, so no event can reopen a session behind their
-    /// back.
+    /// True while the user has manually paused tracking. Blocks the idle
+    /// heartbeat and other automatic clock-ins, but the next open event (wake /
+    /// unlock / app start) clears it and resumes — so the user never has to
+    /// remember to unpause after closing the laptop.
     paused: bool,
     /// Whether the "clocking out soon" balloon has already fired for the current
     /// idle stretch (so we warn once, not every heartbeat).
@@ -151,8 +152,12 @@ impl AppState {
     /// hours we just clock in; outside them we ask once whether the user is
     /// actually working before tracking anything.
     fn open_event(&mut self, reason: &'static str) {
+        // Opening the machine always resumes tracking: a manual pause lasts only
+        // until the next open (wake / unlock / app start), so the user never has
+        // to remember to unpause after closing the laptop.
         if self.paused {
-            return; // manual pause wins; nothing reopens until they resume
+            self.paused = false;
+            crate::logln!("resumed (open)");
         }
         let now = Local::now();
         match self.config.within_working_hours(now) {

@@ -37,8 +37,10 @@ without screenshots or keylogging.
   ~2 min before. Tune with `idle_timeout_secs` in `config.toml` (seconds; `0`
   disables).
 - **Manual pause:** the tray **Pause tracking** / **Resume tracking** toggle
-  stops the clock and keeps it stopped (`reason = manual`) — no event reopens a
-  session until you resume.
+  stops the clock (`reason = manual`). The pause holds while you keep working,
+  but the next time you open the machine (wake / unlock / app start) it clears
+  automatically and tracking resumes — so you never have to remember to unpause
+  after closing the laptop. Toggle **Resume tracking** to resume immediately.
 - **After-hours prompt:** if you wake/unlock/launch the computer outside your
   configured working hours, a Yes/No popup asks whether you're working. **No**
   keeps you clocked out (nothing tracks until you say otherwise); the answer is

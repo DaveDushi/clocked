@@ -127,13 +127,18 @@ impl AppState {
 
     /// A "computer opened" moment (wake / unlock / app start).
     fn open_event(&mut self, reason: &'static str) {
+        // Opening the machine always resumes tracking: a manual pause lasts only
+        // until the next open, so the user never has to remember to unpause.
+        if self.paused {
+            self.paused = false;
+            crate::logln!("resumed (open)");
+        }
         let now = Local::now();
         // Normalize the remembered after-hours answer for the current local day.
         if self.after_hours_date != Some(now.date_naive()) {
             self.after_hours_answer = None;
         }
         match engine::decide_open(
-            self.paused,
             self.config.within_working_hours(now),
             self.after_hours_answer,
         ) {
