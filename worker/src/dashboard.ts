@@ -555,7 +555,8 @@ const HTML = /* html */ `<!doctype html>
         timesheet, even if your laptop was asleep at month-end.</p>
       <div class="downloadCta row">
         <button type="button" class="btn" id="heroSignup">Start free account</button>
-        <a class="btn ghost" href="/download">Download for Windows</a>
+        <a class="btn ghost" href="/download/mac">Download for macOS</a>
+        <a class="btn ghost" href="/download/win">Download for Windows</a>
         <div class="hintline">No browser extension. No always-on screenshots. Just power &amp; input events.</div>
       </div>
       <p class="trust">Open-source desktop app · paid cloud sync &amp; email · self-host the Worker if you want</p>
@@ -574,7 +575,7 @@ const HTML = /* html */ `<!doctype html>
         <div class="how-step">
           <div class="n">01</div>
           <h3>Install the tray app</h3>
-          <p>Download for Windows. It runs in the background and starts with login if you want.</p>
+          <p>Download for macOS or Windows. It runs in the background and starts with login if you want.</p>
         </div>
         <div class="how-step">
           <div class="n">02</div>
@@ -667,8 +668,8 @@ const HTML = /* html */ `<!doctype html>
         <p>Yes. The desktop app is open source and can point at your own Worker URL. The hosted service at clocked.daviddusi.com is the paid convenience path for sync, dashboard, teams, and email.</p>
       </details>
       <details>
-        <summary>Windows only?</summary>
-        <p>The tray app is Windows-only today. The web dashboard works in any modern browser once you have an account.</p>
+        <summary>Which platforms?</summary>
+        <p>Native menu-bar and tray apps for macOS and Windows. The web dashboard works in any modern browser once you have an account.</p>
       </details>
     </div>
 
@@ -868,7 +869,8 @@ const HTML = /* html */ `<!doctype html>
           <button id="resendVerify" class="ghost" style="margin-left:8px" type="button">Resend</button>
         </div>
         <div class="setupbox">
-          <a class="btn" href="/download">Download for Windows</a>
+          <a class="btn" href="/download/mac">Download for macOS</a>
+          <a class="btn" href="/download/win">Download for Windows</a>
           <span class="muted">Install, then paste the token into Settings.</span>
         </div>
         <label style="margin-top:14px">Sync token</label>
