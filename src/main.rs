@@ -9,6 +9,7 @@ mod db;
 mod events;
 mod idle;
 mod keepalive;
+mod media;
 mod paths;
 mod secret;
 mod settings;

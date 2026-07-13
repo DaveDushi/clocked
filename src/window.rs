@@ -8,7 +8,7 @@
 
 use std::time::{Duration, Instant};
 
-use chrono::{Local, NaiveDate, Utc};
+use chrono::{DateTime, Local, NaiveDate, Utc};
 use rusqlite::Connection;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{
@@ -34,6 +34,7 @@ const WM_SYNC_DONE: u32 = WM_APP + 2;
 const WM_PROMPT_AFTER_HOURS: u32 = WM_APP + 3;
 const WM_SETTINGS_SAVED: u32 = WM_APP + 4;
 const WM_UPDATE_CHECK_DONE: u32 = WM_APP + 5;
+const WM_PROMPT_IDLE_RECLAIM: u32 = WM_APP + 6;
 const TIMER_HEARTBEAT: usize = 1;
 const TIMER_SYNC: usize = 2;
 const TIMER_UPDATE_CHECK: usize = 3;
@@ -57,6 +58,18 @@ const IDM_DOWNLOAD_UPDATE: usize = 108;
 // Warn this many seconds before an idle auto-clock-out.
 const IDLE_WARN_LEAD_SECS: u64 = 120;
 
+// After an idle auto-clock-out, offer to reclaim the away time as worked when
+// the gap sits in this range. Below the floor there's nothing worth asking
+// about; above the ceiling it was almost certainly a genuine long absence
+// (lunch, end of day) we shouldn't backfill.
+const RECLAIM_MIN_SECS: i64 = 3 * 60;
+const RECLAIM_MAX_SECS: i64 = 4 * 60 * 60;
+
+// A live mic/camera only vouches for presence up to this long without any
+// keyboard/mouse input. Beyond it, we assume a call was left open (walked away
+// from a meeting) and let the normal idle clock-out run so time isn't inflated.
+const MEDIA_PRESENCE_MAX_SECS: u64 = 4 * 60 * 60;
+
 struct AppState {
     conn: Connection,
     config: Config,
@@ -75,6 +88,14 @@ struct AppState {
     /// Whether the "clocking out soon" balloon has already fired for the current
     /// idle stretch (so we warn once, not every heartbeat).
     idle_warned: bool,
+    /// When the user went idle for the current idle auto-clock-out (the backdated
+    /// session end). Drives the "were you working?" reclaim prompt on return.
+    /// `None` unless we are latched idle_out after a real (non-empty) clock-out.
+    idle_since: Option<DateTime<Utc>>,
+    /// In-flight guard + payload for the idle-reclaim modal: the idle-start time
+    /// to backfill from. Set when the modal is queued, cleared when answered, so
+    /// heartbeats during the modal don't stack a second prompt or resume early.
+    pending_reclaim: Option<DateTime<Utc>>,
     /// Remembered answer to the after-hours "are you working?" prompt for the
     /// current after-hours stretch: `Some(true/false)` once answered, cleared
     /// back to `None` on the next event inside working hours *or* on a new local
@@ -97,6 +118,13 @@ struct AppState {
 
 impl AppState {
     fn clock_in(&mut self, reason: &str) {
+        self.clock_in_at(reason, Utc::now());
+    }
+
+    /// Open a session starting at `at`. `at` is normally `Utc::now()`, but the
+    /// idle-reclaim path backdates it to the moment the user went idle so the
+    /// away stretch (a meeting, reading, etc.) counts as worked.
+    fn clock_in_at(&mut self, reason: &str, at: DateTime<Utc>) {
         // While manually paused, ignore every automatic clock-in. The manual
         // resume path clears `paused` before calling this.
         if self.paused {
@@ -104,7 +132,8 @@ impl AppState {
         }
         // Any real clock-in clears the idle latch: we are present again.
         self.idle_out = false;
-        match crate::db::clock_in(&self.conn, reason, Utc::now()) {
+        self.idle_since = None;
+        match crate::db::clock_in(&self.conn, reason, at) {
             Ok(true) => {
                 crate::logln!("clock in ({reason})");
                 self.update_tooltip();
@@ -243,6 +272,17 @@ impl AppState {
         let idle_secs = crate::idle::idle_duration().as_secs();
 
         if idle_secs >= timeout {
+            // A live mic or camera means the user is on a call/meeting: count it
+            // as present even with no keyboard/mouse input, so we never clock out
+            // mid-meeting. Resume first if a prior idle-out latched us off.
+            if idle_secs < MEDIA_PRESENCE_MAX_SECS && crate::media::in_use() {
+                self.idle_warned = false;
+                if self.idle_out && self.pending_reclaim.is_none() {
+                    self.clock_in("call");
+                    self.do_sync();
+                }
+                return;
+            }
             let clocked_in = matches!(crate::db::open_session_start(&self.conn), Ok(Some(_)));
             if clocked_in {
                 // Backdate to the last input so the idle stretch isn't counted.
@@ -252,6 +292,7 @@ impl AppState {
                     Ok(crate::db::ClockOut::Closed) => {
                         crate::logln!("clock out (idle {idle_secs}s)");
                         self.idle_out = true;
+                        self.idle_since = Some(last_input);
                         self.idle_warned = false;
                         self.update_tooltip();
                         self.do_sync();
@@ -259,8 +300,10 @@ impl AppState {
                     Ok(crate::db::ClockOut::DroppedEmpty) => {
                         // Whole span was idle (backdated before its start); drop
                         // it but still latch idle so activity reopens tracking.
+                        // No worked session existed, so nothing to reclaim.
                         crate::logln!("ignored empty session (idle {idle_secs}s)");
                         self.idle_out = true;
+                        self.idle_since = None;
                         self.idle_warned = false;
                         self.update_tooltip();
                     }
@@ -269,16 +312,32 @@ impl AppState {
                 }
             }
         } else if self.idle_out {
-            // Input returned after an idle auto-clock-out: resume tracking.
+            // Input returned after an idle auto-clock-out.
+            if self.pending_reclaim.is_some() {
+                return; // reclaim modal is already up; it resumes tracking
+            }
             self.idle_warned = false;
+            // Offer to reclaim the away time as worked (a meeting, a call on
+            // another device, reading) when the gap is worth asking about.
+            if let Some(since) = self.idle_since {
+                let gap = (Utc::now() - since).num_seconds();
+                if (RECLAIM_MIN_SECS..=RECLAIM_MAX_SECS).contains(&gap) {
+                    self.pending_reclaim = Some(since);
+                    let _ = unsafe {
+                        PostMessageW(Some(self.hwnd), WM_PROMPT_IDLE_RECLAIM, WPARAM(0), LPARAM(0))
+                    };
+                    return;
+                }
+            }
             self.clock_in("active");
             self.do_sync();
         } else {
-            // Still counting time: warn once as we approach the idle cutoff.
+            // Still counting time: warn once as we approach the idle cutoff —
+            // unless a live mic/camera means we're on a call and won't clock out.
             let warn_at = timeout.saturating_sub(IDLE_WARN_LEAD_SECS);
             if idle_secs < warn_at {
                 self.idle_warned = false;
-            } else if warn_at > 0 && !self.idle_warned {
+            } else if warn_at > 0 && !self.idle_warned && !crate::media::in_use() {
                 let clocked_in = matches!(crate::db::open_session_start(&self.conn), Ok(Some(_)));
                 if clocked_in {
                     let mins = (timeout - idle_secs + 59) / 60;
@@ -291,6 +350,42 @@ impl AppState {
                 }
             }
         }
+    }
+
+    /// Resolve a queued idle-reclaim prompt: ask whether the away stretch was
+    /// working time and either backfill it from `idle_since` or resume from now.
+    fn resolve_idle_reclaim(&mut self) {
+        let Some(since) = self.pending_reclaim.take() else {
+            return;
+        };
+        let mins = ((Utc::now() - since).num_seconds().max(0) + 30) / 60;
+        if self.prompt_reclaim(mins) {
+            self.clock_in_at("reclaimed", since);
+            crate::logln!("reclaimed idle time ({mins} min)");
+        } else {
+            self.clock_in("active");
+        }
+        self.do_sync();
+    }
+
+    /// Ask, via a modal Yes/No box, whether the user was working during an idle
+    /// stretch of about `mins` minutes.
+    fn prompt_reclaim(&self, mins: i64) -> bool {
+        let text = to_wide(&format!(
+            "You were away for about {mins} min with no keyboard or mouse activity.\n\n\
+             Were you still working (e.g. in a meeting, on a call, or reading)? \
+             Count that time as worked?"
+        ));
+        let title = to_wide("clocked");
+        let r = unsafe {
+            MessageBoxW(
+                Some(self.hwnd),
+                PCWSTR(text.as_ptr()),
+                PCWSTR(title.as_ptr()),
+                MB_YESNO | MB_ICONQUESTION | MB_SETFOREGROUND | MB_TOPMOST,
+            )
+        };
+        r == IDYES
     }
 
     fn clock_out(&mut self, reason: &str) {
@@ -606,6 +701,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             (*ptr).resolve_after_hours();
             LRESULT(0)
         }
+        WM_PROMPT_IDLE_RECLAIM => {
+            (*ptr).resolve_idle_reclaim();
+            LRESULT(0)
+        }
         WM_SETTINGS_SAVED => {
             let app = &mut *ptr;
             app.config = Config::load();
@@ -720,6 +819,8 @@ pub fn run() -> windows::core::Result<()> {
             idle_out: false,
             paused: false,
             idle_warned: false,
+            idle_since: None,
+            pending_reclaim: None,
             after_hours_answer: None,
             after_hours_date: None,
             pending_open: None,

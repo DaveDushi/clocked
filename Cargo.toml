@@ -1,6 +1,6 @@
 [package]
 name = "clocked"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 description = "Automatic Windows time tracker driven by power/session events"
 license = "MIT"
