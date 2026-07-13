@@ -1,0 +1,37 @@
+name: ci
+
+# Real compile + link on every push. The macOS job is the point: it links against
+# AppKit / CoreGraphics / Security.framework / system libsqlite3 on an actual Mac,
+# verifying what a Windows dev box can only typecheck.
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Build (Apple Silicon)
+        run: cargo build --target aarch64-apple-darwin --verbose
+      - name: Build (Intel)
+        run: cargo build --target x86_64-apple-darwin
+      - name: Test (shared logic on macOS)
+        run: cargo test
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test
+        run: cargo test
+      - name: Build
+        run: cargo build --release
