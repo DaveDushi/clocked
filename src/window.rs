@@ -8,7 +8,7 @@
 
 use std::time::{Duration, Instant};
 
-use chrono::{Local, Utc};
+use chrono::{Local, NaiveDate, Utc};
 use rusqlite::Connection;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{
@@ -77,9 +77,13 @@ struct AppState {
     idle_warned: bool,
     /// Remembered answer to the after-hours "are you working?" prompt for the
     /// current after-hours stretch: `Some(true/false)` once answered, cleared
-    /// back to `None` on the next event inside working hours so each evening
-    /// asks fresh.
+    /// back to `None` on the next event inside working hours *or* on a new local
+    /// day, so each evening — and each non-working day (e.g. a weekend where no
+    /// event ever lands inside working hours) — asks fresh.
     after_hours_answer: Option<bool>,
+    /// Local date the `after_hours_answer` was recorded for. Opening the laptop
+    /// on a later date clears the remembered answer so the prompt fires again.
+    after_hours_date: Option<NaiveDate>,
     /// Clock-in reason for the after-hours prompt, and the in-flight guard for
     /// it: set when the modal is queued and left set until it's answered, so a
     /// resume+unlock pair (or any event during the modal) can't stack a second
@@ -121,33 +125,46 @@ impl AppState {
         if self.paused {
             return; // manual pause wins; nothing reopens until they resume
         }
-        match self.config.within_working_hours(Local::now()) {
+        let now = Local::now();
+        match self.config.within_working_hours(now) {
             None | Some(true) => {
                 // Feature off, or inside hours: fresh slate for tonight.
                 self.after_hours_answer = None;
+                self.after_hours_date = None;
                 self.clock_in(reason);
                 self.do_sync();
             }
-            Some(false) => match self.after_hours_answer {
-                Some(true) => {
-                    self.clock_in(reason);
-                    self.do_sync();
+            Some(false) => {
+                // A new local day is a fresh after-hours stretch: ask again even
+                // if the machine never re-entered working hours in between (e.g.
+                // opening the laptop on a Saturday when the app stayed running
+                // since Friday). Otherwise a stale "not working" would silently
+                // suppress the prompt all weekend.
+                if self.after_hours_date != Some(now.date_naive()) {
+                    self.after_hours_answer = None;
                 }
-                Some(false) => {} // already told us they're not working
-                None => {
-                    // Defer the modal out of the power/session callback. A wake
-                    // fires both a resume and an unlock, and the second often
-                    // lands while the first modal is already up (the modal pumps
-                    // messages). `pending_open` stays set for the whole prompt
-                    // lifecycle, so only the first event queues a modal.
-                    if self.pending_open.is_none() {
-                        self.pending_open = Some(reason);
-                        let _ = unsafe {
-                            PostMessageW(Some(self.hwnd), WM_PROMPT_AFTER_HOURS, WPARAM(0), LPARAM(0))
-                        };
+                match self.after_hours_answer {
+                    Some(true) => {
+                        self.clock_in(reason);
+                        self.do_sync();
+                    }
+                    Some(false) => {} // already told us they're not working
+                    None => {
+                        // Defer the modal out of the power/session callback. A
+                        // wake fires both a resume and an unlock, and the second
+                        // often lands while the first modal is already up (the
+                        // modal pumps messages). `pending_open` stays set for the
+                        // whole prompt lifecycle, so only the first event queues a
+                        // modal.
+                        if self.pending_open.is_none() {
+                            self.pending_open = Some(reason);
+                            let _ = unsafe {
+                                PostMessageW(Some(self.hwnd), WM_PROMPT_AFTER_HOURS, WPARAM(0), LPARAM(0))
+                            };
+                        }
                     }
                 }
-            },
+            }
         }
     }
 
@@ -178,6 +195,7 @@ impl AppState {
         // prompt (`open_event` skips posting while `pending_open` is set).
         self.pending_open = None;
         self.after_hours_answer = Some(working);
+        self.after_hours_date = Some(Local::now().date_naive());
         if working {
             self.clock_in(reason);
             self.do_sync();
@@ -204,6 +222,7 @@ impl AppState {
             self.paused = false;
             self.idle_warned = false;
             self.after_hours_answer = Some(true);
+            self.after_hours_date = Some(Local::now().date_naive());
             crate::logln!("resumed");
             self.clock_in("manual");
             self.do_sync();
@@ -702,6 +721,7 @@ pub fn run() -> windows::core::Result<()> {
             paused: false,
             idle_warned: false,
             after_hours_answer: None,
+            after_hours_date: None,
             pending_open: None,
             update_status: crate::update::UpdateStatus::Unknown,
             update_checked_at: None,

@@ -13,6 +13,11 @@ interface Row {
   end_utc: string;
 }
 
+/** Gaps shorter than this are lock/unlock, suspend/resume, or app-relaunch
+ * blips — not real breaks — so they're omitted from the Breaks column. Worked
+ * minutes are summed from session durations and are unaffected either way. */
+const MIN_BREAK_MS = 2 * 60 * 1000;
+
 export interface DayHours {
   date: string; // "YYYY-MM-DD" (local)
   label: string; // e.g. "Monday, June 29, 2026"
@@ -138,7 +143,8 @@ export async function buildReportCsv(env: Env, period: string, userId: string): 
       const minutes = Math.round((segEnd.getTime() - segStart.getTime()) / 60000);
       const span = spanByDate.get(date);
       if (span) {
-        if (segStart > span.out) span.breaks.push(`${formatHM(span.out, tz)}-${formatHM(segStart, tz)}`);
+        if (segStart.getTime() - span.out.getTime() >= MIN_BREAK_MS)
+          span.breaks.push(`${formatHM(span.out, tz)}-${formatHM(segStart, tz)}`);
         span.out = segEnd; // later segment → newer clock-out
         span.minutes += minutes;
       } else {
