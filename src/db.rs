@@ -154,7 +154,9 @@ pub fn recover_crashed(conn: &Connection, now: DateTime<Utc>) -> rusqlite::Resul
 }
 
 /// Total seconds present so far during the local calendar day containing `now`
-/// (open session counted up to `now`). Used for the tray tooltip.
+/// (open session counted up to `now`). Used for the Windows tray tooltip; the
+/// macOS menu doesn't surface it yet.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn today_total_secs(conn: &Connection, now: DateTime<Utc>) -> rusqlite::Result<i64> {
     let local_now = now.with_timezone(&Local);
     let day_start_local = Local

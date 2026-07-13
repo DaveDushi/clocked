@@ -2,14 +2,29 @@
 name = "clocked"
 version = "0.1.8"
 edition = "2021"
-description = "Automatic Windows time tracker driven by power/session events"
+description = "Automatic time tracker driven by power/session events"
 license = "MIT"
 
 [[bin]]
 name = "clocked"
 path = "src/main.rs"
 
+# Portable core — compiles on every platform. TLS backend is selected per-platform
+# below (rustls on Windows, native/Security.framework on macOS).
 [dependencies]
+# `bundled` (compile SQLite from source) is added on Windows below; macOS links the
+# system libsqlite3, so the portable dep only needs the chrono integration.
+rusqlite    = { version = "0.32", features = ["chrono"] }
+reqwest     = { version = "0.12", default-features = false, features = ["blocking", "json"] }
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+uuid        = { version = "1", features = ["v4"] }
+chrono      = { version = "0.4", features = ["serde"] }
+toml        = "0.8"
+directories = "5"
+
+# Windows OS glue: Win32 bindings + registry.
+[target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [
   "Win32_Foundation",
   "Win32_UI_WindowsAndMessaging",
@@ -26,16 +41,45 @@ windows = { version = "0.62", features = [
   "Win32_Graphics_Gdi",
 ] }
 winreg      = "0.52"
-rusqlite    = { version = "0.32", features = ["bundled", "chrono"] }
-reqwest     = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
-serde       = { version = "1", features = ["derive"] }
-serde_json  = "1"
-uuid        = { version = "1", features = ["v4"] }
-chrono      = { version = "0.4", features = ["serde"] }
-toml        = "0.8"
-directories = "5"
+# Keep rustls on Windows (no schannel/OpenSSL dependency), matching prior behavior.
+reqwest     = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+# Windows has no system SQLite — compile it in.
+rusqlite    = { version = "0.32", features = ["bundled"] }
 
-[build-dependencies]
+# macOS OS glue: AppKit/Foundation via objc2 + Keychain via Security.framework.
+# Idle detection links CoreGraphics directly (see src/idle.rs), so no core-graphics
+# crate is needed. Versions to be confirmed on the first macOS CI build.
+[target.'cfg(target_os = "macos")'.dependencies]
+# native-tls on macOS resolves to Security.framework (already linked for Keychain)
+# — avoids ring/OpenSSL and its C build, so no extra toolchain is needed.
+reqwest          = { version = "0.12", default-features = false, features = ["native-tls"] }
+objc2            = "0.6"
+# objc2 crates gate each class behind a same-named feature (enabling a class pulls
+# its superclasses automatically). Enable exactly the classes the run loop uses.
+objc2-foundation = { version = "0.3", features = [
+  "NSString",
+  "NSNotification",
+  "NSDistributedNotificationCenter",
+  "NSTimer",
+  "NSThread",
+  "NSDate",
+] }
+objc2-app-kit = { version = "0.3", features = [
+  "NSResponder",
+  "NSApplication",
+  "NSStatusBar",
+  "NSStatusItem",
+  "NSStatusBarButton",
+  "NSControl",
+  "NSButton",
+  "NSMenu",
+  "NSMenuItem",
+  "NSAlert",
+  "NSWorkspace",
+] }
+security-framework = "3"
+
+[target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
 
 [profile.release]

@@ -4,16 +4,22 @@
 //! release in the background and, when a newer version exists, the tray menu
 //! turns into a link to the hosted latest-installer redirect.
 
-use core::ffi::c_void;
 use std::time::Duration;
 
+#[cfg(windows)]
+use core::ffi::c_void;
+#[cfg(windows)]
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+#[cfg(windows)]
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 pub const DOWNLOAD_URL: &str = "https://clocked.daviddusi.com/download";
 const LATEST_RELEASE_API: &str = "https://api.github.com/repos/DaveDushi/clocked/releases/latest";
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+// `Checking`/`Failed` drive the Windows tray-menu states; macOS only acts on
+// `Available`, so those variants read as unconstructed there.
+#[cfg_attr(not(windows), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UpdateStatus {
     Unknown,
@@ -28,6 +34,9 @@ pub enum UpdateStatus {
     Failed,
 }
 
+// These render the Windows tray-menu update entry; macOS notifies via osascript
+// instead, so they're unused there.
+#[cfg_attr(not(windows), allow(dead_code))]
 impl UpdateStatus {
     pub fn menu_label(&self) -> String {
         match self {
@@ -69,11 +78,17 @@ impl UpdateStatus {
     }
 }
 
+/// Payload posted back to the Windows message loop by `spawn`. Windows-only.
+#[cfg(windows)]
 pub struct UpdateCheckResult {
     pub manual: bool,
     pub status: UpdateStatus,
 }
 
+/// Windows-only: check in the background and signal the message loop. The
+/// version-fetch/compare logic (`check_latest`) is portable; macOS will drive it
+/// from its own run loop.
+#[cfg(windows)]
 pub fn spawn(hwnd_raw: isize, done_msg: u32, manual: bool) {
     std::thread::spawn(move || {
         let status = match check_latest() {
@@ -92,7 +107,7 @@ pub fn spawn(hwnd_raw: isize, done_msg: u32, manual: bool) {
     });
 }
 
-fn check_latest() -> Result<UpdateStatus, Box<dyn std::error::Error>> {
+pub(crate) fn check_latest() -> Result<UpdateStatus, Box<dyn std::error::Error>> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(15))
         .build()?;
@@ -141,6 +156,7 @@ fn normalize_version(version: &str) -> String {
         .to_string()
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 fn display_version(version: &str) -> String {
     format!("v{}", normalize_version(version))
 }

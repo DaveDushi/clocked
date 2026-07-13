@@ -4,19 +4,26 @@
 //! message loop never blocks on the network. When done it posts `done_msg`
 //! back to the window so the tray status can refresh.
 
-use core::ffi::c_void;
 use std::time::Duration;
 
+#[cfg(windows)]
+use core::ffi::c_void;
+#[cfg(windows)]
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+#[cfg(windows)]
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 use crate::config::Config;
 
-/// Network timeout for the routine background sync.
+/// Network timeout for the routine background sync (used by the Windows `spawn`).
+#[cfg(windows)]
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Spawn a background sync. `hwnd_raw` is the window handle as `isize` (raw
-/// pointers aren't `Send`; we rebuild the `HWND` inside the thread).
+/// pointers aren't `Send`; we rebuild the `HWND` inside the thread). Windows-only:
+/// it signals the message loop on completion. macOS uses `run_blocking` on a
+/// worker thread with an `AtomicBool` guard instead.
+#[cfg(windows)]
 pub fn spawn(hwnd_raw: isize, done_msg: u32, config: Config) {
     std::thread::spawn(move || {
         match run(&config, DEFAULT_TIMEOUT) {

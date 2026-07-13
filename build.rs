@@ -5,6 +5,11 @@
 fn main() {
     #[cfg(windows)]
     {
+        // Only embed Windows resources when the *target* is Windows. On a Windows
+        // host cross-checking a macOS target, skip it (winresource would warn).
+        if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+            return;
+        }
         println!("cargo:rerun-if-changed=assets/clocked.ico");
         let mut res = winresource::WindowsResource::new();
         res.set_icon_with_id("assets/clocked.ico", "1");
