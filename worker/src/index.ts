@@ -1,7 +1,12 @@
 import { checkAuth } from "./auth";
 import { makeAuth } from "./auth-server";
 import { dashboardResponse } from "./dashboard";
-import { downloadResponse, isDownloadMethod } from "./download";
+import {
+  downloadMacResponse,
+  downloadResponse,
+  downloadWinResponse,
+  isDownloadMethod,
+} from "./download";
 import { faviconResponse } from "./favicon";
 import { ogImageResponse } from "./og";
 import {
@@ -89,7 +94,10 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
 
   // Landing page + dashboard (single self-contained app) and health check.
   if (req.method === "GET" && url.pathname === "/") return dashboardResponse();
-  if (isDownloadMethod(req.method) && url.pathname === "/download") return downloadResponse();
+  if (isDownloadMethod(req.method) && url.pathname === "/download")
+    return downloadResponse(req.headers.get("user-agent"));
+  if (isDownloadMethod(req.method) && url.pathname === "/download/mac") return downloadMacResponse();
+  if (isDownloadMethod(req.method) && url.pathname === "/download/win") return downloadWinResponse();
   if (req.method === "GET" && (url.pathname === "/favicon.ico" || url.pathname === "/favicon.png")) {
     return faviconResponse();
   }

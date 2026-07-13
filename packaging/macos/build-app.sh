@@ -55,8 +55,9 @@ else
   echo "DEVELOPER_ID unset — leaving app unsigned (local testing only)."
 fi
 
-# 4. Build the .dmg.
-DMG="$OUT/clocked-$VERSION.dmg"
+# 4. Build the .dmg. Stable filename (version lives in Info.plist) so the landing
+# page's /releases/latest/download/clocked-setup.dmg URL always resolves.
+DMG="$OUT/clocked-setup.dmg"
 rm -f "$DMG"
 hdiutil create -volname "clocked" -srcfolder "$APP" -ov -format UDZO "$DMG"
 
