@@ -22,6 +22,10 @@ pub fn config_file() -> Option<PathBuf> {
     Some(data_dir()?.join("config.toml"))
 }
 
+pub fn rules_file() -> Option<PathBuf> {
+    Some(data_dir()?.join("rules.toml"))
+}
+
 pub fn log_file() -> Option<PathBuf> {
     Some(data_dir()?.join("clocked.log"))
 }

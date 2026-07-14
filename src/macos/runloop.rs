@@ -151,7 +151,7 @@ fn handle_notification(name: &str) {
     let action = events::map_notification(name);
     with_state(|app| match action {
         Action::ClockIn(r) => app.open_cmd(r),
-        Action::ClockOut(r) => app.clock_out_cmd(r),
+        Action::Close(r) => app.close_cmd(r),
         Action::Ignore => {}
     });
 }

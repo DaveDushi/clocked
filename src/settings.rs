@@ -7,8 +7,9 @@
 //! the running app reloads live.
 
 use core::ffi::c_void;
+use std::cell::{Cell, RefCell};
 
-use windows::core::{w, PCWSTR};
+use windows::core::{w, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, SYSTEMTIME, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     CreateFontIndirectW, DeleteObject, GetStockObject, SetBkMode, HBRUSH, HDC, HFONT, HGDIOBJ,
@@ -17,7 +18,8 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::{
     InitCommonControlsEx, DTM_GETSYSTEMTIME, DTM_SETFORMATW, DTM_SETSYSTEMTIME, DTS_TIMEFORMAT,
-    GDT_VALID, ICC_DATE_CLASSES, INITCOMMONCONTROLSEX,
+    GDT_VALID, ICC_DATE_CLASSES, ICC_TAB_CLASSES, INITCOMMONCONTROLSEX, NMHDR, TCIF_TEXT, TCITEMW,
+    TCM_GETCURSEL, TCM_INSERTITEMW, TCN_SELCHANGE,
 };
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -39,6 +41,38 @@ const ID_KEEPALIVE: i32 = 1008;
 const ID_ADVANCED: i32 = 1009;
 const ID_DAY_BASE: i32 = 1010; // + weekday index
 const ID_WORKER_URL_LABEL: i32 = 1020;
+// General-tab label ids (so the whole page can be hidden when switching tabs).
+const ID_LBL_TOKEN: i32 = 1021;
+const ID_LBL_IDLE: i32 = 1022;
+const ID_LBL_TARGET: i32 = 1023;
+const ID_LBL_START: i32 = 1024;
+const ID_LBL_END: i32 = 1025;
+const ID_LBL_DAYS: i32 = 1026;
+// Tab control + Projects-tab controls.
+const ID_TABS: i32 = 900;
+const ID_RULES_HELP: i32 = 1200;
+const ID_LBL_DEFAULT: i32 = 1202;
+const ID_DEFAULT_BUCKET: i32 = 1203;
+const ID_COL_APP: i32 = 1204;
+const ID_COL_PROJ: i32 = 1205;
+// One row per used app: a name label + a project edit box. Ids are base + row.
+const ID_ROW_LABEL_BASE: i32 = 1300;
+const ID_ROW_PROJ_BASE: i32 = 1340;
+// Most-used apps listed for assignment; the long tail stays on app-name fallback.
+const MAX_APP_ROWS: usize = 12;
+
+// Every General-tab control except the Advanced-gated worker URL pair, which is
+// shown/hidden by the Advanced toggle instead.
+const GENERAL_CORE_IDS: &[i32] = &[
+    ID_LBL_TOKEN, ID_TOKEN, ID_LBL_IDLE, ID_LBL_TARGET, ID_IDLE, ID_TARGET, ID_LBL_START,
+    ID_LBL_END, ID_START, ID_END, ID_LBL_DAYS, ID_DAY_BASE, ID_DAY_BASE + 1, ID_DAY_BASE + 2,
+    ID_DAY_BASE + 3, ID_DAY_BASE + 4, ID_DAY_BASE + 5, ID_DAY_BASE + 6, ID_AUTOSTART,
+    ID_KEEPALIVE, ID_ADVANCED,
+];
+// Fixed (non-row) Projects-tab controls; the per-app rows are toggled separately.
+const PROJECT_IDS: &[i32] = &[
+    ID_RULES_HELP, ID_COL_APP, ID_COL_PROJ, ID_LBL_DEFAULT, ID_DEFAULT_BUCKET,
+];
 
 const DAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -47,6 +81,12 @@ struct Ctx {
     main_hwnd: isize,
     saved_msg: u32,
     font: HFONT,
+    /// Whether the Advanced (Worker URL) row is currently revealed. Tracked so a
+    /// tab switch back to General can restore it correctly.
+    advanced: Cell<bool>,
+    /// App executables shown in the Projects list, in row order. Captured when
+    /// the window is built so Save can pair each project box back to its app.
+    apps: RefCell<Vec<String>>,
 }
 
 /// The system UI font (Segoe UI on Win10/11), falling back to the stock GUI
@@ -89,13 +129,15 @@ pub fn open(main_hwnd_raw: isize, saved_msg: u32) {
             }
         }
 
-        let (w, h) = (468, 540);
+        let (w, h) = (468, 600);
         let x = (GetSystemMetrics(SM_CXSCREEN) - w) / 2;
         let y = (GetSystemMetrics(SM_CYSCREEN) - h) / 2;
         let ctx = Box::into_raw(Box::new(Ctx {
             main_hwnd: main_hwnd_raw,
             saved_msg,
             font: ui_font(),
+            advanced: Cell::new(false),
+            apps: RefCell::new(Vec::new()),
         }));
 
         match CreateWindowExW(
@@ -131,7 +173,7 @@ fn init_common_controls() {
     ONCE.call_once(|| unsafe {
         let icc = INITCOMMONCONTROLSEX {
             dwSize: std::mem::size_of::<INITCOMMONCONTROLSEX>() as u32,
-            dwICC: ICC_DATE_CLASSES,
+            dwICC: ICC_DATE_CLASSES | ICC_TAB_CLASSES,
         };
         let _ = InitCommonControlsEx(&icc);
     });
@@ -177,6 +219,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             }
             LRESULT(0)
         }
+        WM_NOTIFY => {
+            let hdr = &*(lp.0 as *const NMHDR);
+            if hdr.idFrom == ID_TABS as usize && hdr.code == TCN_SELCHANGE {
+                apply_visibility(hwnd);
+            }
+            DefWindowProcW(hwnd, msg, wp, lp)
+        }
         // Paint static labels and checkbox text on the white window background.
         WM_CTLCOLORSTATIC => {
             let hdc = HDC(wp.0 as *mut c_void);
@@ -220,47 +269,240 @@ unsafe fn build_controls(hwnd: HWND) {
     let eh = 26; // edit height
     let lh = 18; // label height
 
-    label(hwnd, "Bearer token", m, 20, fw, lh, hinst, font);
-    edit(hwnd, ID_TOKEN, m, 42, fw, eh, WINDOW_STYLE(ES_PASSWORD as u32), hinst, font);
+    // Tab strip across the top; each page's controls are siblings shown/hidden
+    // together (they stay children of the window so their labels paint on the
+    // white background). Content starts just below the strip.
+    tabs(hwnd, m - 12, 10, fw + 24, 28, hinst, font);
 
-    label(hwnd, "Idle timeout   ?   minutes, 0 = off", m, 82, half, lh, hinst, font);
-    label(hwnd, "Daily goal   ?   hours, 0 = hide", right, 82, half, lh, hinst, font);
-    edit(hwnd, ID_IDLE, m, 104, half, eh, WINDOW_STYLE(ES_NUMBER as u32), hinst, font);
-    edit(hwnd, ID_TARGET, right, 104, half, eh, WINDOW_STYLE(0), hinst, font);
+    // --- General page ---
+    label_id(hwnd, ID_LBL_TOKEN, "Bearer token", m, 44, fw, lh, hinst, font);
+    edit(hwnd, ID_TOKEN, m, 66, fw, eh, WINDOW_STYLE(ES_PASSWORD as u32), hinst, font);
 
-    label(hwnd, "Work start", m, 144, half, lh, hinst, font);
-    label(hwnd, "Work end", right, 144, half, lh, hinst, font);
-    time_picker(hwnd, ID_START, m, 166, half, eh, hinst, font);
-    time_picker(hwnd, ID_END, right, 166, half, eh, hinst, font);
+    label_id(hwnd, ID_LBL_IDLE, "Idle timeout   ?   minutes, 0 = off", m, 106, half, lh, hinst, font);
+    label_id(hwnd, ID_LBL_TARGET, "Daily goal   ?   hours, 0 = hide", right, 106, half, lh, hinst, font);
+    edit(hwnd, ID_IDLE, m, 128, half, eh, WINDOW_STYLE(ES_NUMBER as u32), hinst, font);
+    edit(hwnd, ID_TARGET, right, 128, half, eh, WINDOW_STYLE(0), hinst, font);
 
-    label(hwnd, "Work days   ?   none = after-hours prompt off", m, 206, fw, lh, hinst, font);
+    label_id(hwnd, ID_LBL_START, "Work start", m, 168, half, lh, hinst, font);
+    label_id(hwnd, ID_LBL_END, "Work end", right, 168, half, lh, hinst, font);
+    time_picker(hwnd, ID_START, m, 190, half, eh, hinst, font);
+    time_picker(hwnd, ID_END, right, 190, half, eh, hinst, font);
+
+    label_id(hwnd, ID_LBL_DAYS, "Work days   ?   none = after-hours prompt off", m, 230, fw, lh, hinst, font);
     let dw = (fw + 6) / 7; // even column width across the row
     for (i, d) in DAYS.iter().enumerate() {
-        check(hwnd, ID_DAY_BASE + i as i32, d, m + i as i32 * dw, 230, dw - 6, hinst, font);
+        check(hwnd, ID_DAY_BASE + i as i32, d, m + i as i32 * dw, 254, dw - 6, hinst, font);
     }
 
-    check(hwnd, ID_AUTOSTART, "Start clocked automatically at login", m, 264, fw, hinst, font);
-    check(hwnd, ID_KEEPALIVE, "Keep clocked running (relaunch on unlock too)", m, 290, fw, hinst, font);
+    check(hwnd, ID_AUTOSTART, "Start clocked automatically at login", m, 288, fw, hinst, font);
+    check(hwnd, ID_KEEPALIVE, "Keep clocked running (relaunch on unlock too)", m, 314, fw, hinst, font);
 
-    button(hwnd, ID_ADVANCED, "Advanced settings...", m, 326, 154, hinst, font, false);
+    button(hwnd, ID_ADVANCED, "Advanced settings...", m, 350, 154, hinst, font, false);
     label_id(
         hwnd,
         ID_WORKER_URL_LABEL,
         "Worker URL   ?   defaults to clocked.daviddusi.com",
         m,
-        366,
+        390,
         fw,
         lh,
         hinst,
         font,
     );
-    edit(hwnd, ID_WORKER_URL, m, 388, fw, eh, WINDOW_STYLE(0), hinst, font);
+    edit(hwnd, ID_WORKER_URL, m, 412, fw, eh, WINDOW_STYLE(0), hinst, font);
 
-    button(hwnd, ID_CANCEL, "Cancel", m + fw - 104, 456, 104, hinst, font, false);
-    button(hwnd, ID_SAVE, "Save", m + fw - 104 - 116, 456, 104, hinst, font, true);
+    // --- Projects page: one row per used app, assign it to a project bucket ---
+    label_id(
+        hwnd,
+        ID_RULES_HELP,
+        "Apps you've used — type a project next to each to group them.",
+        m,
+        44,
+        fw,
+        lh,
+        hinst,
+        font,
+    );
+    let proj_x = m + 200;
+    label_id(hwnd, ID_COL_APP, "App", m, 70, 190, lh, hinst, font);
+    label_id(hwnd, ID_COL_PROJ, "Project", proj_x, 70, fw - 200, lh, hinst, font);
+    build_app_rows(hwnd, m, 92, proj_x, fw, hinst, font);
+
+    label_id(
+        hwnd,
+        ID_LBL_DEFAULT,
+        "Everything else   ?   leave blank to group by app name",
+        m,
+        462,
+        fw,
+        lh,
+        hinst,
+        font,
+    );
+    edit(hwnd, ID_DEFAULT_BUCKET, m, 484, half, eh, WINDOW_STYLE(0), hinst, font);
+
+    // --- Shared footer buttons ---
+    button(hwnd, ID_CANCEL, "Cancel", m + fw - 104, 520, 104, hinst, font, false);
+    button(hwnd, ID_SAVE, "Save", m + fw - 104 - 116, 520, 104, hinst, font, true);
 
     populate(hwnd);
-    show_advanced(hwnd, false);
+    apply_visibility(hwnd);
+}
+
+/// Create the top tab strip with the two pages.
+unsafe fn tabs(parent: HWND, x: i32, y: i32, w: i32, h: i32, hinst: HINSTANCE, font: WPARAM) {
+    let Ok(tabs) = CreateWindowExW(
+        WINDOW_EX_STYLE(0),
+        w!("SysTabControl32"),
+        PCWSTR::null(),
+        WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
+        x,
+        y,
+        w,
+        h,
+        Some(parent),
+        Some(HMENU(ID_TABS as usize as *mut c_void)),
+        Some(hinst),
+        None,
+    ) else {
+        return;
+    };
+    SendMessageW(tabs, WM_SETFONT, Some(font), Some(LPARAM(1)));
+    for (i, title) in ["General", "Projects"].iter().enumerate() {
+        let mut t = wide(title);
+        let item = TCITEMW {
+            mask: TCIF_TEXT,
+            pszText: PWSTR(t.as_mut_ptr()),
+            ..Default::default()
+        };
+        SendMessageW(
+            tabs,
+            TCM_INSERTITEMW,
+            Some(WPARAM(i)),
+            Some(LPARAM(&item as *const TCITEMW as isize)),
+        );
+    }
+}
+
+/// Build the per-app assignment rows: for each used app, a name label and a
+/// project edit box pre-filled with its current assignment. The apps shown are
+/// stashed on the Ctx (in row order) so Save can pair each box back to its app.
+unsafe fn build_app_rows(
+    parent: HWND,
+    x: i32,
+    top: i32,
+    proj_x: i32,
+    fw: i32,
+    hinst: HINSTANCE,
+    font: WPARAM,
+) {
+    let rules = crate::rules::Rules::load();
+    let apps = apps_to_show(&rules);
+
+    for (i, app) in apps.iter().enumerate() {
+        let y = top + i as i32 * 30;
+        label_id(
+            parent,
+            ID_ROW_LABEL_BASE + i as i32,
+            &crate::rules::pretty_app_name(app),
+            x,
+            y + 4, // nudge to vertically center against the edit box
+            190,
+            18,
+            hinst,
+            font,
+        );
+        edit(
+            parent,
+            ID_ROW_PROJ_BASE + i as i32,
+            proj_x,
+            y,
+            fw - 200,
+            26,
+            WINDOW_STYLE(0),
+            hinst,
+            font,
+        );
+        set_text(parent, ID_ROW_PROJ_BASE + i as i32, rules.assigned(app).unwrap_or(""));
+    }
+
+    if let Some(ctx) = ctx_ref(parent) {
+        *ctx.apps.borrow_mut() = apps;
+    }
+}
+
+/// The apps to list for assignment: the most-used apps first, then any already
+/// assigned but idle so their bucket is still visible, capped so the panel never
+/// scrolls. Assignments for apps that fall past the cap are preserved on Save
+/// (it starts from the stored rules and only edits the shown rows).
+fn apps_to_show(rules: &crate::rules::Rules) -> Vec<String> {
+    let mut apps: Vec<String> = Vec::new();
+    if let Ok(conn) = crate::db::open() {
+        if let Ok(seen) = crate::db::apps_seen(&conn, 60) {
+            apps = seen;
+        }
+    }
+    for app in rules.assignments.keys() {
+        if !apps.iter().any(|a| a.eq_ignore_ascii_case(app)) {
+            apps.push(app.clone());
+        }
+    }
+    apps.truncate(MAX_APP_ROWS);
+    apps
+}
+
+unsafe fn ctx_ref<'a>(hwnd: HWND) -> Option<&'a Ctx> {
+    let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const Ctx;
+    if ptr.is_null() {
+        None
+    } else {
+        Some(&*ptr)
+    }
+}
+
+/// The current tab index (0 = General, 1 = Projects; 0 if the control is absent).
+unsafe fn current_tab(hwnd: HWND) -> i32 {
+    match GetDlgItem(Some(hwnd), ID_TABS) {
+        Ok(tabs) => SendMessageW(tabs, TCM_GETCURSEL, None, None).0 as i32,
+        Err(_) => 0,
+    }
+}
+
+/// Show the controls for the active tab and hide the rest. The Advanced-gated
+/// worker URL row is only shown on General *and* when Advanced is revealed.
+unsafe fn apply_visibility(hwnd: HWND) {
+    let general = current_tab(hwnd) == 0;
+    let advanced = match GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const Ctx {
+        p if !p.is_null() => (*p).advanced.get(),
+        _ => false,
+    };
+    for &id in GENERAL_CORE_IDS {
+        show_ctrl(hwnd, id, general);
+    }
+    for &id in PROJECT_IDS {
+        show_ctrl(hwnd, id, !general);
+    }
+    // Per-app rows (only the ones that exist respond; missing ids are skipped).
+    for i in 0..MAX_APP_ROWS as i32 {
+        show_ctrl(hwnd, ID_ROW_LABEL_BASE + i, !general);
+        show_ctrl(hwnd, ID_ROW_PROJ_BASE + i, !general);
+    }
+    show_ctrl(hwnd, ID_WORKER_URL_LABEL, general && advanced);
+    show_ctrl(hwnd, ID_WORKER_URL, general && advanced);
+    if let Ok(h) = GetDlgItem(Some(hwnd), ID_ADVANCED) {
+        let text = if advanced {
+            wide("Hide advanced")
+        } else {
+            wide("Advanced settings...")
+        };
+        let _ = SetWindowTextW(h, PCWSTR(text.as_ptr()));
+    }
+}
+
+unsafe fn show_ctrl(hwnd: HWND, id: i32, show: bool) {
+    if let Ok(h) = GetDlgItem(Some(hwnd), id) {
+        let _ = ShowWindow(h, if show { SW_SHOW } else { SW_HIDE });
+    }
 }
 unsafe fn mk(
     parent: HWND,
@@ -292,10 +534,6 @@ unsafe fn mk(
     ) {
         SendMessageW(child, WM_SETFONT, Some(font), Some(LPARAM(1)));
     }
-}
-
-unsafe fn label(p: HWND, text: &str, x: i32, y: i32, w: i32, h: i32, hinst: HINSTANCE, font: WPARAM) {
-    label_id(p, 0, text, x, y, w, h, hinst, font);
 }
 
 unsafe fn label_id(
@@ -493,30 +731,14 @@ unsafe fn is_checked(parent: HWND, id: i32) -> bool {
     }
 }
 
-unsafe fn show_advanced(parent: HWND, show: bool) {
-    let cmd = if show { SW_SHOW } else { SW_HIDE };
-    if let Ok(h) = GetDlgItem(Some(parent), ID_WORKER_URL_LABEL) {
-        let _ = ShowWindow(h, cmd);
-    }
-    if let Ok(h) = GetDlgItem(Some(parent), ID_WORKER_URL) {
-        let _ = ShowWindow(h, cmd);
-    }
-    if let Ok(h) = GetDlgItem(Some(parent), ID_ADVANCED) {
-        let text = if show {
-            wide("Hide advanced")
-        } else {
-            wide("Advanced settings...")
-        };
-        let _ = SetWindowTextW(h, PCWSTR(text.as_ptr()));
-    }
-}
-
+/// Flip the Advanced (Worker URL) reveal and re-apply page visibility.
 unsafe fn toggle_advanced(parent: HWND) {
-    let visible = match GetDlgItem(Some(parent), ID_WORKER_URL) {
-        Ok(h) => IsWindowVisible(h).as_bool(),
-        Err(_) => false,
-    };
-    show_advanced(parent, !visible);
+    let ptr = GetWindowLongPtrW(parent, GWLP_USERDATA) as *const Ctx;
+    if !ptr.is_null() {
+        let cur = (*ptr).advanced.get();
+        (*ptr).advanced.set(!cur);
+    }
+    apply_visibility(parent);
 }
 
 /// Fill controls from the current config.
@@ -548,6 +770,10 @@ unsafe fn populate(hwnd: HWND) {
             SendMessageW(h, BM_SETCHECK, Some(WPARAM(1)), None);
         }
     }
+
+    // Projects tab: the per-app rows are pre-filled when built; here just the
+    // fallback bucket.
+    set_text(hwnd, ID_DEFAULT_BUCKET, &crate::rules::Rules::load().default_project);
 }
 
 fn fmt_hours(h: f64) -> String {
@@ -609,6 +835,24 @@ unsafe fn save_and_close(hwnd: HWND) {
         if let Err(e) = r {
             crate::logln!("keepalive update error: {e}");
         }
+    }
+
+    // Projects tab: fold each row's project box back onto its app. Start from the
+    // existing assignments so apps not currently listed aren't lost; a blank box
+    // clears that app's assignment.
+    let mut rules = crate::rules::Rules::load();
+    rules.default_project = get_text(hwnd, ID_DEFAULT_BUCKET).trim().to_string();
+    let apps = ctx.apps.borrow().clone();
+    for (i, app) in apps.iter().enumerate() {
+        let project = get_text(hwnd, ID_ROW_PROJ_BASE + i as i32).trim().to_string();
+        if project.is_empty() {
+            rules.assignments.remove(app);
+        } else {
+            rules.assignments.insert(app.clone(), project);
+        }
+    }
+    if let Err(e) = rules.save() {
+        crate::logln!("rules save error: {e}");
     }
 
     match cfg.save() {

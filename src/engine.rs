@@ -125,8 +125,8 @@ pub enum OpenDecision {
 
 /// Decide what to do on an open event. `within_hours` is
 /// `Config::within_working_hours` (`None` = feature disabled). `remembered` is
-/// the after-hours answer already normalized for the current local day by the
-/// caller (`None` once a new day resets it).
+/// the after-hours answer for the current physical open cycle, already cleared
+/// by the caller on lock/suspend (and normalized for a new local day).
 ///
 /// A manual pause is deliberately *not* an input here: opening the machine always
 /// resumes tracking, so the caller clears the pause before deciding and the user

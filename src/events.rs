@@ -3,7 +3,9 @@
 
 pub enum Action {
     ClockIn(&'static str),
-    ClockOut(&'static str),
+    /// The computer became unavailable because it locked or suspended. Unlike
+    /// an idle clock-out, this starts a new physical open cycle.
+    Close(&'static str),
     Ignore,
 }
 
@@ -23,7 +25,7 @@ mod windows_impl {
     /// `wParam` of `WM_POWERBROADCAST`.
     pub fn map_power(event: u32) -> Action {
         match event {
-            PBT_APMSUSPEND => Action::ClockOut("suspend"),
+            PBT_APMSUSPEND => Action::Close("suspend"),
             PBT_APMRESUMEAUTOMATIC => Action::ClockIn("resume"),
             _ => Action::Ignore,
         }
@@ -32,9 +34,26 @@ mod windows_impl {
     /// `wParam` of `WM_WTSSESSION_CHANGE`.
     pub fn map_session(event: u32) -> Action {
         match event {
-            WTS_SESSION_LOCK => Action::ClockOut("lock"),
+            WTS_SESSION_LOCK => Action::Close("lock"),
             WTS_SESSION_UNLOCK => Action::ClockIn("unlock"),
             _ => Action::Ignore,
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn lock_and_suspend_are_close_boundaries() {
+            assert!(matches!(
+                map_session(WTS_SESSION_LOCK),
+                Action::Close("lock")
+            ));
+            assert!(matches!(
+                map_power(PBT_APMSUSPEND),
+                Action::Close("suspend")
+            ));
         }
     }
 }
@@ -53,9 +72,9 @@ mod macos_impl {
     /// Map an observed notification name to a clock action.
     pub fn map_notification(name: &str) -> Action {
         match name {
-            WILL_SLEEP => Action::ClockOut("suspend"),
+            WILL_SLEEP => Action::Close("suspend"),
             DID_WAKE => Action::ClockIn("resume"),
-            SCREEN_LOCKED => Action::ClockOut("lock"),
+            SCREEN_LOCKED => Action::Close("lock"),
             SCREEN_UNLOCKED => Action::ClockIn("unlock"),
             _ => Action::Ignore,
         }

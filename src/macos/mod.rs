@@ -101,6 +101,14 @@ impl AppState {
         }
     }
 
+    /// A lock/suspend starts a fresh open cycle. The next wake/unlock must ask
+    /// again after hours; idle clock-outs deliberately leave this memory alone.
+    fn close_event(&mut self, reason: &'static str) {
+        self.after_hours_answer = None;
+        self.after_hours_date = None;
+        self.clock_out(reason);
+    }
+
     /// Clock out and sync synchronously before returning (quit/power-off).
     fn clock_out_blocking(&mut self, reason: &str) {
         match crate::db::clock_out(&self.conn, reason, Utc::now()) {
@@ -134,7 +142,8 @@ impl AppState {
             crate::logln!("resumed (open)");
         }
         let now = Local::now();
-        // Normalize the remembered after-hours answer for the current local day.
+        // Also guard against stale memory if a new day begins without a close
+        // notification; normal lock/suspend handling clears it immediately.
         if self.after_hours_date != Some(now.date_naive()) {
             self.after_hours_answer = None;
         }
@@ -336,8 +345,8 @@ impl AppState {
     pub(crate) fn open_cmd(&mut self, reason: &'static str) {
         self.open_event(reason);
     }
-    pub(crate) fn clock_out_cmd(&mut self, reason: &'static str) {
-        self.clock_out(reason);
+    pub(crate) fn close_cmd(&mut self, reason: &'static str) {
+        self.close_event(reason);
     }
     pub(crate) fn sync_now(&mut self) {
         self.do_sync();

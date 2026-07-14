@@ -41,9 +41,29 @@ pub fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
             synced       INTEGER NOT NULL DEFAULT 0
          );
          CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
-         CREATE INDEX IF NOT EXISTS idx_sessions_synced ON sessions(synced);",
+         CREATE INDEX IF NOT EXISTS idx_sessions_synced ON sessions(synced);
+         CREATE TABLE IF NOT EXISTS activity (
+            id       INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts_utc   TEXT NOT NULL,
+            app      TEXT NOT NULL,
+            title    TEXT NOT NULL,
+            project  TEXT NOT NULL,
+            secs     INTEGER NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS idx_activity_ts ON activity(ts_utc);",
     )?;
     Ok(())
+}
+
+/// UTC instant of local midnight for the calendar day containing `now`. Used to
+/// bound "today" queries to the user's wall-clock day.
+fn local_day_start(now: DateTime<Utc>) -> DateTime<Utc> {
+    let local_now = now.with_timezone(&Local);
+    let day_start_local = Local
+        .with_ymd_and_hms(local_now.year(), local_now.month(), local_now.day(), 0, 0, 0)
+        .single()
+        .unwrap_or(local_now);
+    day_start_local.with_timezone(&Utc)
 }
 
 fn fmt(ts: DateTime<Utc>) -> String {
@@ -158,12 +178,7 @@ pub fn recover_crashed(conn: &Connection, now: DateTime<Utc>) -> rusqlite::Resul
 /// macOS menu doesn't surface it yet.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub fn today_total_secs(conn: &Connection, now: DateTime<Utc>) -> rusqlite::Result<i64> {
-    let local_now = now.with_timezone(&Local);
-    let day_start_local = Local
-        .with_ymd_and_hms(local_now.year(), local_now.month(), local_now.day(), 0, 0, 0)
-        .single()
-        .unwrap_or(local_now);
-    let day_start = day_start_local.with_timezone(&Utc);
+    let day_start = local_day_start(now);
 
     let mut stmt = conn.prepare(
         "SELECT start_utc, end_utc FROM sessions WHERE end_utc IS NULL OR end_utc >= ?1",
@@ -184,6 +199,62 @@ pub fn today_total_secs(conn: &Connection, now: DateTime<Utc>) -> rusqlite::Resu
         }
     }
     Ok(total)
+}
+
+/// Record one heartbeat's worth of foreground activity: `secs` credited to
+/// `project`, tagged with the app/title it was classified from. Local-only —
+/// these rows never sync; they drive the per-project breakdown.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn record_activity(
+    conn: &Connection,
+    now: DateTime<Utc>,
+    app: &str,
+    title: &str,
+    project: &str,
+    secs: i64,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO activity (ts_utc, app, title, project, secs) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![fmt(now), app, title, project, secs],
+    )?;
+    Ok(())
+}
+
+/// Seconds attributed to each project during the local calendar day containing
+/// `now`, busiest first. Powers the tray's "Today by project" breakdown.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn today_by_project(
+    conn: &Connection,
+    now: DateTime<Utc>,
+) -> rusqlite::Result<Vec<(String, i64)>> {
+    let day_start = local_day_start(now);
+    let mut stmt = conn.prepare(
+        "SELECT project, SUM(secs) AS total
+           FROM activity
+          WHERE ts_utc >= ?1
+          GROUP BY project
+          ORDER BY total DESC",
+    )?;
+    let rows = stmt.query_map(params![fmt(day_start)], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+    })?;
+    rows.collect()
+}
+
+/// Distinct apps ever seen, busiest first, capped at `limit`. Powers the
+/// Settings → Projects list so the user assigns real apps, not typed guesses.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn apps_seen(conn: &Connection, limit: usize) -> rusqlite::Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT app, SUM(secs) AS total
+           FROM activity
+          WHERE app <> ''
+          GROUP BY app
+          ORDER BY total DESC
+          LIMIT ?1",
+    )?;
+    let rows = stmt.query_map(params![limit as i64], |r| r.get::<_, String>(0))?;
+    rows.collect()
 }
 
 /// Completed sessions not yet acknowledged by the Worker.
@@ -382,5 +453,48 @@ mod tests {
             meta_get(&c, "synced_endpoint").unwrap().as_deref(),
             Some("https://b.example")
         );
+    }
+
+    #[test]
+    fn today_by_project_sums_and_orders_todays_activity() {
+        let c = mem();
+        let now = Utc::now();
+        // Two Coding samples and one Email sample, all "today".
+        record_activity(&c, now, "code.exe", "main.rs", "Coding", 60).unwrap();
+        record_activity(&c, now, "code.exe", "db.rs", "Coding", 60).unwrap();
+        record_activity(&c, now, "outlook.exe", "Inbox", "Email", 60).unwrap();
+        // A sample from two days ago must be excluded from "today".
+        record_activity(
+            &c,
+            now - chrono::Duration::days(2),
+            "code.exe",
+            "old",
+            "Coding",
+            3600,
+        )
+        .unwrap();
+
+        let breakdown = today_by_project(&c, now).unwrap();
+        assert_eq!(
+            breakdown,
+            vec![("Coding".to_string(), 120), ("Email".to_string(), 60)]
+        );
+    }
+
+    #[test]
+    fn apps_seen_lists_distinct_apps_busiest_first() {
+        let c = mem();
+        let now = Utc::now();
+        record_activity(&c, now, "code.exe", "a", "Coding", 60).unwrap();
+        record_activity(&c, now, "code.exe", "b", "Coding", 60).unwrap();
+        record_activity(&c, now, "chrome.exe", "c", "Browsing", 60).unwrap();
+        record_activity(&c, now, "", "no-app", "X", 999).unwrap(); // blank app excluded
+
+        assert_eq!(
+            apps_seen(&c, 10).unwrap(),
+            vec!["code.exe".to_string(), "chrome.exe".to_string()]
+        );
+        // Limit is honored (busiest kept).
+        assert_eq!(apps_seen(&c, 1).unwrap(), vec!["code.exe".to_string()]);
     }
 }

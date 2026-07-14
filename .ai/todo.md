@@ -64,3 +64,42 @@ macOS CI runner. Every step must keep the Windows build green (baseline: builds 
 - Windows regression: `cargo test`, `cargo build`, run tray app, verify clock in/out unaffected.
 - macOS (on a Mac): `cargo build --target aarch64-apple-darwin`, run `.app`, verify sleep/wake +
   lock/unlock clock in/out, idle, tray menu, Keychain token, launch-at-login.
+
+## Local-only activity MVP (2026-07-13)
+Capture foreground app/title on the heartbeat, classify to a project via rules,
+store locally, show a per-project breakdown in the tray. No sync/dashboard/extension.
+
+- [x] `foreground.rs` — Win32 GetForegroundWindow → exe name + title (macOS stub → None).
+- [x] `rules.rs` — pure ordered rules engine (first substring match wins), `rules.toml`
+      auto-written with sensible defaults; reloaded on Settings save. Unit-tested.
+- [x] `db.rs` — `activity` table + `record_activity` + `today_by_project` (local-day, busiest first).
+- [x] `window.rs` — `record_activity_tick()` on each active heartbeat (skips paused/idle/no-input,
+      credits 60s to the focused window's project); "Today by project" section in the tray menu.
+- [x] `cargo test` 35/35 green; live foreground capture smoke-verified (read jean.exe / "Jean").
+
+### Testing
+- `cargo test` — rules + `today_by_project` aggregation.
+- Run the tray app; after ~1 min of activity, right-click the tray icon → "Today by project"
+  lists projects with time. Edit `%APPDATA%\clocked\data\rules.toml`, open Settings→Save, confirm
+  reclassification. Idle >1 min with no mic/cam → no new samples credited.
+
+### Refinement (2026-07-13, post-MVP feedback)
+- Zero-config fallback: blank `default_project` labels unmatched windows by app
+  name (jean.exe → "Jean") instead of a single "Unassigned" bucket. Set a value
+  (e.g. "Other") for a single catch-all. Shipped template now defaults to blank.
+
+### Projects in Settings — assignment UI (2026-07-13)
+- Rules model is now a straight **app → project** map: `Rules { default_project,
+  assignments: BTreeMap<app_exe, project> }`. `classify` looks up the lowercased
+  exe; unassigned → blank default → app-name fallback. (Replaced free-form text /
+  keyword forms — those "get messy fast".)
+- `settings.rs` Projects tab lists the **apps you've actually used** (from
+  `db::apps_seen`, busiest first, + already-assigned apps, capped at 12 rows),
+  each with a project box pre-filled from the current assignment. Save folds each
+  box back onto its app (blank clears it), starting from the stored rules so
+  off-list assignments survive. `Ctx.apps` holds the row→app pairing.
+- Tray breakdown capped at top 4 + "Other"; tray kept lean (no rules item).
+
+### Follow-ups (not in MVP)
+- macOS foreground capture (NSWorkspace.frontmostApplication) — currently returns None.
+- Richer local view (per-app drill-down / date range) if the tray breakdown proves too thin.

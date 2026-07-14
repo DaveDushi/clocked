@@ -70,9 +70,23 @@ const RECLAIM_MAX_SECS: i64 = 4 * 60 * 60;
 // from a meeting) and let the normal idle clock-out run so time isn't inflated.
 const MEDIA_PRESENCE_MAX_SECS: u64 = 4 * 60 * 60;
 
+// The heartbeat timer fires once a minute; each active tick credits this many
+// seconds to the focused window's project. Keep in sync with the TIMER_HEARTBEAT
+// interval below.
+const HEARTBEAT_SECS: u64 = 60;
+
+// How many projects the tray "Today by project" breakdown lists individually
+// before the rest are rolled into a single "Other" line, so the menu stays short
+// no matter how many apps were touched.
+const BREAKDOWN_MAX_ROWS: usize = 4;
+
 struct AppState {
     conn: Connection,
     config: Config,
+    /// Project-classification rules for foreground activity. Loaded at startup
+    /// and reloaded when settings are saved so hand-edits to `rules.toml` apply
+    /// without a restart.
+    rules: crate::rules::Rules,
     hwnd: HWND,
     nid: NOTIFYICONDATAW,
     taskbar_created: u32,
@@ -97,9 +111,10 @@ struct AppState {
     /// to backfill from. Set when the modal is queued, cleared when answered, so
     /// heartbeats during the modal don't stack a second prompt or resume early.
     pending_reclaim: Option<DateTime<Utc>>,
-    /// Remembered answer to the after-hours "are you working?" prompt for the
-    /// current after-hours stretch: `Some(true/false)` once answered, cleared
-    /// back to `None` on the next event inside working hours *or* on a new local
+    /// Remembered answer to the after-hours "are you working?" prompt for this
+    /// physical open cycle. Lock/suspend clears it; resume+unlock notifications
+    /// from the same opening reuse it so they cannot stack duplicate prompts.
+    /// It is also cleared on the next event inside working hours *or* on a new local
     /// day, so each evening — and each non-working day (e.g. a weekend where no
     /// event ever lands inside working hours) — asks fresh.
     after_hours_answer: Option<bool>,
@@ -148,9 +163,18 @@ impl AppState {
         matches!(crate::db::open_session_start(&self.conn), Ok(Some(_)))
     }
 
+    /// A real lock/suspend ends the current open cycle. Forget the prior
+    /// after-hours answer so the next resume/unlock asks again. Idle clock-outs
+    /// do not pass through here and therefore still resume without this prompt.
+    fn close_event(&mut self, reason: &'static str) {
+        self.after_hours_answer = None;
+        self.after_hours_date = None;
+        self.clock_out(reason);
+    }
+
     /// A "computer opened" moment (wake / unlock / app start). Inside working
-    /// hours we just clock in; outside them we ask once whether the user is
-    /// actually working before tracking anything.
+    /// hours we just clock in; outside them we ask once for this physical open
+    /// cycle whether the user is actually working before tracking anything.
     fn open_event(&mut self, reason: &'static str) {
         // Opening the machine always resumes tracking: a manual pause lasts only
         // until the next open (wake / unlock / app start), so the user never has
@@ -218,7 +242,7 @@ impl AppState {
     }
 
     /// Answer a deferred after-hours prompt: track if working, stay out if not,
-    /// and remember the choice for the rest of this after-hours stretch.
+    /// and remember the choice until the next lock/suspend.
     fn resolve_after_hours(&mut self) {
         let Some(reason) = self.pending_open else {
             return;
@@ -393,6 +417,43 @@ impl AppState {
         r == IDYES
     }
 
+    /// Attribute this heartbeat's minute to the focused app's project. Records a
+    /// local-only activity sample when clocked in and active; paused/idle ticks
+    /// and unreadable foregrounds are skipped so dead time and background windows
+    /// aren't credited.
+    fn record_activity_tick(&mut self) {
+        if self.paused || !self.is_clocked_in() {
+            return;
+        }
+        // Only credit the interval when there was input in the last minute, or a
+        // live mic/camera vouches for presence on a call. Mirrors the idle
+        // presence rules so away stretches aren't pinned on whatever window
+        // happened to hold focus.
+        let idle_secs = crate::idle::idle_duration().as_secs();
+        if idle_secs >= HEARTBEAT_SECS && !crate::media::in_use() {
+            return;
+        }
+        let Some(fg) = crate::foreground::foreground() else {
+            return;
+        };
+        // Don't attribute time to clocked's own windows (tray menu, settings) —
+        // reading the tracker isn't work on a project.
+        if fg.app == own_exe_name() {
+            return;
+        }
+        let project = self.rules.classify(&fg.app, &fg.title);
+        if let Err(e) = crate::db::record_activity(
+            &self.conn,
+            Utc::now(),
+            &fg.app,
+            &fg.title,
+            &project,
+            HEARTBEAT_SECS as i64,
+        ) {
+            crate::logln!("record_activity error: {e}");
+        }
+    }
+
     fn clock_out(&mut self, reason: &str) {
         match crate::db::clock_out(&self.conn, reason, Utc::now()) {
             Ok(crate::db::ClockOut::Closed) => {
@@ -538,6 +599,27 @@ fn to_wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
+/// This process's own executable file name, lowercased (e.g. `"clocked.exe"`),
+/// so activity capture can skip clocked's own windows.
+fn own_exe_name() -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()))
+        .unwrap_or_default()
+}
+
+/// Format a duration in seconds as `2h 05m`, or `05m` under an hour, for the
+/// tray breakdown lines.
+fn fmt_dur(secs: i64) -> String {
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    if h > 0 {
+        format!("{h}h {m:02}m")
+    } else {
+        format!("{m:02}m")
+    }
+}
+
 /// Format a goal like `8h` or `7.5h`, dropping a trailing `.0`.
 fn fmt_hours(h: f64) -> String {
     if (h.fract()).abs() < 1e-9 {
@@ -571,12 +653,13 @@ fn open_url(url: &str) {
 /// Build and show the tray context menu. Uses `TPM_RETURNCMD` and holds no
 /// borrow of `AppState` while `TrackPopupMenu` pumps its own modal loop.
 unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
-    let (status, today, worker_url, clocked_in, update_label, update_enabled) = {
+    let (status, today, breakdown, worker_url, clocked_in, update_label, update_enabled) = {
         let app = &*ptr;
         let update = app.effective_update_status();
         (
             app.status_line(),
             app.today_line(),
+            crate::db::today_by_project(&app.conn, Utc::now()).unwrap_or_default(),
             app.config.effective_worker_url().to_string(),
             app.is_clocked_in(),
             update.menu_label(),
@@ -591,6 +674,24 @@ unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
     let wtoday = to_wide(&today);
     let _ = AppendMenuW(menu, MF_GRAYED, 0, PCWSTR(wstatus.as_ptr()));
     let _ = AppendMenuW(menu, MF_GRAYED, 0, PCWSTR(wtoday.as_ptr()));
+    // Per-project breakdown of today's foreground time. Grayed, informational
+    // rows; AppendMenuW copies each label, so the transient buffers are fine.
+    if !breakdown.is_empty() {
+        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+        let hdr = to_wide("Today by project");
+        let _ = AppendMenuW(menu, MF_GRAYED, 0, PCWSTR(hdr.as_ptr()));
+        for (project, secs) in breakdown.iter().take(BREAKDOWN_MAX_ROWS) {
+            let line = to_wide(&format!("   {project} — {}", fmt_dur(*secs)));
+            let _ = AppendMenuW(menu, MF_GRAYED, 0, PCWSTR(line.as_ptr()));
+        }
+        // Roll everything past the top rows into one "Other" line so a busy day
+        // with many apps doesn't stretch the menu into a wall of tiny slivers.
+        if breakdown.len() > BREAKDOWN_MAX_ROWS {
+            let other: i64 = breakdown[BREAKDOWN_MAX_ROWS..].iter().map(|(_, s)| s).sum();
+            let line = to_wide(&format!("   Other — {}", fmt_dur(other)));
+            let _ = AppendMenuW(menu, MF_GRAYED, 0, PCWSTR(line.as_ptr()));
+        }
+    }
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
     let pause_label = if clocked_in {
         w!("Pause tracking")
@@ -689,7 +790,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_POWERBROADCAST => {
             match map_power(wparam.0 as u32) {
                 Action::ClockIn(r) => (*ptr).open_event(r),
-                Action::ClockOut(r) => (*ptr).clock_out(r),
+                Action::Close(r) => (*ptr).close_event(r),
                 Action::Ignore => {}
             }
             LRESULT(1)
@@ -697,7 +798,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_WTSSESSION_CHANGE => {
             match map_session(wparam.0 as u32) {
                 Action::ClockIn(r) => (*ptr).open_event(r),
-                Action::ClockOut(r) => (*ptr).clock_out(r),
+                Action::Close(r) => (*ptr).close_event(r),
                 Action::Ignore => {}
             }
             LRESULT(0)
@@ -713,6 +814,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_SETTINGS_SAVED => {
             let app = &mut *ptr;
             app.config = Config::load();
+            app.rules = crate::rules::Rules::load();
             app.update_tooltip();
             app.do_sync();
             LRESULT(0)
@@ -727,6 +829,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     let app = &mut *ptr;
                     let _ = crate::db::heartbeat(&app.conn, Utc::now());
                     app.check_idle();
+                    app.record_activity_tick();
                     app.update_tooltip();
                 }
                 TIMER_SYNC => (*ptr).do_sync(),
@@ -817,6 +920,7 @@ pub fn run() -> windows::core::Result<()> {
         let ptr = Box::into_raw(Box::new(AppState {
             conn,
             config,
+            rules: crate::rules::Rules::load(),
             hwnd,
             nid,
             taskbar_created,

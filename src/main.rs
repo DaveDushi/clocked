@@ -9,7 +9,11 @@ mod autostart;
 mod config;
 mod db;
 mod events;
+// Foreground-app capture + rules-based classification into projects. Consumed by
+// the Windows UI layer today; portable (macOS uses a no-op capture stub).
+mod foreground;
 mod idle;
+mod rules;
 // "Keep running" relaunch is a Windows scheduled-task concept; on macOS the
 // LaunchAgent's KeepAlive (see `autostart`) covers it, so the module is Win-only.
 #[cfg(windows)]
