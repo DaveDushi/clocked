@@ -50,26 +50,29 @@ const ID_LBL_END: i32 = 1025;
 const ID_LBL_DAYS: i32 = 1026;
 const ID_TOKEN_HINT: i32 = 1027;
 const ID_STORE_TITLES: i32 = 1028;
-// Tab control + Projects-tab controls.
+// Tab control + Projects (bucket) tab controls.
 const ID_TABS: i32 = 900;
 const ID_RULES_HELP: i32 = 1200;
-const ID_LBL_DEFAULT: i32 = 1202;
-const ID_DEFAULT_BUCKET: i32 = 1203;
-const ID_COL_APP: i32 = 1204;
-const ID_COL_PROJ: i32 = 1205;
-const ID_PRIVACY_HELP: i32 = 1206;
-const ID_MATCH_HELP: i32 = 1207;
-const ID_MATCH_COL_IF: i32 = 1208;
-const ID_MATCH_COL_PROJ: i32 = 1209;
-// One row per used app: a name label + a project edit box. Ids are base + row.
-const ID_ROW_LABEL_BASE: i32 = 1300;
-const ID_ROW_PROJ_BASE: i32 = 1340;
-// Window text / domain match rules (if contains → project).
-const ID_MATCH_CONTAINS_BASE: i32 = 1400;
-const ID_MATCH_PROJ_BASE: i32 = 1410;
-// Most-used apps listed for assignment; the long tail stays on app-name fallback.
-const MAX_APP_ROWS: usize = 10;
-const MAX_MATCH_ROWS: usize = 3;
+const ID_LBL_BUCKETS: i32 = 1201;
+const ID_BUCKET_LIST: i32 = 1202;
+const ID_LBL_MEMBERS: i32 = 1203;
+const ID_MEMBER_LIST: i32 = 1204;
+const ID_NEW_BUCKET: i32 = 1205;
+const ID_ADD_BUCKET: i32 = 1206;
+const ID_DEL_BUCKET: i32 = 1207;
+const ID_ADD_TO: i32 = 1208;
+const ID_REMOVE_FROM: i32 = 1209;
+const ID_LBL_POOL: i32 = 1210;
+const ID_POOL_LIST: i32 = 1211;
+const ID_LBL_SITE: i32 = 1212;
+const ID_SITE_EDIT: i32 = 1213;
+const ID_ADD_SITE: i32 = 1214;
+const ID_LBL_DEFAULT: i32 = 1215;
+const ID_DEFAULT_BUCKET: i32 = 1216;
+const ID_BUCKET_HINT: i32 = 1217;
+
+/// Special first bucket: apps here are ignored as Non-work.
+const BUCKET_NON_WORK: &str = "Non-work";
 
 // Every General-tab control except the Advanced-gated worker URL pair, which is
 // shown/hidden by the Advanced toggle instead.
@@ -79,20 +82,35 @@ const GENERAL_CORE_IDS: &[i32] = &[
     ID_DAY_BASE + 2, ID_DAY_BASE + 3, ID_DAY_BASE + 4, ID_DAY_BASE + 5, ID_DAY_BASE + 6,
     ID_AUTOSTART, ID_KEEPALIVE, ID_STORE_TITLES, ID_ADVANCED,
 ];
-// Fixed (non-row) Projects-tab controls; the per-app rows are toggled separately.
 const PROJECT_IDS: &[i32] = &[
     ID_RULES_HELP,
-    ID_PRIVACY_HELP,
-    ID_COL_APP,
-    ID_COL_PROJ,
+    ID_LBL_BUCKETS,
+    ID_BUCKET_LIST,
+    ID_LBL_MEMBERS,
+    ID_MEMBER_LIST,
+    ID_NEW_BUCKET,
+    ID_ADD_BUCKET,
+    ID_DEL_BUCKET,
+    ID_ADD_TO,
+    ID_REMOVE_FROM,
+    ID_LBL_POOL,
+    ID_POOL_LIST,
+    ID_LBL_SITE,
+    ID_SITE_EDIT,
+    ID_ADD_SITE,
     ID_LBL_DEFAULT,
     ID_DEFAULT_BUCKET,
-    ID_MATCH_HELP,
-    ID_MATCH_COL_IF,
-    ID_MATCH_COL_PROJ,
+    ID_BUCKET_HINT,
 ];
 
 const DAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/// An item shown inside a bucket (app exe or site/title tag).
+#[derive(Clone, Debug)]
+enum MemberKey {
+    App(String),
+    Site(String),
+}
 
 /// State handed to the window so it can notify the app after a save.
 struct Ctx {
@@ -102,9 +120,14 @@ struct Ctx {
     /// Whether the Advanced (Worker URL) row is currently revealed. Tracked so a
     /// tab switch back to General can restore it correctly.
     advanced: Cell<bool>,
-    /// App executables shown in the Projects list, in row order. Captured when
-    /// the window is built so Save can pair each project box back to its app.
+    /// Live project rules edited on the Projects tab (committed on Save).
+    rules: RefCell<crate::rules::Rules>,
+    /// Known app executables (pool + assigned), lowercased.
     apps: RefCell<Vec<String>>,
+    /// Parallel to the Members listbox rows for remove/edit.
+    member_keys: RefCell<Vec<MemberKey>>,
+    /// Parallel to the Unassigned pool listbox rows.
+    pool_keys: RefCell<Vec<String>>,
 }
 
 /// The system UI font (Segoe UI on Win10/11), falling back to the stock GUI
@@ -147,7 +170,7 @@ pub fn open(main_hwnd_raw: isize, saved_msg: u32) {
             }
         }
 
-        let (w, h) = (468, 680);
+        let (w, h) = (520, 700);
         let x = (GetSystemMetrics(SM_CXSCREEN) - w) / 2;
         let y = (GetSystemMetrics(SM_CYSCREEN) - h) / 2;
         let ctx = Box::into_raw(Box::new(Ctx {
@@ -155,7 +178,10 @@ pub fn open(main_hwnd_raw: isize, saved_msg: u32) {
             saved_msg,
             font: ui_font(),
             advanced: Cell::new(false),
+            rules: RefCell::new(crate::rules::Rules::load()),
             apps: RefCell::new(Vec::new()),
+            member_keys: RefCell::new(Vec::new()),
+            pool_keys: RefCell::new(Vec::new()),
         }));
 
         match CreateWindowExW(
@@ -227,12 +253,25 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             LRESULT(0)
         }
         WM_COMMAND => {
-            match (wp.0 & 0xFFFF) as i32 {
-                ID_SAVE => save_and_close(hwnd),
-                ID_CANCEL => {
+            let id = (wp.0 & 0xFFFF) as i32;
+            let notify = ((wp.0 >> 16) & 0xFFFF) as u16;
+            match (id, notify) {
+                (ID_SAVE, _) => save_and_close(hwnd),
+                (ID_CANCEL, _) => {
                     let _ = DestroyWindow(hwnd);
                 }
-                ID_ADVANCED => toggle_advanced(hwnd),
+                (ID_ADVANCED, _) => toggle_advanced(hwnd),
+                (ID_ADD_BUCKET, _) => bucket_add(hwnd),
+                (ID_DEL_BUCKET, _) => bucket_delete(hwnd),
+                (ID_ADD_TO, _) => bucket_add_selected_app(hwnd),
+                (ID_REMOVE_FROM, _) => bucket_remove_selected_member(hwnd),
+                (ID_ADD_SITE, _) => bucket_add_site(hwnd),
+                (ID_BUCKET_LIST, n) if n == LBN_SELCHANGE as u16 => {
+                    refresh_bucket_members(hwnd);
+                    refresh_members_label(hwnd);
+                }
+                (ID_POOL_LIST, n) if n == LBN_DBLCLK as u16 => bucket_add_selected_app(hwnd),
+                (ID_MEMBER_LIST, n) if n == LBN_DBLCLK as u16 => bucket_remove_selected_member(hwnd),
                 _ => return DefWindowProcW(hwnd, msg, wp, lp),
             }
             LRESULT(0)
@@ -280,7 +319,7 @@ unsafe fn build_controls(hwnd: HWND) {
     });
 
     let m = 24; // outer margin
-    let fw = 404; // full field width
+    let fw = 456; // full field width (wider for bucket layout)
     let gap = 20;
     let half = (fw - gap) / 2;
     let right = m + half + gap;
@@ -362,11 +401,11 @@ unsafe fn build_controls(hwnd: HWND) {
     );
     edit(hwnd, ID_WORKER_URL, m, 442, fw, eh, WINDOW_STYLE(0), hinst, font);
 
-    // --- Projects page: one row per used app, assign it to a project bucket ---
+    // --- Projects page: bucket board (apps + site tags → named projects) ---
     label_id(
         hwnd,
         ID_RULES_HELP,
-        "Apps you've used — type a project next to each (or Non-work to ignore).",
+        "Project buckets — drop apps and site tags into a bucket.",
         m,
         44,
         fw,
@@ -376,8 +415,8 @@ unsafe fn build_controls(hwnd: HWND) {
     );
     label_id(
         hwnd,
-        ID_PRIVACY_HELP,
-        "App + safe site/doc context while clocked in. Full titles off by default.",
+        ID_BUCKET_HINT,
+        "Select a bucket, then add from Unassigned (or double-click). Sites use domains like acme.com.",
         m,
         64,
         fw,
@@ -385,67 +424,71 @@ unsafe fn build_controls(hwnd: HWND) {
         hinst,
         font,
     );
-    let proj_x = m + 200;
-    label_id(hwnd, ID_COL_APP, "App", m, 88, 190, lh, hinst, font);
-    label_id(hwnd, ID_COL_PROJ, "Project", proj_x, 88, fw - 200, lh, hinst, font);
-    build_app_rows(hwnd, m, 110, proj_x, fw, hinst, font);
 
-    // Match rules: if window text or domain contains X → project (zero daily effort).
-    let match_top = 110 + MAX_APP_ROWS as i32 * 30 + 8;
+    let bucket_w = 150;
+    let mid = 36; // gap + transfer buttons
+    let member_x = m + bucket_w + mid;
+    let member_w = fw - bucket_w - mid;
+    let board_top = 90;
+    let board_h = 200;
+
+    label_id(hwnd, ID_LBL_BUCKETS, "Buckets", m, board_top - 20, bucket_w, lh, hinst, font);
     label_id(
         hwnd,
-        ID_MATCH_HELP,
-        "If site/doc/window contains… (e.g. acme.com or Invoice) → project",
+        ID_LBL_MEMBERS,
+        "In this bucket",
+        member_x,
+        board_top - 20,
+        member_w,
+        lh,
+        hinst,
+        font,
+    );
+    listbox(hwnd, ID_BUCKET_LIST, m, board_top, bucket_w, board_h, hinst, font);
+    listbox(hwnd, ID_MEMBER_LIST, member_x, board_top, member_w, board_h, hinst, font);
+
+    // Transfer buttons between pool actions and board.
+    let btn_y = board_top + board_h + 8;
+    edit(hwnd, ID_NEW_BUCKET, m, btn_y, 110, eh, WINDOW_STYLE(0), hinst, font);
+    button(hwnd, ID_ADD_BUCKET, "+ New", m + 116, btn_y, 56, hinst, font, false);
+    button(hwnd, ID_DEL_BUCKET, "Delete", m + 176, btn_y, 64, hinst, font, false);
+    button(hwnd, ID_ADD_TO, "Add →", member_x, btn_y, 72, hinst, font, false);
+    button(hwnd, ID_REMOVE_FROM, "← Remove", member_x + 80, btn_y, 88, hinst, font, false);
+
+    let pool_top = btn_y + 40;
+    label_id(
+        hwnd,
+        ID_LBL_POOL,
+        "Unassigned apps — pick a bucket above, then Add (or double-click)",
         m,
-        match_top,
+        pool_top,
         fw,
         lh,
         hinst,
         font,
     );
-    label_id(hwnd, ID_MATCH_COL_IF, "Contains", m, match_top + 22, half, lh, hinst, font);
+    listbox(hwnd, ID_POOL_LIST, m, pool_top + 20, fw, 110, hinst, font);
+
+    let site_y = pool_top + 140;
     label_id(
         hwnd,
-        ID_MATCH_COL_PROJ,
-        "Project",
-        m + half + gap,
-        match_top + 22,
-        half,
+        ID_LBL_SITE,
+        "Tag a site or doc into the selected bucket (e.g. github.com or Invoice)",
+        m,
+        site_y,
+        fw,
         lh,
         hinst,
         font,
     );
-    for i in 0..MAX_MATCH_ROWS as i32 {
-        let y = match_top + 44 + i * 30;
-        edit(
-            hwnd,
-            ID_MATCH_CONTAINS_BASE + i,
-            m,
-            y,
-            half,
-            eh,
-            WINDOW_STYLE(0),
-            hinst,
-            font,
-        );
-        edit(
-            hwnd,
-            ID_MATCH_PROJ_BASE + i,
-            m + half + gap,
-            y,
-            half,
-            eh,
-            WINDOW_STYLE(0),
-            hinst,
-            font,
-        );
-    }
+    edit(hwnd, ID_SITE_EDIT, m, site_y + 20, fw - 120, eh, WINDOW_STYLE(0), hinst, font);
+    button(hwnd, ID_ADD_SITE, "Add tag", m + fw - 112, site_y + 20, 112, hinst, font, false);
 
-    let default_y = match_top + 44 + MAX_MATCH_ROWS as i32 * 30 + 10;
+    let default_y = site_y + 56;
     label_id(
         hwnd,
         ID_LBL_DEFAULT,
-        "Everything else   ?   leave blank to group by app name",
+        "Everything else   ·   leave blank to group by app name",
         m,
         default_y,
         fw,
@@ -457,7 +500,7 @@ unsafe fn build_controls(hwnd: HWND) {
         hwnd,
         ID_DEFAULT_BUCKET,
         m,
-        default_y + 22,
+        default_y + 20,
         half,
         eh,
         WINDOW_STYLE(0),
@@ -466,8 +509,8 @@ unsafe fn build_controls(hwnd: HWND) {
     );
 
     // --- Shared footer buttons ---
-    button(hwnd, ID_CANCEL, "Cancel", m + fw - 104, 600, 104, hinst, font, false);
-    button(hwnd, ID_SAVE, "Save", m + fw - 104 - 116, 600, 104, hinst, font, true);
+    button(hwnd, ID_CANCEL, "Cancel", m + fw - 104, 620, 104, hinst, font, false);
+    button(hwnd, ID_SAVE, "Save", m + fw - 104 - 116, 620, 104, hinst, font, true);
 
     populate(hwnd);
     apply_visibility(hwnd);
@@ -508,76 +551,424 @@ unsafe fn tabs(parent: HWND, x: i32, y: i32, w: i32, h: i32, hinst: HINSTANCE, f
     }
 }
 
-/// Build the per-app assignment rows: for each used app, a name label and a
-/// project edit box pre-filled with its current assignment. The apps shown are
-/// stashed on the Ctx (in row order) so Save can pair each box back to its app.
-unsafe fn build_app_rows(
+/// Scrollable listbox used by the bucket board.
+unsafe fn listbox(
     parent: HWND,
+    id: i32,
     x: i32,
-    top: i32,
-    proj_x: i32,
-    fw: i32,
+    y: i32,
+    w: i32,
+    h: i32,
     hinst: HINSTANCE,
     font: WPARAM,
 ) {
-    let rules = crate::rules::Rules::load();
-    let apps = apps_to_show(&rules);
-
-    for (i, app) in apps.iter().enumerate() {
-        let y = top + i as i32 * 30;
-        label_id(
-            parent,
-            ID_ROW_LABEL_BASE + i as i32,
-            &crate::rules::pretty_app_name(app),
-            x,
-            y + 4, // nudge to vertically center against the edit box
-            190,
-            18,
-            hinst,
-            font,
-        );
-        edit(
-            parent,
-            ID_ROW_PROJ_BASE + i as i32,
-            proj_x,
-            y,
-            fw - 200,
-            26,
-            WINDOW_STYLE(0),
-            hinst,
-            font,
-        );
-        let prefill = if rules.is_ignored(app) {
-            "Non-work"
-        } else {
-            rules.assigned(app).unwrap_or("")
-        };
-        set_text(parent, ID_ROW_PROJ_BASE + i as i32, prefill);
-    }
-
-    if let Some(ctx) = ctx_ref(parent) {
-        *ctx.apps.borrow_mut() = apps;
-    }
+    mk(
+        parent,
+        w!("LISTBOX"),
+        PCWSTR::null(),
+        WS_TABSTOP
+            | WS_VSCROLL
+            | WINDOW_STYLE((LBS_NOTIFY | LBS_NOINTEGRALHEIGHT | LBS_HASSTRINGS) as u32),
+        WS_EX_CLIENTEDGE,
+        x,
+        y,
+        w,
+        h,
+        id,
+        hinst,
+        font,
+    );
 }
 
-/// The apps to list for assignment: the most-used apps first, then any already
-/// assigned but idle so their bucket is still visible, capped so the panel never
-/// scrolls. Assignments for apps that fall past the cap are preserved on Save
-/// (it starts from the stored rules and only edits the shown rows).
+/// Apps known for the pool: most-used first, plus anything already assigned/ignored.
 fn apps_to_show(rules: &crate::rules::Rules) -> Vec<String> {
     let mut apps: Vec<String> = Vec::new();
     if let Ok(conn) = crate::db::open() {
-        if let Ok(seen) = crate::db::apps_seen(&conn, 60) {
+        if let Ok(seen) = crate::db::apps_seen(&conn, 80) {
             apps = seen;
         }
     }
-    for app in rules.assignments.keys() {
+    for app in rules.assignments.keys().chain(rules.ignore.iter()) {
+        if is_bucket_marker(app) {
+            continue;
+        }
         if !apps.iter().any(|a| a.eq_ignore_ascii_case(app)) {
             apps.push(app.clone());
         }
     }
-    apps.truncate(MAX_APP_ROWS);
     apps
+}
+
+fn is_bucket_marker(app: &str) -> bool {
+    app.starts_with("__bucket__")
+}
+
+/// Collect named project buckets from the draft rules (plus Non-work first).
+fn bucket_names(rules: &crate::rules::Rules) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    names.push(BUCKET_NON_WORK.to_string());
+    let mut rest: Vec<String> = Vec::new();
+    for (app, p) in rules.assignments.iter() {
+        let p = p.trim();
+        if p.is_empty() || p.eq_ignore_ascii_case(BUCKET_NON_WORK) {
+            continue;
+        }
+        // Markers only exist so empty buckets still appear in the list.
+        let _ = app;
+        if !rest.iter().any(|x| x.eq_ignore_ascii_case(p)) {
+            rest.push(p.to_string());
+        }
+    }
+    for r in &rules.title_rules {
+        let p = r.project.trim();
+        if p.is_empty() || p.eq_ignore_ascii_case(BUCKET_NON_WORK) {
+            continue;
+        }
+        if !rest.iter().any(|x| x.eq_ignore_ascii_case(p)) {
+            rest.push(p.to_string());
+        }
+    }
+    rest.sort_by(|a, b| a.to_ascii_lowercase().cmp(&b.to_ascii_lowercase()));
+    names.extend(rest);
+    names
+}
+
+unsafe fn listbox_clear(parent: HWND, id: i32) {
+    if let Ok(h) = GetDlgItem(Some(parent), id) {
+        SendMessageW(h, LB_RESETCONTENT, None, None);
+    }
+}
+
+unsafe fn listbox_add(parent: HWND, id: i32, text: &str) {
+    if let Ok(h) = GetDlgItem(Some(parent), id) {
+        let t = wide(text);
+        SendMessageW(h, LB_ADDSTRING, None, Some(LPARAM(t.as_ptr() as isize)));
+    }
+}
+
+unsafe fn listbox_sel(parent: HWND, id: i32) -> Option<usize> {
+    let Ok(h) = GetDlgItem(Some(parent), id) else {
+        return None;
+    };
+    let i = SendMessageW(h, LB_GETCURSEL, None, None).0;
+    if i < 0 {
+        None
+    } else {
+        Some(i as usize)
+    }
+}
+
+unsafe fn listbox_set_sel(parent: HWND, id: i32, index: i32) {
+    if let Ok(h) = GetDlgItem(Some(parent), id) {
+        SendMessageW(h, LB_SETCURSEL, Some(WPARAM(index as usize)), None);
+    }
+}
+
+/// Currently selected bucket name, if any.
+unsafe fn selected_bucket(parent: HWND) -> Option<String> {
+    let idx = listbox_sel(parent, ID_BUCKET_LIST)?;
+    let names = {
+        let ctx = ctx_ref(parent)?;
+        bucket_names(&ctx.rules.borrow())
+    };
+    names.get(idx).cloned()
+}
+
+/// Rebuild the Buckets listbox from draft rules; keep selection if possible.
+unsafe fn refresh_bucket_list(parent: HWND, prefer: Option<&str>) {
+    let (names, prefer_owned) = {
+        let Some(ctx) = ctx_ref(parent) else {
+            return;
+        };
+        (bucket_names(&ctx.rules.borrow()), prefer.map(|s| s.to_string()))
+    };
+    let prev = prefer_owned.or_else(|| selected_bucket(parent));
+    listbox_clear(parent, ID_BUCKET_LIST);
+    for n in &names {
+        listbox_add(parent, ID_BUCKET_LIST, n);
+    }
+    let sel = prev
+        .and_then(|p| {
+            names
+                .iter()
+                .position(|n| n.eq_ignore_ascii_case(&p))
+                .map(|i| i as i32)
+        })
+        .unwrap_or(0);
+    listbox_set_sel(parent, ID_BUCKET_LIST, sel);
+    refresh_members_label(parent);
+    refresh_bucket_members(parent);
+    refresh_pool(parent);
+}
+
+unsafe fn refresh_members_label(parent: HWND) {
+    let name = selected_bucket(parent).unwrap_or_else(|| "…".into());
+    set_text(parent, ID_LBL_MEMBERS, &format!("In “{name}”"));
+}
+
+/// Fill Members for the selected bucket.
+unsafe fn refresh_bucket_members(parent: HWND) {
+    let Some(ctx) = ctx_ref(parent) else {
+        return;
+    };
+    let bucket = match selected_bucket(parent) {
+        Some(b) => b,
+        None => {
+            listbox_clear(parent, ID_MEMBER_LIST);
+            ctx.member_keys.borrow_mut().clear();
+            return;
+        }
+    };
+    let rules = ctx.rules.borrow();
+    let mut keys: Vec<MemberKey> = Vec::new();
+    listbox_clear(parent, ID_MEMBER_LIST);
+
+    if bucket.eq_ignore_ascii_case(BUCKET_NON_WORK) {
+        for app in rules.ignore.iter() {
+            keys.push(MemberKey::App(app.clone()));
+            listbox_add(
+                parent,
+                ID_MEMBER_LIST,
+                &format!("app · {}", crate::rules::pretty_app_name(app)),
+            );
+        }
+    } else {
+        for (app, project) in rules.assignments.iter() {
+            if is_bucket_marker(app) {
+                continue; // empty-bucket placeholder, not a real member
+            }
+            if project.eq_ignore_ascii_case(&bucket) {
+                keys.push(MemberKey::App(app.clone()));
+                listbox_add(
+                    parent,
+                    ID_MEMBER_LIST,
+                    &format!("app · {}", crate::rules::pretty_app_name(app)),
+                );
+            }
+        }
+        for rule in &rules.title_rules {
+            if rule.project.eq_ignore_ascii_case(&bucket) {
+                keys.push(MemberKey::Site(rule.contains.clone()));
+                listbox_add(
+                    parent,
+                    ID_MEMBER_LIST,
+                    &format!("site · {}", rule.contains),
+                );
+            }
+        }
+    }
+    drop(rules);
+    *ctx.member_keys.borrow_mut() = keys;
+}
+
+/// Fill Unassigned pool (apps not in any bucket / ignore).
+unsafe fn refresh_pool(parent: HWND) {
+    let Some(ctx) = ctx_ref(parent) else {
+        return;
+    };
+    let rules = ctx.rules.borrow();
+    let apps = ctx.apps.borrow().clone();
+    let mut pool: Vec<String> = Vec::new();
+    listbox_clear(parent, ID_POOL_LIST);
+    for app in apps {
+        let key = app.trim().to_ascii_lowercase();
+        if rules.is_ignored(&key) || rules.assigned(&key).is_some() {
+            continue;
+        }
+        pool.push(key.clone());
+        listbox_add(
+            parent,
+            ID_POOL_LIST,
+            &crate::rules::pretty_app_name(&key),
+        );
+    }
+    drop(rules);
+    *ctx.pool_keys.borrow_mut() = pool;
+}
+
+unsafe fn bucket_add(parent: HWND) {
+    let name = get_text(parent, ID_NEW_BUCKET).trim().to_string();
+    if name.is_empty() {
+        return;
+    }
+    if name.eq_ignore_ascii_case(BUCKET_NON_WORK) {
+        set_text(parent, ID_NEW_BUCKET, "");
+        return;
+    }
+    // Creating a bucket only needs it to appear in the list — seed with a no-op
+    // title rule placeholder? Better: store empty assignment isn't enough.
+    // We keep empty buckets alive by writing a sentinel site tag... messy.
+    // Instead: add a zero-width placeholder via a special title rule we skip on
+    // save if empty — simplest is track extra empty bucket names in Ctx.
+    // For pure Rules model: add title_rules with contains="" is invalid.
+    // Practical approach: if brand-new, inject a temporary assignment for a
+    // fictional app "__bucket__" that we strip on save — hacky.
+    //
+    // Cleaner: store optional empty_buckets in Ctx.
+    // Keep it simple: rename flow uses NEW name by assigning first app later.
+    // For empty named buckets, stash in title_rules with contains = "\u{200B}"? no.
+    //
+    // Use a meta key in assignments: we don't.
+    // Simplest UX that works: after + New, select the new name by temporarily
+    // adding a title rule with contains = name and project = name, user can
+    // remove — bad.
+    //
+    // Ctx field `extra_buckets: RefCell<Vec<String>>` is the right approach.
+    let Some(ctx) = ctx_ref(parent) else {
+        return;
+    };
+    {
+        let rules = ctx.rules.borrow();
+        if bucket_names(&rules)
+            .iter()
+            .any(|b| b.eq_ignore_ascii_case(&name))
+        {
+            drop(rules);
+            set_text(parent, ID_NEW_BUCKET, "");
+            refresh_bucket_list(parent, Some(&name));
+            return;
+        }
+    }
+    // Mark existence with a no-op: empty assignment of a reserved key is wrong.
+    // Attach a site tag equal to the bucket name only if user adds content.
+    // We'll keep empty names by pushing a dummy title rule that save strips
+    // when contains is empty — can't.
+    //
+    // Final approach: `extra_buckets` on Ctx.
+    // Actually inject into rules by cloning and using a side list.
+    // Quick fix: add title_rules entry with contains = format!("__bucket:{name}")
+    // that classify never matches (underscore rare domains) and save filters them.
+    //
+    // Even simpler for ship: require adding an app immediately; still show
+    // the name after first assignment. For + New with no members, use
+    // reserved assignment "__bucket_marker__" = name, filtered on save and
+    // hidden from pool.
+    ctx.rules
+        .borrow_mut()
+        .assignments
+        .insert(format!("__bucket__{}", name.to_ascii_lowercase()), name.clone());
+    set_text(parent, ID_NEW_BUCKET, "");
+    refresh_bucket_list(parent, Some(&name));
+}
+
+unsafe fn bucket_delete(parent: HWND) {
+    let Some(bucket) = selected_bucket(parent) else {
+        return;
+    };
+    if bucket.eq_ignore_ascii_case(BUCKET_NON_WORK) {
+        return; // fixed bucket
+    }
+    let Some(ctx) = ctx_ref(parent) else {
+        return;
+    };
+    let mut rules = ctx.rules.borrow_mut();
+    rules.assignments.retain(|app, project| {
+        if is_bucket_marker(app) && project.eq_ignore_ascii_case(&bucket) {
+            return false;
+        }
+        if project.eq_ignore_ascii_case(&bucket) {
+            return false; // unassign apps
+        }
+        true
+    });
+    rules
+        .title_rules
+        .retain(|r| !r.project.eq_ignore_ascii_case(&bucket));
+    drop(rules);
+    refresh_bucket_list(parent, Some(BUCKET_NON_WORK));
+}
+
+unsafe fn bucket_add_selected_app(parent: HWND) {
+    let Some(bucket) = selected_bucket(parent) else {
+        return;
+    };
+    let Some(pool_idx) = listbox_sel(parent, ID_POOL_LIST) else {
+        return;
+    };
+    let Some(ctx) = ctx_ref(parent) else {
+        return;
+    };
+    let app = match ctx.pool_keys.borrow().get(pool_idx).cloned() {
+        Some(a) => a,
+        None => return,
+    };
+    let key = app.trim().to_ascii_lowercase();
+    let mut rules = ctx.rules.borrow_mut();
+    if bucket.eq_ignore_ascii_case(BUCKET_NON_WORK) {
+        rules.ignore.insert(key.clone());
+        rules.assignments.remove(&key);
+    } else {
+        rules.ignore.remove(&key);
+        rules.assignments.insert(key, bucket.clone());
+    }
+    drop(rules);
+    refresh_bucket_list(parent, Some(&bucket));
+}
+
+unsafe fn bucket_remove_selected_member(parent: HWND) {
+    let Some(bucket) = selected_bucket(parent) else {
+        return;
+    };
+    let Some(mem_idx) = listbox_sel(parent, ID_MEMBER_LIST) else {
+        return;
+    };
+    let Some(ctx) = ctx_ref(parent) else {
+        return;
+    };
+    let member = match ctx.member_keys.borrow().get(mem_idx).cloned() {
+        Some(m) => m,
+        None => return,
+    };
+    let mut rules = ctx.rules.borrow_mut();
+    match member {
+        MemberKey::App(app) => {
+            let key = app.trim().to_ascii_lowercase();
+            rules.ignore.remove(&key);
+            rules.assignments.remove(&key);
+        }
+        MemberKey::Site(contains) => {
+            rules
+                .title_rules
+                .retain(|r| !(r.contains.eq_ignore_ascii_case(&contains)
+                    && r.project.eq_ignore_ascii_case(&bucket)));
+        }
+    }
+    drop(rules);
+    refresh_bucket_list(parent, Some(&bucket));
+}
+
+unsafe fn bucket_add_site(parent: HWND) {
+    let Some(bucket) = selected_bucket(parent) else {
+        return;
+    };
+    if bucket.eq_ignore_ascii_case(BUCKET_NON_WORK) {
+        // Sites don't go to Non-work ignore; leave a hint in the field.
+        return;
+    }
+    let contains = get_text(parent, ID_SITE_EDIT).trim().to_string();
+    if contains.is_empty() {
+        return;
+    }
+    let Some(ctx) = ctx_ref(parent) else {
+        return;
+    };
+    let mut rules = ctx.rules.borrow_mut();
+    // Replace existing rule with same needle, or push.
+    if let Some(existing) = rules
+        .title_rules
+        .iter_mut()
+        .find(|r| r.contains.eq_ignore_ascii_case(&contains))
+    {
+        existing.project = bucket.clone();
+    } else {
+        rules.title_rules.push(crate::rules::TitleRule {
+            contains: contains.clone(),
+            project: bucket.clone(),
+        });
+    }
+    drop(rules);
+    set_text(parent, ID_SITE_EDIT, "");
+    refresh_bucket_list(parent, Some(&bucket));
 }
 
 unsafe fn ctx_ref<'a>(hwnd: HWND) -> Option<&'a Ctx> {
@@ -610,15 +1001,6 @@ unsafe fn apply_visibility(hwnd: HWND) {
     }
     for &id in PROJECT_IDS {
         show_ctrl(hwnd, id, !general);
-    }
-    // Per-app rows (only the ones that exist respond; missing ids are skipped).
-    for i in 0..MAX_APP_ROWS as i32 {
-        show_ctrl(hwnd, ID_ROW_LABEL_BASE + i, !general);
-        show_ctrl(hwnd, ID_ROW_PROJ_BASE + i, !general);
-    }
-    for i in 0..MAX_MATCH_ROWS as i32 {
-        show_ctrl(hwnd, ID_MATCH_CONTAINS_BASE + i, !general);
-        show_ctrl(hwnd, ID_MATCH_PROJ_BASE + i, !general);
     }
     show_ctrl(hwnd, ID_WORKER_URL_LABEL, general && advanced);
     show_ctrl(hwnd, ID_WORKER_URL, general && advanced);
@@ -922,18 +1304,14 @@ unsafe fn populate(hwnd: HWND) {
         }
     }
 
-    // Projects tab: fallback bucket + match rules.
-    let rules = crate::rules::Rules::load();
-    set_text(hwnd, ID_DEFAULT_BUCKET, &rules.default_project);
-    for i in 0..MAX_MATCH_ROWS {
-        let (contains, project) = rules
-            .title_rules
-            .get(i)
-            .map(|r| (r.contains.as_str(), r.project.as_str()))
-            .unwrap_or(("", ""));
-        set_text(hwnd, ID_MATCH_CONTAINS_BASE + i as i32, contains);
-        set_text(hwnd, ID_MATCH_PROJ_BASE + i as i32, project);
+    // Projects tab: seed draft rules + app pool, paint the bucket board.
+    if let Some(ctx) = ctx_ref(hwnd) {
+        let rules = crate::rules::Rules::load();
+        set_text(hwnd, ID_DEFAULT_BUCKET, &rules.default_project);
+        *ctx.apps.borrow_mut() = apps_to_show(&rules);
+        *ctx.rules.borrow_mut() = rules;
     }
+    refresh_bucket_list(hwnd, Some(BUCKET_NON_WORK));
 }
 
 fn fmt_hours(h: f64) -> String {
@@ -1007,40 +1385,13 @@ unsafe fn save_and_close(hwnd: HWND) {
         }
     }
 
-    // Projects tab: fold each row's project box back onto its app. Start from the
-    // existing assignments so apps not currently listed aren't lost; a blank box
-    // clears that app's assignment. Typing "Non-work" also adds to the ignore set.
-    let mut rules = crate::rules::Rules::load();
+    // Projects tab: commit the in-memory bucket board (strip empty-bucket markers).
+    let mut rules = ctx.rules.borrow().clone();
     rules.default_project = get_text(hwnd, ID_DEFAULT_BUCKET).trim().to_string();
-    let apps = ctx.apps.borrow().clone();
-    for (i, app) in apps.iter().enumerate() {
-        let project = get_text(hwnd, ID_ROW_PROJ_BASE + i as i32).trim().to_string();
-        let key = app.trim().to_ascii_lowercase();
-        if project.eq_ignore_ascii_case("non-work") || project.eq_ignore_ascii_case("ignore") {
-            rules.ignore.insert(key.clone());
-            rules.assignments.remove(&key);
-            continue;
-        }
-        rules.ignore.remove(&key);
-        if project.is_empty() {
-            rules.assignments.remove(&key);
-        } else {
-            rules.assignments.insert(key, project);
-        }
-    }
-    // Match rules: only keep rows with both fields; order preserved.
-    rules.title_rules.clear();
-    for i in 0..MAX_MATCH_ROWS {
-        let contains = get_text(hwnd, ID_MATCH_CONTAINS_BASE + i as i32)
-            .trim()
-            .to_string();
-        let project = get_text(hwnd, ID_MATCH_PROJ_BASE + i as i32)
-            .trim()
-            .to_string();
-        if !contains.is_empty() && !project.is_empty() {
-            rules.title_rules.push(crate::rules::TitleRule { contains, project });
-        }
-    }
+    rules.assignments.retain(|app, _| !is_bucket_marker(app));
+    rules
+        .title_rules
+        .retain(|r| !r.contains.trim().is_empty() && !r.project.trim().is_empty());
     if let Err(e) = rules.save() {
         crate::logln!("rules save error: {e}");
     }
