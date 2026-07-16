@@ -81,6 +81,7 @@ try {
     $tag = "v$version"
     $installer = Join-Path $repoRoot "installer\dist\clocked-setup-$version.exe"
     $stableInstaller = Join-Path $repoRoot 'installer\dist\clocked-setup.exe'
+    $extensionZip = Join-Path $repoRoot 'extension\clocked-chrome.zip'
     $cargo = Find-Cargo
     $gh = Find-GitHubCli
 
@@ -107,6 +108,25 @@ try {
         throw "Installer was not created: $installer"
     }
     Copy-Item -LiteralPath $installer -Destination $stableInstaller -Force
+
+    Write-Host 'Packing Chrome extension...' -ForegroundColor Cyan
+    $extSrc = Join-Path $repoRoot 'extension\chrome'
+    $extStage = Join-Path $repoRoot 'extension\_pack_stage'
+    if (Test-Path $extStage) { Remove-Item $extStage -Recurse -Force }
+    New-Item -ItemType Directory -Path $extStage | Out-Null
+    Copy-Item (Join-Path $extSrc 'manifest.json'),
+        (Join-Path $extSrc 'background.js'),
+        (Join-Path $extSrc 'options.html'),
+        (Join-Path $extSrc 'options.js'),
+        (Join-Path $extSrc 'popup.html'),
+        (Join-Path $extSrc 'popup.js') -Destination $extStage
+    Copy-Item (Join-Path $extSrc 'icons') -Destination (Join-Path $extStage 'icons') -Recurse
+    if (Test-Path $extensionZip) { Remove-Item $extensionZip -Force }
+    Compress-Archive -Path (Join-Path $extStage '*') -DestinationPath $extensionZip -Force
+    Remove-Item $extStage -Recurse -Force
+    if (-not (Test-Path $extensionZip)) {
+        throw "Extension zip was not created: $extensionZip"
+    }
 
     $dirtyAfterBuild = & git status --porcelain
     if ($dirtyAfterBuild) {
@@ -139,14 +159,20 @@ try {
         $releaseExists = $false
     }
     if ($releaseExists) {
-        Run-Native $gh @('release', 'upload', $tag, $installer, $stableInstaller, '--repo', $Repo, '--clobber')
+        $uploadArgs = @('release', 'upload', $tag, $installer, $stableInstaller, $extensionZip, '--repo', $Repo, '--clobber')
+        Run-Native $gh $uploadArgs
     } else {
-        Run-Native $gh @('release', 'create', $tag, $installer, $stableInstaller, '--repo', $Repo, '--title', "clocked $tag", '--notes', "Release $tag")
+        $createArgs = @(
+            'release', 'create', $tag, $installer, $stableInstaller, $extensionZip,
+            '--repo', $Repo, '--title', "clocked $tag", '--notes', "Release $tag"
+        )
+        Run-Native $gh $createArgs
     }
 
     Write-Host ''
     Write-Host "Deploy complete: https://github.com/$Repo/releases/tag/$tag" -ForegroundColor Green
     Write-Host "Installer: $installer" -ForegroundColor Green
+    Write-Host "Extension: $extensionZip" -ForegroundColor Green
 } finally {
     Pop-Location
 }

@@ -557,7 +557,8 @@ const HTML = /* html */ `<!doctype html>
         <button type="button" class="btn" id="heroSignup">Start free account</button>
         <a class="btn ghost" href="/download/mac">Download for macOS</a>
         <a class="btn ghost" href="/download/win">Download for Windows</a>
-        <div class="hintline">No browser extension. No always-on screenshots. Just power &amp; input events.</div>
+        <a class="btn ghost" href="/download/extension">Chrome extension</a>
+        <div class="hintline">Optional extension sends site hostnames to the tray app only — no screenshots, no keylogging.</div>
       </div>
       <p class="trust">Open-source desktop app · paid cloud sync &amp; email · self-host the Worker if you want</p>
     </div>
@@ -875,7 +876,8 @@ const HTML = /* html */ `<!doctype html>
         <div class="setupbox">
           <a class="btn" href="/download/mac">Download for macOS</a>
           <a class="btn" href="/download/win">Download for Windows</a>
-          <span class="muted">Install, then paste the token into Settings.</span>
+          <a class="btn ghost" href="/download/extension">Chrome extension</a>
+          <span class="muted">Install the tray app, paste the token into Settings. Optional: unzip the extension → Chrome → Load unpacked → same token in Options.</span>
         </div>
         <label style="margin-top:14px">Sync token</label>
         <div class="tokenbox">

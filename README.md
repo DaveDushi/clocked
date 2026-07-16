@@ -110,10 +110,12 @@ working hours) plus:
 
 ### Browser extension (optional)
 
-For accurate browser sites (not just window-title guesses), load the unpacked
-extension from `extension/chrome` in Chrome/Edge and paste the **same** `clk_…`
-token. The tray app listens on `http://127.0.0.1:19532` and only accepts that
-token; only hostnames are sent, never full URLs.
+For accurate browser sites (not just window-title guesses), download the
+extension zip from [clocked.daviddusi.com/download/extension](https://clocked.daviddusi.com/download/extension)
+(or use `extension/chrome` from the repo). Unzip, load unpacked in Chrome/Edge
+Developer mode, and paste the **same** `clk_…` token in Options. The tray app
+listens on `http://127.0.0.1:19532` and only accepts that token; only hostnames
+are sent, never full URLs.
 
 Local-only mode works with no config — it just won't sync or email.
 

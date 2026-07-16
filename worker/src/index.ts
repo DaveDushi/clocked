@@ -2,6 +2,7 @@ import { checkAuth } from "./auth";
 import { makeAuth } from "./auth-server";
 import { dashboardResponse } from "./dashboard";
 import {
+  downloadExtensionResponse,
   downloadMacResponse,
   downloadResponse,
   downloadWinResponse,
@@ -99,6 +100,12 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     return downloadResponse(req.headers.get("user-agent"));
   if (isDownloadMethod(req.method) && url.pathname === "/download/mac") return downloadMacResponse();
   if (isDownloadMethod(req.method) && url.pathname === "/download/win") return downloadWinResponse();
+  if (
+    isDownloadMethod(req.method) &&
+    (url.pathname === "/download/extension" || url.pathname === "/download/chrome")
+  ) {
+    return downloadExtensionResponse();
+  }
   if (req.method === "GET" && (url.pathname === "/favicon.ico" || url.pathname === "/favicon.png")) {
     return faviconResponse();
   }

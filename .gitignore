@@ -3,3 +3,5 @@
 Cargo.lock.orig
 /installer/dist
 assets/_*_preview.png
+/extension/*.zip
+/extension/_pack_stage/
