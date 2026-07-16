@@ -5,3 +5,5 @@ Cargo.lock.orig
 assets/_*_preview.png
 /extension/*.zip
 /extension/_pack_stage/
+/extension/store/*.zip
+/extension/store/_stage/

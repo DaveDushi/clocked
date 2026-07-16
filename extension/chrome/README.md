@@ -1,5 +1,7 @@
 # clocked Chrome extension
 
+**Chrome Web Store:** see `../store/LISTING.md` and upload `../store/clocked-chrome-store.zip` (run `../store/pack.ps1`).
+
 ## What it does (and does not)
 
 | Does | Does not |

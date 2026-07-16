@@ -1,16 +1,16 @@
 {
   "manifest_version": 3,
   "name": "clocked",
-  "version": "0.1.12",
-  "description": "Sends the active tab's site to the clocked desktop app for accurate time attribution. Local only.",
+  "version": "1.0.0",
+  "description": "Send the active tab's hostname to the clocked desktop app for accurate site time attribution. Local only — never uploads URLs to the cloud.",
+  "homepage_url": "https://clocked.daviddusi.com",
   "permissions": ["tabs", "storage", "alarms"],
   "host_permissions": ["http://127.0.0.1/*"],
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "service_worker": "background.js"
   },
   "action": {
-    "default_title": "clocked",
+    "default_title": "clocked — active site for desktop time tracking",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",

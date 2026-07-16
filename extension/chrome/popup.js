@@ -8,7 +8,13 @@ document.getElementById("opts").onclick = (e) => {
     "lastDomain",
     "lastOk",
   ]);
-  const { token = "", enabled = true } = await chrome.storage.sync.get(["token", "enabled"]);
+  let { token = "", enabled = true } = await chrome.storage.local.get(["token", "enabled"]);
+  if (!token) {
+    // One-time fallback if settings still live in sync from an older build.
+    const sync = await chrome.storage.sync.get(["token", "enabled"]);
+    token = sync.token || "";
+    if (sync.enabled === false) enabled = false;
+  }
   const domainEl = document.getElementById("domain");
   const statusEl = document.getElementById("status");
 
