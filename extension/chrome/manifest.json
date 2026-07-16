@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "clocked",
-  "version": "0.1.0",
+  "version": "0.1.12",
   "description": "Sends the active tab's site to the clocked desktop app for accurate time attribution. Local only.",
   "permissions": ["tabs", "storage", "alarms"],
   "host_permissions": ["http://127.0.0.1/*"],

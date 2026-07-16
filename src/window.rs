@@ -718,7 +718,6 @@ unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
         configured,
         update_label,
         update_enabled,
-        update_is_download,
     ) = {
         let app = &*ptr;
         let update = app.effective_update_status();
@@ -734,7 +733,6 @@ unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
             app.config.is_configured(),
             update.menu_label(),
             update.menu_enabled(),
-            update.download_url().is_some(),
         )
     };
 
@@ -799,17 +797,16 @@ unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
     if configured {
         let _ = AppendMenuW(menu, MF_STRING, IDM_SYNC_NOW, w!("Sync now"));
     }
-    // Hide noisy "up to date" / "checking" — only show when actionable or downloading.
-    if update_enabled || update_is_download {
-        let update_flags = if update_enabled { MF_STRING } else { MF_GRAYED };
-        let wupdate = to_wide(&update_label);
-        let _ = AppendMenuW(
-            menu,
-            update_flags,
-            IDM_DOWNLOAD_UPDATE,
-            PCWSTR(wupdate.as_ptr()),
-        );
-    }
+    // Always show updates: clickable to re-check, or opens download when one exists.
+    // Only grayed while a check is in flight (`update_enabled` false).
+    let update_flags = if update_enabled { MF_STRING } else { MF_GRAYED };
+    let wupdate = to_wide(&update_label);
+    let _ = AppendMenuW(
+        menu,
+        update_flags,
+        IDM_DOWNLOAD_UPDATE,
+        PCWSTR(wupdate.as_ptr()),
+    );
 
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
     let _ = AppendMenuW(menu, MF_STRING, IDM_QUIT, w!("Quit"));

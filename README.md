@@ -96,8 +96,9 @@ Run `clocked.exe`. It creates `%APPDATA%\clocked\data\` containing:
 
 Right-click the tray icon for a short status (tracking / today / top projects
 and sites), **Pause**, **Open timesheet**, **Settings**, optional **Sync now**,
-and **Quit**. Updates only appear when a download is available or a check is
-actionable. The **Settings** window edits `config.toml` (sync, idle, goal,
+**Check for updates**, and **Quit**. When a newer release exists the update line
+becomes a download link; otherwise it re-checks GitHub. The **Settings** window
+edits `config.toml` (sync, idle, goal,
 working hours) plus:
 
 - **Start at login** — enabled by default by the installer; a per-user

@@ -44,8 +44,9 @@ impl UpdateStatus {
                 format!("Check for updates  {}", display_version(CURRENT_VERSION))
             }
             UpdateStatus::Checking => "Checking for updates…".to_string(),
+            // Still clickable so the user can re-check; label notes current status.
             UpdateStatus::UpToDate { version } => {
-                format!("Up to date  {}", display_version(version))
+                format!("Check for updates  {} · up to date", display_version(version))
             }
             UpdateStatus::Available { version, .. } => {
                 format!("Update available  v{}", version.trim_start_matches('v'))
@@ -53,8 +54,9 @@ impl UpdateStatus {
         }
     }
 
+    /// Gray only while a check is in flight — "up to date" stays clickable to re-check.
     pub fn menu_enabled(&self) -> bool {
-        !matches!(self, UpdateStatus::Checking | UpdateStatus::UpToDate { .. })
+        !matches!(self, UpdateStatus::Checking)
     }
 
     /// How the menu should present this status given how long ago the check ran.
@@ -200,26 +202,27 @@ mod tests {
     }
 
     #[test]
-    fn up_to_date_menu_item_is_status_only() {
+    fn up_to_date_menu_item_stays_clickable() {
         let status = UpdateStatus::UpToDate {
             version: "0.1.0".to_string(),
         };
 
-        assert_eq!(status.menu_label(), "Up to date  v0.1.0");
-        assert!(!status.menu_enabled());
+        assert!(status.menu_label().contains("up to date"));
+        assert!(status.menu_label().starts_with("Check for updates"));
+        assert!(status.menu_enabled());
     }
 
     #[test]
-    fn up_to_date_reverts_to_checkable_after_ttl() {
+    fn up_to_date_reverts_to_unknown_after_ttl() {
         let ttl = Duration::from_secs(30 * 60);
         let uptodate = UpdateStatus::UpToDate {
             version: "0.1.2".to_string(),
         };
-        // Just checked: keep showing the disabled "up to date" status line.
+        // Just checked: still UpToDate (but clickable to re-check).
         let fresh = uptodate.for_menu(Some(Duration::from_secs(60)), ttl);
         assert_eq!(fresh, uptodate);
-        assert!(!fresh.menu_enabled());
-        // Past the TTL: revert to an actionable "check for updates".
+        assert!(fresh.menu_enabled());
+        // Past the TTL: revert to plain Unknown label.
         let stale = uptodate.for_menu(Some(ttl), ttl);
         assert_eq!(stale, UpdateStatus::Unknown);
         assert!(stale.menu_enabled());
