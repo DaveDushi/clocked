@@ -48,10 +48,40 @@ pub fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
             app      TEXT NOT NULL,
             title    TEXT NOT NULL,
             project  TEXT NOT NULL,
-            secs     INTEGER NOT NULL
+            secs     INTEGER NOT NULL,
+            context  TEXT NOT NULL DEFAULT ''
          );
-         CREATE INDEX IF NOT EXISTS idx_activity_ts ON activity(ts_utc);",
+         CREATE INDEX IF NOT EXISTS idx_activity_ts ON activity(ts_utc);
+         -- Daily app/project aggregates ready to sync (no titles ever leave the machine).
+         CREATE TABLE IF NOT EXISTS activity_day (
+            day      TEXT NOT NULL,
+            app      TEXT NOT NULL,
+            project  TEXT NOT NULL,
+            secs     INTEGER NOT NULL,
+            synced   INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (day, app, project)
+         );
+         CREATE INDEX IF NOT EXISTS idx_activity_day_synced ON activity_day(synced);",
     )?;
+    // Older installs created `activity` without `context` — add it if missing.
+    let has_context: bool = conn
+        .prepare("PRAGMA table_info(activity)")?
+        .query_map([], |r| r.get::<_, String>(1))?
+        .filter_map(|c| c.ok())
+        .any(|name| name == "context");
+    if !has_context {
+        let _ = conn.execute(
+            "ALTER TABLE activity ADD COLUMN context TEXT NOT NULL DEFAULT ''",
+            [],
+        );
+    }
+    // One-time scrub: blank historical titles so older installs don't keep a
+    // sensitive title corpus after upgrading to privacy defaults.
+    let scrubbed = meta_get(conn, "titles_scrubbed_v1")?.as_deref() == Some("1");
+    if !scrubbed {
+        let _ = conn.execute("UPDATE activity SET title = ''", []);
+        meta_set(conn, "titles_scrubbed_v1", "1")?;
+    }
     Ok(())
 }
 
@@ -201,9 +231,9 @@ pub fn today_total_secs(conn: &Connection, now: DateTime<Utc>) -> rusqlite::Resu
     Ok(total)
 }
 
-/// Record one heartbeat's worth of foreground activity: `secs` credited to
-/// `project`, tagged with the app/title it was classified from. Local-only —
-/// these rows never sync; they drive the per-project breakdown.
+/// Record a foreground activity segment: `secs` credited to `project`, tagged
+/// with the app, optional full title (opt-in), and privacy-safe context (domain
+/// / document). Raw rows stay local; daily aggregates sync without titles/context.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub fn record_activity(
     conn: &Connection,
@@ -213,11 +243,173 @@ pub fn record_activity(
     project: &str,
     secs: i64,
 ) -> rusqlite::Result<()> {
+    record_activity_full(conn, now, app, title, "", project, secs)
+}
+
+/// Like [`record_activity`] with an explicit context label.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn record_activity_full(
+    conn: &Connection,
+    now: DateTime<Utc>,
+    app: &str,
+    title: &str,
+    context: &str,
+    project: &str,
+    secs: i64,
+) -> rusqlite::Result<()> {
+    if secs < 1 {
+        return Ok(());
+    }
     conn.execute(
-        "INSERT INTO activity (ts_utc, app, title, project, secs) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![fmt(now), app, title, project, secs],
+        "INSERT INTO activity (ts_utc, app, title, project, secs, context)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![fmt(now), app, title, project, secs, context],
+    )?;
+    // Roll into the local calendar day aggregate for sync (no title/context).
+    let day = now.with_timezone(&Local).format("%Y-%m-%d").to_string();
+    conn.execute(
+        "INSERT INTO activity_day (day, app, project, secs, synced)
+         VALUES (?1, ?2, ?3, ?4, 0)
+         ON CONFLICT(day, app, project) DO UPDATE SET
+           secs = activity_day.secs + excluded.secs,
+           synced = 0",
+        params![day, app, project, secs],
     )?;
     Ok(())
+}
+
+/// Delete activity samples older than `retention_days`. Returns rows removed.
+pub fn prune_activity(conn: &Connection, now: DateTime<Utc>, retention_days: i64) -> rusqlite::Result<usize> {
+    let days = retention_days.max(7); // never prune more aggressively than a week
+    let cutoff = now - chrono::Duration::days(days);
+    let n = conn.execute(
+        "DELETE FROM activity WHERE ts_utc < ?1",
+        params![fmt(cutoff)],
+    )?;
+    // Drop day aggregates older than retention (keep a little longer for reports).
+    let day_cutoff = (now - chrono::Duration::days(days))
+        .with_timezone(&Local)
+        .format("%Y-%m-%d")
+        .to_string();
+    let _ = conn.execute(
+        "DELETE FROM activity_day WHERE day < ?1",
+        params![day_cutoff],
+    )?;
+    Ok(n)
+}
+
+/// A daily app/project total ready to sync (no window titles).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ActivityDayRow {
+    pub day: String,
+    pub app: String,
+    pub project: String,
+    pub secs: i64,
+}
+
+/// Unsynced daily activity aggregates (titles never included).
+pub fn unsynced_activity(conn: &Connection) -> rusqlite::Result<Vec<ActivityDayRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT day, app, project, secs FROM activity_day
+          WHERE synced = 0 AND secs > 0
+          ORDER BY day, project, app
+          LIMIT 2000",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(ActivityDayRow {
+            day: r.get(0)?,
+            app: r.get(1)?,
+            project: r.get(2)?,
+            secs: r.get(3)?,
+        })
+    })?;
+    rows.collect()
+}
+
+/// Mark day aggregates as synced after the Worker accepts them.
+pub fn mark_activity_synced(conn: &Connection, rows: &[(String, String, String)]) -> rusqlite::Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    for (day, app, project) in rows {
+        tx.execute(
+            "UPDATE activity_day SET synced = 1
+              WHERE day = ?1 AND app = ?2 AND project = ?3",
+            params![day, app, project],
+        )?;
+    }
+    tx.commit()
+}
+
+/// Re-queue all day aggregates (endpoint change).
+pub fn reset_activity_synced(conn: &Connection) -> rusqlite::Result<usize> {
+    Ok(conn.execute("UPDATE activity_day SET synced = 0 WHERE synced = 1", [])?)
+}
+
+/// Seconds per app today, busiest first (local day).
+#[allow(dead_code)] // Available for tray/settings drill-down; tray uses by_project today.
+pub fn today_by_app(conn: &Connection, now: DateTime<Utc>) -> rusqlite::Result<Vec<(String, i64)>> {
+    let day_start = local_day_start(now);
+    let mut stmt = conn.prepare(
+        "SELECT app, SUM(secs) AS total
+           FROM activity
+          WHERE ts_utc >= ?1 AND app <> ''
+          GROUP BY app
+          ORDER BY total DESC",
+    )?;
+    let rows = stmt.query_map(params![fmt(day_start)], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+    })?;
+    rows.collect()
+}
+
+/// Top privacy-safe contexts today (domains / document names), busiest first.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn today_by_context(
+    conn: &Connection,
+    now: DateTime<Utc>,
+) -> rusqlite::Result<Vec<(String, i64)>> {
+    let day_start = local_day_start(now);
+    let mut stmt = conn.prepare(
+        "SELECT context, SUM(secs) AS total
+           FROM activity
+          WHERE ts_utc >= ?1 AND context <> ''
+          GROUP BY context
+          ORDER BY total DESC",
+    )?;
+    let rows = stmt.query_map(params![fmt(day_start)], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+    })?;
+    rows.collect()
+}
+
+/// Unassigned apps with enough time to be worth a Settings nudge
+/// (≥ 30 minutes all-time). Excludes already-assigned and ignored apps.
+pub fn suggest_assignments(
+    conn: &Connection,
+    rules: &crate::rules::Rules,
+    limit: usize,
+) -> rusqlite::Result<Vec<(String, i64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT app, SUM(secs) AS total
+           FROM activity
+          WHERE app <> ''
+          GROUP BY app
+          HAVING total >= 1800
+          ORDER BY total DESC
+          LIMIT 40",
+    )?;
+    let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (app, secs) = row?;
+        if rules.assigned(&app).is_some() || rules.is_ignored(&app) {
+            continue;
+        }
+        out.push((app, secs));
+        if out.len() >= limit {
+            break;
+        }
+    }
+    Ok(out)
 }
 
 /// Seconds attributed to each project during the local calendar day containing
@@ -496,5 +688,58 @@ mod tests {
         );
         // Limit is honored (busiest kept).
         assert_eq!(apps_seen(&c, 1).unwrap(), vec!["code.exe".to_string()]);
+    }
+
+    #[test]
+    fn prune_activity_drops_old_rows() {
+        let c = mem();
+        let now = Utc::now();
+        record_activity(&c, now, "code.exe", "", "Coding", 60).unwrap();
+        record_activity(
+            &c,
+            now - chrono::Duration::days(120),
+            "old.exe",
+            "",
+            "Old",
+            60,
+        )
+        .unwrap();
+        let n = prune_activity(&c, now, 90).unwrap();
+        assert!(n >= 1);
+        assert_eq!(today_by_project(&c, now).unwrap(), vec![("Coding".into(), 60)]);
+    }
+
+    #[test]
+    fn activity_day_aggregates_and_unsynced() {
+        let c = mem();
+        let now = Utc::now();
+        record_activity(&c, now, "code.exe", "secret", "Coding", 60).unwrap();
+        record_activity(&c, now, "code.exe", "other", "Coding", 30).unwrap();
+        let pending = unsynced_activity(&c).unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].app, "code.exe");
+        assert_eq!(pending[0].project, "Coding");
+        assert_eq!(pending[0].secs, 90);
+        // Titles never appear in the sync payload.
+        let keys = vec![(
+            pending[0].day.clone(),
+            pending[0].app.clone(),
+            pending[0].project.clone(),
+        )];
+        mark_activity_synced(&c, &keys).unwrap();
+        assert!(unsynced_activity(&c).unwrap().is_empty());
+    }
+
+    #[test]
+    fn today_by_context_groups_domains() {
+        let c = mem();
+        let now = Utc::now();
+        record_activity_full(&c, now, "chrome.exe", "", "github.com", "Coding", 120).unwrap();
+        record_activity_full(&c, now, "chrome.exe", "", "github.com", "Coding", 60).unwrap();
+        record_activity_full(&c, now, "chrome.exe", "", "news.ycombinator.com", "Browsing", 30)
+            .unwrap();
+        let ctx = today_by_context(&c, now).unwrap();
+        assert_eq!(ctx[0], ("github.com".into(), 180));
+        assert_eq!(ctx[1], ("news.ycombinator.com".into(), 30));
     }
 }

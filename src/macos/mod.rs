@@ -21,8 +21,11 @@ use std::time::Duration;
 use chrono::{DateTime, Local, NaiveDate, Utc};
 use rusqlite::Connection;
 
+use crate::activity::ActivityTracker;
+use crate::bridge::BridgeState;
 use crate::config::Config;
 use crate::engine::{self, IdleDecision, OpenDecision};
+use crate::rules::Rules;
 
 /// Blocking-sync budget on quit/power-off, mirroring the Windows shutdown path.
 const SHUTDOWN_SYNC_TIMEOUT: Duration = Duration::from_secs(3);
@@ -34,6 +37,9 @@ const SHUTDOWN_SYNC_TIMEOUT: Duration = Duration::from_secs(3);
 pub struct AppState {
     conn: Connection,
     config: Config,
+    rules: Rules,
+    activity: ActivityTracker,
+    own_exe: String,
     /// Overlap guard for background sync. Shared with the worker thread (which
     /// clears it on completion), so no main-thread callback is needed.
     syncing: Arc<AtomicBool>,
@@ -45,15 +51,25 @@ pub struct AppState {
     after_hours_answer: Option<bool>,
     after_hours_date: Option<NaiveDate>,
     pending_open: Option<&'static str>,
+    /// Loopback bridge for the browser extension (active-tab domain).
+    bridge: Arc<BridgeState>,
 }
 
 impl AppState {
     pub fn new() -> AppState {
         let conn = crate::db::open().expect("open database");
         let config = Config::load();
+        let _ = crate::db::prune_activity(&conn, Utc::now(), config.activity_retention_days);
+        let bridge = BridgeState::new(config.bearer_token.clone());
         AppState {
             conn,
             config,
+            rules: Rules::load(),
+            activity: ActivityTracker::new(),
+            own_exe: std::env::current_exe()
+                .ok()
+                .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()))
+                .unwrap_or_default(),
             syncing: Arc::new(AtomicBool::new(false)),
             idle_out: false,
             paused: false,
@@ -63,6 +79,7 @@ impl AppState {
             after_hours_answer: None,
             after_hours_date: None,
             pending_open: None,
+            bridge,
         }
     }
 
@@ -87,7 +104,50 @@ impl AppState {
         }
     }
 
+    fn activity_flush(&mut self) {
+        self.activity.flush(&self.conn, Utc::now());
+    }
+
+    fn record_activity_tick(&mut self) {
+        let active = !self.paused
+            && self.is_clocked_in()
+            && (crate::idle::idle_duration().as_secs() < 60 || crate::media::in_use());
+        let now = Utc::now();
+        if !active {
+            self.activity.flush(&self.conn, now);
+            return;
+        }
+        let Some(fg) = crate::foreground::foreground() else {
+            return;
+        };
+        let own = self.own_exe.clone();
+        // Prefer extension domain when Chrome/Safari/etc. is focused.
+        let (override_ctx, title) = if is_browser_app(&fg.app) {
+            let domain = self.bridge.fresh_domain();
+            let title = self
+                .bridge
+                .fresh_title()
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| fg.title.clone());
+            (domain, title)
+        } else {
+            (None, fg.title.clone())
+        };
+        self.activity.observe(
+            &self.conn,
+            &self.rules,
+            self.config.store_titles,
+            true,
+            now,
+            &fg.app,
+            &title,
+            &own,
+            override_ctx.as_deref(),
+        );
+    }
+
     fn clock_out(&mut self, reason: &str) {
+        self.activity_flush();
         match crate::db::clock_out(&self.conn, reason, Utc::now()) {
             Ok(crate::db::ClockOut::Closed) => {
                 crate::logln!("clock out ({reason})");
@@ -111,6 +171,7 @@ impl AppState {
 
     /// Clock out and sync synchronously before returning (quit/power-off).
     fn clock_out_blocking(&mut self, reason: &str) {
+        self.activity_flush();
         match crate::db::clock_out(&self.conn, reason, Utc::now()) {
             Ok(crate::db::ClockOut::Closed) => crate::logln!("clock out ({reason})"),
             Ok(crate::db::ClockOut::DroppedEmpty) => {
@@ -152,6 +213,8 @@ impl AppState {
             self.after_hours_answer,
         ) {
             OpenDecision::ClockIn => {
+                // Cancel any deferred after-hours dialog — hours (or config) say track.
+                self.pending_open = None;
                 self.after_hours_answer = None;
                 self.after_hours_date = None;
                 self.clock_in(reason);
@@ -171,12 +234,46 @@ impl AppState {
         }
     }
 
+    /// Clock in after auto-dismissing a stale after-hours prompt / "not working"
+    /// answer once we are inside working hours (or the feature is disabled).
+    fn auto_accept_after_hours(&mut self, reason: &'static str) {
+        self.pending_open = None;
+        self.after_hours_answer = None;
+        self.after_hours_date = None;
+        crate::logln!("after-hours: auto clock-in ({reason}; now within working hours)");
+        self.clock_in(reason);
+        self.do_sync();
+    }
+
+    /// If a deferred prompt or remembered "not working" is still open when the
+    /// clock rolls into working hours, start tracking without another click.
+    fn maybe_enter_working_hours(&mut self) {
+        if self.paused || self.is_clocked_in() {
+            return;
+        }
+        let within = self.config.within_working_hours(Local::now());
+        if !engine::should_auto_accept_after_hours(within) {
+            return;
+        }
+        let reason = match self.pending_open.take() {
+            Some(r) => r,
+            None if self.after_hours_answer == Some(false) => "schedule",
+            None => return,
+        };
+        self.auto_accept_after_hours(reason);
+    }
+
     /// Answer a deferred after-hours prompt (run loop calls this on the main
-    /// thread after showing the modal).
+    /// thread after showing the modal). Re-checks working hours so a prompt that
+    /// fired before work start (or sat open past it) auto-dismisses into tracking.
     fn resolve_after_hours(&mut self, working: bool) {
         let Some(reason) = self.pending_open.take() else {
             return;
         };
+        if engine::should_auto_accept_after_hours(self.config.within_working_hours(Local::now())) {
+            self.auto_accept_after_hours(reason);
+            return;
+        }
         self.after_hours_answer = Some(working);
         self.after_hours_date = Some(Local::now().date_naive());
         if working {
@@ -221,6 +318,7 @@ impl AppState {
                 self.do_sync();
             }
             IdleDecision::ClockOutIdle { backdate_secs } => {
+                self.activity_flush();
                 let last_input = Utc::now() - chrono::Duration::seconds(backdate_secs);
                 match crate::db::clock_out(&self.conn, "idle", last_input) {
                     Ok(crate::db::ClockOut::Closed) => {
@@ -280,6 +378,7 @@ impl AppState {
     /// Toggle tracking from the menu.
     fn toggle_pause(&mut self) {
         if self.is_clocked_in() {
+            self.activity_flush();
             self.paused = true;
             self.idle_out = false;
             self.idle_warned = false;
@@ -329,6 +428,7 @@ impl AppState {
     /// One-time startup: crash recovery, first heartbeat, initial open, first
     /// update check. Mirrors the Windows startup sequence.
     pub(crate) fn on_startup(&mut self) {
+        crate::bridge::start(Arc::clone(&self.bridge), crate::bridge::DEFAULT_PORT);
         let _ = crate::db::recover_crashed(&self.conn, Utc::now());
         let _ = crate::db::heartbeat(&self.conn, Utc::now());
         self.open_event("start");
@@ -336,10 +436,16 @@ impl AppState {
         self.check_for_updates();
     }
 
-    /// 60s heartbeat: keep the crash-recovery marker fresh, then run idle logic.
+    /// 60s heartbeat: keep the crash-recovery marker fresh, then run idle logic
+    /// and sample foreground app time.
     pub(crate) fn heartbeat_tick(&mut self) {
-        let _ = crate::db::heartbeat(&self.conn, Utc::now());
+        let now = Utc::now();
+        let _ = crate::db::heartbeat(&self.conn, now);
+        self.activity.checkpoint(&self.conn, now);
+        let _ = crate::db::prune_activity(&self.conn, now, self.config.activity_retention_days);
+        self.maybe_enter_working_hours();
         self.check_idle();
+        self.record_activity_tick();
     }
 
     pub(crate) fn open_cmd(&mut self, reason: &'static str) {
@@ -359,6 +465,11 @@ impl AppState {
     }
     pub(crate) fn after_hours_answered(&mut self, working: bool) {
         self.resolve_after_hours(working);
+    }
+
+    /// Working-hours snapshot for the run loop (skip dialog if already inside hours).
+    pub(crate) fn within_working_hours_now(&self) -> Option<bool> {
+        self.config.within_working_hours(Local::now())
     }
     pub(crate) fn reclaim_answered(&mut self, reclaim: bool) {
         self.resolve_idle_reclaim(reclaim);
@@ -410,6 +521,7 @@ impl AppState {
             return;
         }
         self.config = Config::load();
+        self.bridge.set_token(&self.config.bearer_token);
         self.do_sync();
     }
 
@@ -436,4 +548,17 @@ impl AppState {
 /// Entry point for the macOS build. Delegates to the AppKit run loop.
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     runloop::run()
+}
+
+fn is_browser_app(app: &str) -> bool {
+    let a = app.to_ascii_lowercase();
+    a.contains("chrome")
+        || a.contains("msedge")
+        || a.contains("firefox")
+        || a.contains("brave")
+        || a.contains("opera")
+        || a.contains("vivaldi")
+        || a == "safari"
+        || a.contains("safari")
+        || a.ends_with("browser")
 }

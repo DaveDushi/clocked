@@ -5,8 +5,12 @@
 //! and a blank default means "label it by app name" — so a fresh install is
 //! useful with no setup at all.
 //!
-//! Assignments are made in the Settings → Projects tab (which lists the apps
-//! you've actually used and lets you drop each into a bucket) and persisted to
+//! Optional:
+//! - **ignore**: apps always bucketed as `"Non-work"` (games, Spotify, …)
+//! - **title_rules**: substring matches on the raw title **or** inferred context
+//!   (browser domain / document name) → project when the app has no assignment.
+//!
+//! Assignments are made in the Settings → Projects tab and persisted to
 //! `%APPDATA%\clocked\data\rules.toml`, which stays hand-editable.
 //!
 //! Pure and platform-agnostic, so it unit-tests on any host.
@@ -15,11 +19,11 @@
 // hiding genuine dead code on Windows.
 #![cfg_attr(not(windows), allow(dead_code))]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-/// App→project assignments plus the fallback bucket for unmatched windows.
+/// App→project assignments plus fallbacks and ignore list.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Rules {
     /// Bucket for windows with no assignment. Blank → label by app name.
@@ -28,6 +32,19 @@ pub struct Rules {
     /// Lowercased app executable (e.g. `"chrome.exe"`) → project name.
     #[serde(default)]
     pub assignments: BTreeMap<String, String>,
+    /// Lowercased apps that always count as non-work (still timed, not billable).
+    #[serde(default)]
+    pub ignore: BTreeSet<String>,
+    /// Optional title substring → project rules (case-insensitive contains).
+    #[serde(default)]
+    pub title_rules: Vec<TitleRule>,
+}
+
+/// Match when the window title contains `contains` (case-insensitive).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TitleRule {
+    pub contains: String,
+    pub project: String,
 }
 
 /// Turn an executable name into a tidy display label for the per-app fallback
@@ -45,15 +62,28 @@ pub fn pretty_app_name(app: &str) -> String {
 }
 
 impl Rules {
-    /// Project for the focused app. An explicit assignment wins; otherwise a
-    /// blank `default_project` falls back to the app's own name.
-    pub fn classify(&self, app: &str, _title: &str) -> String {
+    /// Project for the focused app. Order: ignore → assignment → title/context
+    /// rule → default / pretty app name.
+    ///
+    /// `title` is the raw window title; `context` is the privacy-safe inferred
+    /// label (domain or document). Rules match either string.
+    pub fn classify(&self, app: &str, title: &str) -> String {
+        self.classify_with_context(app, title, "")
+    }
+
+    pub fn classify_with_context(&self, app: &str, title: &str, context: &str) -> String {
         let a = app.trim().to_lowercase();
+        if self.is_ignored(&a) {
+            return "Non-work".to_string();
+        }
         if let Some(p) = self.assignments.get(&a) {
             let p = p.trim();
             if !p.is_empty() {
                 return p.to_string();
             }
+        }
+        if let Some(p) = self.match_title_rules(title, context) {
+            return p;
         }
         if self.default_project.trim().is_empty() {
             pretty_app_name(app)
@@ -62,8 +92,35 @@ impl Rules {
         }
     }
 
-    /// The project assigned to `app`, if any (ignores the fallback). Used to
-    /// pre-fill the Settings list.
+    fn match_title_rules(&self, title: &str, context: &str) -> Option<String> {
+        let title_l = title.trim().to_ascii_lowercase();
+        let ctx_l = context.trim().to_ascii_lowercase();
+        if title_l.is_empty() && ctx_l.is_empty() {
+            return None;
+        }
+        for rule in &self.title_rules {
+            let needle = rule.contains.trim();
+            if needle.is_empty() {
+                continue;
+            }
+            let n = needle.to_ascii_lowercase();
+            if (!title_l.is_empty() && title_l.contains(&n))
+                || (!ctx_l.is_empty() && (ctx_l == n || ctx_l.contains(&n)))
+            {
+                let p = rule.project.trim();
+                if !p.is_empty() {
+                    return Some(p.to_string());
+                }
+            }
+        }
+        None
+    }
+
+    pub fn is_ignored(&self, app: &str) -> bool {
+        self.ignore.contains(&app.trim().to_lowercase())
+    }
+
+    /// The project assigned to `app`, if any (ignores the fallback).
     pub fn assigned(&self, app: &str) -> Option<&str> {
         self.assignments
             .get(&app.trim().to_lowercase())
@@ -71,8 +128,7 @@ impl Rules {
             .filter(|s| !s.trim().is_empty())
     }
 
-    /// Load rules from disk, writing the default template on first run. A
-    /// malformed file falls back to defaults rather than crashing tracking.
+    /// Load rules from disk, writing the default template on first run.
     pub fn load() -> Rules {
         let Some(path) = crate::paths::rules_file() else {
             return Rules::default();
@@ -95,11 +151,23 @@ impl Rules {
     }
 
     fn to_toml(&self) -> String {
+        // Root keys first — anything after `[assignments]` would nest under that table.
         let mut out = String::from(RULES_HEADER);
         out.push_str(&format!(
-            "default_project = \"{}\"\n\n[assignments]\n",
+            "default_project = \"{}\"\n",
             escape_toml(&self.default_project)
         ));
+        out.push_str("\n# Apps that always count as Non-work (still timed).\nignore = [");
+        if self.ignore.is_empty() {
+            out.push_str("]\n");
+        } else {
+            out.push('\n');
+            for app in &self.ignore {
+                out.push_str(&format!("  \"{}\",\n", escape_toml(app)));
+            }
+            out.push_str("]\n");
+        }
+        out.push_str("\n[assignments]\n");
         for (app, project) in &self.assignments {
             if project.trim().is_empty() {
                 continue;
@@ -110,27 +178,36 @@ impl Rules {
                 escape_toml(project.trim())
             ));
         }
+        if !self.title_rules.is_empty() {
+            out.push_str("\n# Optional: title substring → project (only when titles are stored).\n");
+            for rule in &self.title_rules {
+                if rule.contains.trim().is_empty() || rule.project.trim().is_empty() {
+                    continue;
+                }
+                out.push_str("[[title_rules]]\n");
+                out.push_str(&format!(
+                    "contains = \"{}\"\nproject = \"{}\"\n",
+                    escape_toml(rule.contains.trim()),
+                    escape_toml(rule.project.trim())
+                ));
+            }
+        }
         out
     }
 }
 
-/// Escape a value for a TOML basic (double-quoted) string.
 fn escape_toml(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-/// Header comment written above the rules in `rules.toml`.
 const RULES_HEADER: &str = "# clocked rules — which app counts as which project.\n\
      # Set these from Settings → Projects, or hand-edit here.\n\
      #\n\
      # [assignments] maps an app executable to a project bucket. Unassigned apps\n\
      # go to default_project — leave it blank (\"\") to label them by app name.\n\
+     # ignore = apps that always count as Non-work.\n\
      \n";
 
-/// Written to `rules.toml` on first run. Ships with **no** assignments on
-/// purpose: the Projects tab shows the apps you actually use so you bucket those,
-/// rather than a wall of apps you may never open. Until you assign any, every app
-/// is simply labelled by its own name.
 const DEFAULT_RULES_TOML: &str = r#"# clocked rules — which app counts as which project.
 # Set these from Settings → Projects, or hand-edit here.
 #
@@ -139,9 +216,21 @@ const DEFAULT_RULES_TOML: &str = r#"# clocked rules — which app counts as whic
 
 default_project = ""
 
+# Games / personal apps — still timed, bucketed as Non-work:
+ignore = [
+  # "steam.exe",
+  # "spotify.exe",
+]
+
 [assignments]
 # "code.exe" = "Coding"
 # "chrome.exe" = "Browsing"
+
+# Optional: if window title or site/doc context contains this → project.
+# (Also editable under Settings → Projects.)
+# [[title_rules]]
+# contains = "acme.com"
+# project = "Client Acme"
 "#;
 
 #[cfg(test)]
@@ -152,9 +241,16 @@ mod tests {
         let mut assignments = BTreeMap::new();
         assignments.insert("code.exe".to_string(), "Coding".to_string());
         assignments.insert("outlook.exe".to_string(), "Email".to_string());
+        let mut ignore = BTreeSet::new();
+        ignore.insert("spotify.exe".into());
         Rules {
             default_project: "Unassigned".to_string(),
             assignments,
+            ignore,
+            title_rules: vec![TitleRule {
+                contains: "Acme".into(),
+                project: "Client Acme".into(),
+            }],
         }
     }
 
@@ -162,12 +258,12 @@ mod tests {
     fn assigned_app_maps_to_its_project() {
         let r = rules();
         assert_eq!(r.classify("code.exe", "main.rs"), "Coding");
-        assert_eq!(r.classify("OUTLOOK.EXE", "Inbox"), "Email"); // case-insensitive
+        assert_eq!(r.classify("OUTLOOK.EXE", "Inbox"), "Email");
     }
 
     #[test]
     fn unassigned_falls_to_explicit_default_when_set() {
-        let r = rules(); // default_project = "Unassigned"
+        let r = rules();
         assert_eq!(r.classify("notepad.exe", "untitled"), "Unassigned");
     }
 
@@ -176,6 +272,8 @@ mod tests {
         let r = Rules {
             default_project: String::new(),
             assignments: BTreeMap::new(),
+            ignore: BTreeSet::new(),
+            title_rules: vec![],
         };
         assert_eq!(r.classify("jean.exe", "Jean"), "Jean");
         assert_eq!(r.classify("Code.exe", "main.rs"), "Code");
@@ -184,19 +282,42 @@ mod tests {
     }
 
     #[test]
+    fn ignore_buckets_as_non_work() {
+        let r = rules();
+        assert_eq!(r.classify("spotify.exe", "Song"), "Non-work");
+        assert!(r.is_ignored("SPOTIFY.EXE"));
+    }
+
+    #[test]
+    fn title_rule_matches_when_no_app_assignment() {
+        let r = rules();
+        assert_eq!(r.classify("chrome.exe", "Acme — Docs"), "Client Acme");
+        // Explicit assignment wins over title rule.
+        assert_eq!(r.classify("code.exe", "Acme — main.rs"), "Coding");
+    }
+
+    #[test]
+    fn title_rule_matches_inferred_context_domain() {
+        let r = rules();
+        assert_eq!(
+            r.classify_with_context("chrome.exe", "secret tab title", "acme.com"),
+            "Client Acme"
+        );
+    }
+
+    #[test]
     fn assigned_reports_explicit_assignment_only() {
         let r = rules();
         assert_eq!(r.assigned("code.exe"), Some("Coding"));
         assert_eq!(r.assigned("CODE.EXE"), Some("Coding"));
-        assert_eq!(r.assigned("notepad.exe"), None); // fallback, not an assignment
+        assert_eq!(r.assigned("notepad.exe"), None);
     }
 
     #[test]
     fn shipped_default_template_is_empty_and_labels_by_app() {
         let r: Rules = toml::from_str(DEFAULT_RULES_TOML).unwrap();
         assert_eq!(r.default_project, "");
-        assert!(r.assignments.is_empty()); // no pre-seeded apps
-        // With nothing assigned, every app is labelled by its own name.
+        assert!(r.assignments.is_empty());
         assert_eq!(r.classify("code.exe", "main.rs"), "Code");
         assert_eq!(r.classify("steam.exe", "Store"), "Steam");
     }

@@ -181,6 +181,14 @@ fn menu_quit() {
 fn resolve_after_hours(working: bool) {
     with_state(|app| app.after_hours_answered(working));
 }
+
+/// Whether the deferred after-hours modal should be skipped (now inside hours).
+fn after_hours_should_auto_accept() -> bool {
+    with_state(|app| {
+        crate::engine::should_auto_accept_after_hours(app.within_working_hours_now())
+    })
+    .unwrap_or(true)
+}
 fn resolve_reclaim(reclaim: bool) {
     with_state(|app| app.reclaim_answered(reclaim));
 }
@@ -293,6 +301,11 @@ mod imp {
             }
             #[unsafe(method(afterHoursPrompt:))]
             fn after_hours_prompt(&self, _s: Option<&AnyObject>) {
+                // If work hours started while this was queued, skip the dialog.
+                if super::after_hours_should_auto_accept() {
+                    super::resolve_after_hours(true);
+                    return;
+                }
                 let working = run_yes_no(
                     "It's outside your working hours.",
                     "Are you working?",

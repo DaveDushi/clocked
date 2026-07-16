@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>clocked extension</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font: 13px/1.45 system-ui, -apple-system, Segoe UI, sans-serif;
+      margin: 0; padding: 16px 18px 20px;
+      min-width: 320px; max-width: 420px;
+    }
+    h1 { font-size: 15px; font-weight: 650; margin: 0 0 4px; }
+    p.lead { margin: 0 0 14px; color: #6b7280; font-size: 12.5px; }
+    label { display: block; font-weight: 600; margin: 12px 0 4px; font-size: 12px; }
+    input[type="text"], input[type="password"], input[type="number"] {
+      width: 100%; box-sizing: border-box; padding: 8px 10px;
+      border: 1px solid #d1d5db; border-radius: 8px; font: inherit;
+      background: transparent;
+    }
+    .row { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
+    .row label { margin: 0; font-weight: 500; }
+    button {
+      margin-top: 16px; padding: 8px 14px; border: 0; border-radius: 8px;
+      background: #f59e0b; color: #111; font-weight: 650; cursor: pointer;
+    }
+    button.secondary { background: #e5e7eb; color: #111; margin-left: 8px; }
+    #msg { margin-top: 12px; font-size: 12.5px; min-height: 1.2em; }
+    #msg.ok { color: #15803d; }
+    #msg.err { color: #b91c1c; }
+    .hint { font-size: 11.5px; color: #9ca3af; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <h1>clocked browser bridge</h1>
+  <p class="lead">
+    Sends only the active tab’s <b>hostname</b> to the clocked desktop app on this PC.
+    Use the same sync token as the tray app (Settings → Sync token).
+  </p>
+
+  <label for="token">Sync token (clk_…)</label>
+  <input id="token" type="password" autocomplete="off" placeholder="clk_…" spellcheck="false" />
+  <p class="hint">Same token as desktop Settings. Stored in Chrome sync storage.</p>
+
+  <label for="port">Desktop bridge port</label>
+  <input id="port" type="number" min="1024" max="65535" value="19532" />
+  <p class="hint">Default 19532 — only change if you customized the desktop app.</p>
+
+  <div class="row">
+    <input id="enabled" type="checkbox" checked />
+    <label for="enabled">Report active tab to clocked</label>
+  </div>
+
+  <div>
+    <button id="save" type="button">Save</button>
+    <button id="test" type="button" class="secondary">Test connection</button>
+  </div>
+  <div id="msg"></div>
+
+  <script src="options.js"></script>
+</body>
+</html>

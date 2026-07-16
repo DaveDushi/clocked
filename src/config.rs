@@ -30,6 +30,13 @@ pub struct Config {
     /// after-hours.
     #[serde(default = "default_work_days")]
     pub work_days: Vec<String>,
+    /// When true, store a *sanitized* window title with each activity sample.
+    /// Default false — only the app name is recorded (recommended).
+    #[serde(default)]
+    pub store_titles: bool,
+    /// Delete local activity samples older than this many days. Floor of 7.
+    #[serde(default = "default_activity_retention_days")]
+    pub activity_retention_days: i64,
 }
 
 fn default_idle_timeout_secs() -> u64 {
@@ -55,6 +62,10 @@ fn default_work_days() -> Vec<String> {
         .collect()
 }
 
+fn default_activity_retention_days() -> i64 {
+    crate::privacy::DEFAULT_RETENTION_DAYS
+}
+
 impl Default for Config {
     fn default() -> Self {
         Config {
@@ -65,6 +76,8 @@ impl Default for Config {
             work_start: default_work_start(),
             work_end: default_work_end(),
             work_days: default_work_days(),
+            store_titles: false,
+            activity_retention_days: default_activity_retention_days(),
         }
     }
 }
@@ -144,13 +157,21 @@ impl Config {
              # Blank work_start/work_end (or no work_days) disables the prompt. Overnight OK.\n\
              work_start = \"{work_start}\"\n\
              work_end   = \"{work_end}\"\n\
-             work_days  = [{days}]\n",
+             work_days  = [{days}]\n\
+             \n\
+             # App tracking privacy. Default: record which app was focused, never the window title.\n\
+             # store_titles = true keeps a sanitized title (emails/numbers redacted) locally only.\n\
+             store_titles = {store_titles}\n\
+             # Delete local activity samples older than this many days (minimum 7).\n\
+             activity_retention_days = {retention}\n",
             worker_url = escape_toml(&self.worker_url),
             idle = self.idle_timeout_secs,
             target = self.target_hours,
             work_start = escape_toml(&self.work_start),
             work_end = escape_toml(&self.work_end),
             days = days,
+            store_titles = self.store_titles,
+            retention = self.activity_retention_days.max(7),
         )
     }
 
@@ -260,6 +281,8 @@ mod tests {
             work_start: "08:30".to_string(),
             work_end: "16:30".to_string(),
             work_days: vec!["Mon".into(), "Wed".into(), "Fri".into()],
+            store_titles: true,
+            activity_retention_days: 60,
         };
         let reloaded: Config = toml::from_str(&c.to_toml()).unwrap();
         assert_eq!(reloaded.worker_url, c.worker_url);
@@ -268,6 +291,8 @@ mod tests {
         assert_eq!(reloaded.work_start, c.work_start);
         assert_eq!(reloaded.work_end, c.work_end);
         assert_eq!(reloaded.work_days, c.work_days);
+        assert_eq!(reloaded.store_titles, true);
+        assert_eq!(reloaded.activity_retention_days, 60);
         assert!(reloaded.bearer_token.is_empty());
         assert!(!c.to_toml().contains("s3cr3t"));
         assert!(!c.to_toml().contains("bearer_token"));

@@ -27,6 +27,7 @@ Post the copy below from your accounts (or grant a social integration later).
 - **For:** freelancers, consultants, small agencies who need honest billable hours  
 - **Not for:** workplace surveillance, keylogging, “productivity scoring”  
 - **Model:** open-source desktop tray app + paid cloud sync / dashboard / email  
+- **Privacy:** hours from power/idle; optional local app attribution (window titles **off** by default)
 
 ---
 

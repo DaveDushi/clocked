@@ -1,28 +1,29 @@
 //! Foreground-window capture: the executable name and window title of the app
 //! the user is currently focused on. The rules engine turns this into a project
-//! so each heartbeat's time can be attributed to what the user was doing.
+//! so each segment's time can be attributed to what the user was doing.
 //!
 //! Fails open (returns `None`) on any query failure so a bad read never crashes
-//! the heartbeat or attributes time to the wrong app.
+//! the tracker or attributes time to the wrong app.
 
-// Consumed only by the Windows UI layer today; the macOS build sees the stub as
-// dead code. Keep that build warning-clean without hiding real dead code on
-// Windows (where these are used).
-#![cfg_attr(not(windows), allow(dead_code))]
+#![cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
 
 /// The focused app this instant.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Foreground {
-    /// Executable file name, lowercased (e.g. `"code.exe"`). Empty if unknown.
+    /// Executable file name, lowercased (e.g. `"code.exe"` / `"Code"` on macOS).
     pub app: String,
-    /// Window title as shown in the title bar. Empty if none.
+    /// Window title as shown in the title bar. Empty if none. Callers must run
+    /// this through [`crate::privacy::title_for_storage`] before persisting.
     pub title: String,
 }
 
 #[cfg(windows)]
 pub use windows_impl::foreground;
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+pub use macos_impl::foreground;
+
+#[cfg(not(any(windows, target_os = "macos")))]
 pub use stub::foreground;
 
 #[cfg(windows)]
@@ -92,12 +93,45 @@ mod windows_impl {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+mod macos_impl {
+    //! Frontmost application via `NSWorkspace`. Titles are left empty (privacy
+    //! default; Accessibility would be required for window titles).
+
+    use super::Foreground;
+    use objc2_app_kit::NSWorkspace;
+
+    pub fn foreground() -> Option<Foreground> {
+        let workspace = NSWorkspace::sharedWorkspace();
+        let app = workspace.frontmostApplication()?;
+        let name = app
+            .localizedName()
+            .map(|s| s.to_string())
+            .filter(|s| !s.trim().is_empty());
+        let bundle = app
+            .bundleIdentifier()
+            .map(|s| s.to_string())
+            .filter(|s| !s.trim().is_empty());
+        let app_key = name
+            .or(bundle)
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase()
+            .replace(' ', "");
+        if app_key.is_empty() {
+            return None;
+        }
+        Some(Foreground {
+            app: app_key,
+            title: String::new(),
+        })
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod stub {
     use super::Foreground;
 
-    /// No foreground capture off Windows yet; the rules engine simply records no
-    /// samples. macOS support is a tracked follow-up.
     pub fn foreground() -> Option<Foreground> {
         None
     }

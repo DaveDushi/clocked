@@ -23,6 +23,7 @@ import {
   runMarketingAgent,
 } from "./marketing-agent";
 import { buildAndSendReport, sendContactSales, sendMonthlyReports, SEND_DAY_LAST } from "./email";
+import { handleActivityIngest, projectTotalsForPeriod } from "./activity";
 import { handleIngest } from "./ingest";
 import { buildHoursReport, buildReportCsv } from "./report";
 import {
@@ -43,7 +44,7 @@ import { formatHM, localYMD, monthBoundsUtc, previousMonthPeriod, wallToUtc } fr
 import {
   effectiveMemberCap,
   effectiveOrgPlan,
-  isPaidBillingStatus,
+  isPaidBillingStatusWithGrace,
   planLabel,
 } from "./plans";
 import {
@@ -191,7 +192,9 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     if (user instanceof Response) return user;
     const period = resolvePeriod(url, env);
     if (!period) return json({ error: "invalid period" }, 400);
-    return json(await buildHoursReport(env, period, user.id));
+    const report = await buildHoursReport(env, period, user.id);
+    const projects = await projectTotalsForPeriod(env, user.id, period);
+    return json({ ...report, projects });
   }
 
   // ---- Team (manager) API.
@@ -395,8 +398,38 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
           403,
         );
       }
+      if (!(await rateLimitAllowDurable(env.DB, `manual-session:${user.id}`, 60, 60 * 60_000))) {
+        return json({ error: "too many requests" }, 429);
+      }
     }
     return handleManualSession(req, url, env, user.id);
+  }
+
+  // Privacy: export this account's cloud data (sessions + activity aggregates).
+  if (url.pathname === "/api/export" && req.method === "GET") {
+    const user = await requirePaidUser(req, env);
+    if (user instanceof Response) return user;
+    if (!(await rateLimitAllowDurable(env.DB, `export:${user.id}`, 6, 60 * 60_000))) {
+      return json({ error: "too many requests" }, 429);
+    }
+    return handleDataExport(env, user);
+  }
+
+  // Privacy: delete this account's clocked data + revoke tokens. Does not cancel Stripe
+  // (use the billing portal); does not remove better-auth user rows (session cookie
+  // still works until sign-out) but product data is gone.
+  if (url.pathname === "/api/account/delete" && req.method === "POST") {
+    const user = await requireVerifiedUser(req, env);
+    if (user instanceof Response) return user;
+    if (!(await rateLimitAllowDurable(env.DB, `account-delete:${user.id}`, 3, 60 * 60_000))) {
+      return json({ error: "too many requests" }, 429);
+    }
+    const body = (await req.json().catch(() => ({}))) as { confirm?: unknown };
+    if (body.confirm !== "DELETE") {
+      return json({ error: 'send { "confirm": "DELETE" } to proceed' }, 400);
+    }
+    await deleteUserClockedData(env, user.id);
+    return json({ ok: true });
   }
 
   if (url.pathname === "/api/settings") {
@@ -488,6 +521,23 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     return json({ error: "unauthorized" }, 401);
   }
 
+  // Daily app/project aggregates — per-account tokens only (no legacy unattributed path).
+  if (req.method === "POST" && url.pathname === "/activity") {
+    if (!(await rateLimitAllowDurable(env.DB, `activity:${ip}`, 60, 60_000))) {
+      return json({ error: "too many requests" }, 429);
+    }
+    const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+    const userId = await userIdForToken(env, bearer);
+    if (!userId) return json({ error: "unauthorized" }, 401);
+    if (!(await userHasPaidAccess(env, userId))) {
+      return json({ error: "subscription required" }, 402);
+    }
+    if (!(await rateLimitAllowDurable(env.DB, `activity:user:${userId}`, 120, 60_000))) {
+      return json({ error: "too many requests" }, 429);
+    }
+    return handleActivityIngest(req, env, userId);
+  }
+
   return json({ error: "not found" }, 404);
 }
 
@@ -555,6 +605,7 @@ interface MembershipRow {
   metadata: string | null;
   memberCount: number;
   billingStatus: string | null;
+  billingUpdatedAt: number | null;
 }
 
 /** Orgs the user belongs to, with paid-aware plan/cap for the dashboard. */
@@ -562,7 +613,8 @@ async function membershipsFor(env: Env, userId: string) {
   const res = await env.DB.prepare(
     `SELECT m.organizationId AS organizationId, m.role AS role, o.name AS name, o.metadata AS metadata,
             (SELECT COUNT(*) FROM member m2 WHERE m2.organizationId = o.id) AS memberCount,
-            b.status AS billingStatus
+            b.status AS billingStatus,
+            b.updatedAt AS billingUpdatedAt
        FROM member m JOIN organization o ON o.id = m.organizationId
        LEFT JOIN org_billing b ON b.organizationId = o.id
       WHERE m.userId = ?
@@ -575,7 +627,7 @@ async function membershipsFor(env: Env, userId: string) {
     (res.results ?? []).map(async (r) => {
       const plan = await effectiveOrgPlan(env, r.organizationId, r.metadata);
       const cap = await effectiveMemberCap(env, r.organizationId);
-      const paid = isPaidBillingStatus(r.billingStatus);
+      const paid = isPaidBillingStatusWithGrace(r.billingStatus, r.billingUpdatedAt);
       return {
         organizationId: r.organizationId,
         role: r.role,
@@ -739,6 +791,59 @@ async function isMemberOf(env: Env, userId: string, organizationId: string): Pro
     .bind(userId, organizationId)
     .first<{ ok: number }>();
   return !!row;
+}
+
+/** JSON dump of cloud sessions + activity for GDPR-style portability. */
+async function handleDataExport(env: Env, user: SessionUser): Promise<Response> {
+  const sessions = await env.DB.prepare(
+    `SELECT id, start_utc, end_utc, start_reason, end_reason
+       FROM sessions WHERE user_id = ? ORDER BY start_utc`,
+  )
+    .bind(user.id)
+    .all();
+  let activity: unknown[] = [];
+  try {
+    const act = await env.DB.prepare(
+      `SELECT day, app, project, secs, updated_at FROM activity_day
+        WHERE user_id = ? ORDER BY day, app, project`,
+    )
+      .bind(user.id)
+      .all();
+    activity = act.results ?? [];
+  } catch {
+    /* migration not applied */
+  }
+  const body = {
+    exportedAt: new Date().toISOString(),
+    user: { id: user.id, email: user.email },
+    sessions: sessions.results ?? [],
+    activity,
+  };
+  return new Response(JSON.stringify(body, null, 2), {
+    status: 200,
+    headers: {
+      "content-type": "application/json",
+      "content-disposition": `attachment; filename="clocked-export-${user.id.slice(0, 8)}.json"`,
+    },
+  });
+}
+
+/** Wipe product data for a user (sessions, activity, tokens, settings). */
+async function deleteUserClockedData(env: Env, userId: string): Promise<void> {
+  const steps = [
+    env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?`).bind(userId),
+    env.DB.prepare(`DELETE FROM api_token WHERE userId = ?`).bind(userId),
+    env.DB.prepare(`DELETE FROM user_settings WHERE userId = ?`).bind(userId),
+    env.DB.prepare(`DELETE FROM activity_day WHERE user_id = ?`).bind(userId),
+    env.DB.prepare(`DELETE FROM session_deletions WHERE user_id = ?`).bind(userId),
+  ];
+  for (const s of steps) {
+    try {
+      await s.run();
+    } catch (e) {
+      console.error("deleteUserClockedData step failed:", String((e as Error)?.message ?? e));
+    }
+  }
 }
 
 function isEmail(s: string): boolean {

@@ -23,7 +23,12 @@ use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::Shell::{ShellExecuteW, NOTIFYICONDATAW};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
+use std::sync::Arc;
+
+use crate::activity::ActivityTracker;
+use crate::bridge::BridgeState;
 use crate::config::Config;
+use crate::engine::{self, IdleDecision, OpenDecision};
 use crate::events::{map_power, map_session, Action};
 
 const CLASS_NAME: PCWSTR = w!("ClockedHiddenWindow");
@@ -38,6 +43,8 @@ const WM_PROMPT_IDLE_RECLAIM: u32 = WM_APP + 6;
 const TIMER_HEARTBEAT: usize = 1;
 const TIMER_SYNC: usize = 2;
 const TIMER_UPDATE_CHECK: usize = 3;
+/// Fast poll for foreground focus changes (segment-accurate app timing).
+const TIMER_ACTIVITY: usize = 4;
 
 // Blocking-sync budget on shutdown/quit. Windows only guarantees a few seconds
 // after `WM_QUERYENDSESSION`, so keep this well under that.
@@ -55,30 +62,9 @@ const IDM_PAUSE: usize = 106;
 const IDM_SETTINGS: usize = 107;
 const IDM_DOWNLOAD_UPDATE: usize = 108;
 
-// Warn this many seconds before an idle auto-clock-out.
-const IDLE_WARN_LEAD_SECS: u64 = 120;
-
-// After an idle auto-clock-out, offer to reclaim the away time as worked when
-// the gap sits in this range. Below the floor there's nothing worth asking
-// about; above the ceiling it was almost certainly a genuine long absence
-// (lunch, end of day) we shouldn't backfill.
-const RECLAIM_MIN_SECS: i64 = 3 * 60;
-const RECLAIM_MAX_SECS: i64 = 4 * 60 * 60;
-
-// A live mic/camera only vouches for presence up to this long without any
-// keyboard/mouse input. Beyond it, we assume a call was left open (walked away
-// from a meeting) and let the normal idle clock-out run so time isn't inflated.
-const MEDIA_PRESENCE_MAX_SECS: u64 = 4 * 60 * 60;
-
-// The heartbeat timer fires once a minute; each active tick credits this many
-// seconds to the focused window's project. Keep in sync with the TIMER_HEARTBEAT
-// interval below.
-const HEARTBEAT_SECS: u64 = 60;
-
-// How many projects the tray "Today by project" breakdown lists individually
-// before the rest are rolled into a single "Other" line, so the menu stays short
-// no matter how many apps were touched.
-const BREAKDOWN_MAX_ROWS: usize = 4;
+// Keep the tray short: a few project lines, at most one site line.
+const BREAKDOWN_MAX_ROWS: usize = 3;
+const CONTEXT_MAX_ROWS: usize = 2;
 
 struct AppState {
     conn: Connection,
@@ -130,6 +116,12 @@ struct AppState {
     /// When the last update check completed. Lets a stale "up to date" revert to
     /// a checkable "check for updates" after `UP_TO_DATE_TTL`.
     update_checked_at: Option<Instant>,
+    /// Continuous foreground segment accumulator (app / project timing).
+    activity: ActivityTracker,
+    /// Lowercased own exe so we never attribute time to clocked's UI.
+    own_exe: String,
+    /// Loopback bridge for the Chrome extension (active-tab domain).
+    bridge: Arc<BridgeState>,
 }
 
 impl AppState {
@@ -172,9 +164,8 @@ impl AppState {
         self.clock_out(reason);
     }
 
-    /// A "computer opened" moment (wake / unlock / app start). Inside working
-    /// hours we just clock in; outside them we ask once for this physical open
-    /// cycle whether the user is actually working before tracking anything.
+    /// A "computer opened" moment (wake / unlock / app start). Policy comes from
+    /// [`engine::decide_open`] so Windows and macOS stay in lockstep.
     fn open_event(&mut self, reason: &'static str) {
         // Opening the machine always resumes tracking: a manual pause lasts only
         // until the next open (wake / unlock / app start), so the user never has
@@ -184,43 +175,34 @@ impl AppState {
             crate::logln!("resumed (open)");
         }
         let now = Local::now();
-        match self.config.within_working_hours(now) {
-            None | Some(true) => {
-                // Feature off, or inside hours: fresh slate for tonight.
+        // A new local day is a fresh after-hours stretch.
+        if self.after_hours_date != Some(now.date_naive()) {
+            self.after_hours_answer = None;
+        }
+        match engine::decide_open(
+            self.config.within_working_hours(now),
+            self.after_hours_answer,
+        ) {
+            OpenDecision::ClockIn => {
+                // Cancel any deferred after-hours dialog — hours (or config) say track.
+                self.pending_open = None;
                 self.after_hours_answer = None;
                 self.after_hours_date = None;
                 self.clock_in(reason);
                 self.do_sync();
             }
-            Some(false) => {
-                // A new local day is a fresh after-hours stretch: ask again even
-                // if the machine never re-entered working hours in between (e.g.
-                // opening the laptop on a Saturday when the app stayed running
-                // since Friday). Otherwise a stale "not working" would silently
-                // suppress the prompt all weekend.
-                if self.after_hours_date != Some(now.date_naive()) {
-                    self.after_hours_answer = None;
-                }
-                match self.after_hours_answer {
-                    Some(true) => {
-                        self.clock_in(reason);
-                        self.do_sync();
-                    }
-                    Some(false) => {} // already told us they're not working
-                    None => {
-                        // Defer the modal out of the power/session callback. A
-                        // wake fires both a resume and an unlock, and the second
-                        // often lands while the first modal is already up (the
-                        // modal pumps messages). `pending_open` stays set for the
-                        // whole prompt lifecycle, so only the first event queues a
-                        // modal.
-                        if self.pending_open.is_none() {
-                            self.pending_open = Some(reason);
-                            let _ = unsafe {
-                                PostMessageW(Some(self.hwnd), WM_PROMPT_AFTER_HOURS, WPARAM(0), LPARAM(0))
-                            };
-                        }
-                    }
+            OpenDecision::ClockInAfterHours => {
+                self.clock_in(reason);
+                self.do_sync();
+            }
+            OpenDecision::Skip => {}
+            OpenDecision::Prompt => {
+                // Defer the modal out of the power/session callback.
+                if self.pending_open.is_none() {
+                    self.pending_open = Some(reason);
+                    let _ = unsafe {
+                        PostMessageW(Some(self.hwnd), WM_PROMPT_AFTER_HOURS, WPARAM(0), LPARAM(0))
+                    };
                 }
             }
         }
@@ -241,13 +223,63 @@ impl AppState {
         r == IDYES
     }
 
+    /// Clock in after auto-dismissing a stale after-hours prompt / "not working"
+    /// answer once we are inside working hours (or the feature is disabled).
+    fn auto_accept_after_hours(&mut self, reason: &'static str) {
+        self.pending_open = None;
+        self.after_hours_answer = None;
+        self.after_hours_date = None;
+        crate::logln!("after-hours: auto clock-in ({reason}; now within working hours)");
+        self.clock_in(reason);
+        self.do_sync();
+    }
+
+    /// If a deferred prompt or remembered "not working" is still open when the
+    /// clock rolls into working hours, start tracking without another click.
+    /// Safe to call from the heartbeat (including nested while a MessageBox is up).
+    fn maybe_enter_working_hours(&mut self) {
+        if self.paused || self.is_clocked_in() {
+            return;
+        }
+        let within = self.config.within_working_hours(Local::now());
+        if !engine::should_auto_accept_after_hours(within) {
+            return;
+        }
+        // Only auto-start when we previously deferred/asked after hours — do not
+        // invent sessions for machines that simply sat idle overnight unopened.
+        let reason = match self.pending_open.take() {
+            Some(r) => r,
+            None if self.after_hours_answer == Some(false) => "schedule",
+            None => return,
+        };
+        self.auto_accept_after_hours(reason);
+    }
+
     /// Answer a deferred after-hours prompt: track if working, stay out if not,
     /// and remember the choice until the next lock/suspend.
+    ///
+    /// Re-checks working hours before *and* after the modal so a prompt that
+    /// fired before 9:00 (or sat open past start) auto-dismisses into tracking.
     fn resolve_after_hours(&mut self) {
         let Some(reason) = self.pending_open else {
             return;
         };
+        // Already inside hours (e.g. delayed WM_PROMPT after a later open_event
+        // clocked us in, or the heartbeat cleared the latch): skip the dialog.
+        if engine::should_auto_accept_after_hours(self.config.within_working_hours(Local::now())) {
+            self.auto_accept_after_hours(reason);
+            return;
+        }
         let working = self.prompt_are_you_working();
+        // Dialog may have been left open past work start — heartbeats can also
+        // clear `pending_open` while MessageBox runs its nested pump.
+        if self.pending_open.is_none() {
+            return;
+        }
+        if engine::should_auto_accept_after_hours(self.config.within_working_hours(Local::now())) {
+            self.auto_accept_after_hours(reason);
+            return;
+        }
         // Clear the in-flight marker only now, after the modal is answered, so
         // any wake event that arrived while it was up couldn't stack a second
         // prompt (`open_event` skips posting while `pending_open` is set).
@@ -267,6 +299,7 @@ impl AppState {
     /// "not working" decision so a fresh session opens.
     fn toggle_pause(&mut self) {
         if self.is_clocked_in() {
+            self.activity_flush();
             self.paused = true;
             self.idle_out = false;
             self.idle_warned = false;
@@ -288,38 +321,42 @@ impl AppState {
     }
 
     /// Stop the clock after a stretch of inactivity, resume it on the first
-    /// input afterwards. Called from the heartbeat timer. Backdates the idle
-    /// clock-out to the last input so the dead time isn't counted.
+    /// input afterwards. Decisions come from [`engine::decide_idle`].
     fn check_idle(&mut self) {
-        if self.paused {
-            return; // manual pause overrides idle handling entirely
-        }
-        let timeout = self.config.idle_timeout_secs;
-        if timeout == 0 {
-            return; // idle detection disabled
-        }
         let idle_secs = crate::idle::idle_duration().as_secs();
-
-        if idle_secs >= timeout {
-            // A live mic or camera means the user is on a call/meeting: count it
-            // as present even with no keyboard/mouse input, so we never clock out
-            // mid-meeting. Resume first if a prior idle-out latched us off.
-            if idle_secs < MEDIA_PRESENCE_MAX_SECS && crate::media::in_use() {
-                self.idle_warned = false;
-                if self.idle_out && self.pending_reclaim.is_none() {
-                    self.clock_in("call");
-                    self.do_sync();
+        let params = engine::IdleParams {
+            paused: self.paused,
+            timeout_secs: self.config.idle_timeout_secs,
+            idle_secs,
+            in_call: crate::media::in_use(),
+            clocked_in: self.is_clocked_in(),
+            idle_out: self.idle_out,
+            reclaim_pending: self.pending_reclaim.is_some(),
+            idle_warned: self.idle_warned,
+            idle_since_secs_ago: self.idle_since.map(|s| (Utc::now() - s).num_seconds()),
+        };
+        match engine::decide_idle(&params) {
+            IdleDecision::Nothing => {
+                // Clear the one-shot warn flag once the user is active again.
+                let warn_at = self
+                    .config
+                    .idle_timeout_secs
+                    .saturating_sub(engine::IDLE_WARN_LEAD_SECS);
+                if idle_secs < warn_at {
+                    self.idle_warned = false;
                 }
-                return;
             }
-            let clocked_in = matches!(crate::db::open_session_start(&self.conn), Ok(Some(_)));
-            if clocked_in {
-                // Backdate to the last input so the idle stretch isn't counted.
-                let ago = chrono::Duration::seconds(idle_secs as i64);
-                let last_input = Utc::now() - ago;
+            IdleDecision::ResumeFromCall => {
+                self.idle_warned = false;
+                self.clock_in("call");
+                self.do_sync();
+            }
+            IdleDecision::ClockOutIdle { backdate_secs } => {
+                self.activity_flush();
+                let last_input = Utc::now() - chrono::Duration::seconds(backdate_secs);
                 match crate::db::clock_out(&self.conn, "idle", last_input) {
                     Ok(crate::db::ClockOut::Closed) => {
-                        crate::logln!("clock out (idle {idle_secs}s)");
+                        crate::logln!("clock out (idle {backdate_secs}s)");
                         self.idle_out = true;
                         self.idle_since = Some(last_input);
                         self.idle_warned = false;
@@ -327,10 +364,7 @@ impl AppState {
                         self.do_sync();
                     }
                     Ok(crate::db::ClockOut::DroppedEmpty) => {
-                        // Whole span was idle (backdated before its start); drop
-                        // it but still latch idle so activity reopens tracking.
-                        // No worked session existed, so nothing to reclaim.
-                        crate::logln!("ignored empty session (idle {idle_secs}s)");
+                        crate::logln!("ignored empty session (idle {backdate_secs}s)");
                         self.idle_out = true;
                         self.idle_since = None;
                         self.idle_warned = false;
@@ -340,43 +374,32 @@ impl AppState {
                     Err(e) => crate::logln!("idle clock_out error: {e}"),
                 }
             }
-        } else if self.idle_out {
-            // Input returned after an idle auto-clock-out.
-            if self.pending_reclaim.is_some() {
-                return; // reclaim modal is already up; it resumes tracking
-            }
-            self.idle_warned = false;
-            // Offer to reclaim the away time as worked (a meeting, a call on
-            // another device, reading) when the gap is worth asking about.
-            if let Some(since) = self.idle_since {
-                let gap = (Utc::now() - since).num_seconds();
-                if (RECLAIM_MIN_SECS..=RECLAIM_MAX_SECS).contains(&gap) {
+            IdleDecision::PromptReclaim { .. } => {
+                self.idle_warned = false;
+                if let Some(since) = self.idle_since {
                     self.pending_reclaim = Some(since);
                     let _ = unsafe {
                         PostMessageW(Some(self.hwnd), WM_PROMPT_IDLE_RECLAIM, WPARAM(0), LPARAM(0))
                     };
-                    return;
+                } else {
+                    self.clock_in("active");
+                    self.do_sync();
                 }
             }
-            self.clock_in("active");
-            self.do_sync();
-        } else {
-            // Still counting time: warn once as we approach the idle cutoff —
-            // unless a live mic/camera means we're on a call and won't clock out.
-            let warn_at = timeout.saturating_sub(IDLE_WARN_LEAD_SECS);
-            if idle_secs < warn_at {
+            IdleDecision::ResumeActive => {
                 self.idle_warned = false;
-            } else if warn_at > 0 && !self.idle_warned && !crate::media::in_use() {
-                let clocked_in = matches!(crate::db::open_session_start(&self.conn), Ok(Some(_)));
-                if clocked_in {
-                    let mins = (timeout - idle_secs + 59) / 60;
-                    crate::tray::notify(
-                        &self.nid,
-                        "clocked",
-                        &format!("No activity — clocking out in ~{mins} min unless you return."),
-                    );
-                    self.idle_warned = true;
-                }
+                self.clock_in("active");
+                self.do_sync();
+            }
+            IdleDecision::Warn { minutes_left } => {
+                crate::tray::notify(
+                    &self.nid,
+                    "clocked",
+                    &format!(
+                        "No activity — clocking out in ~{minutes_left} min unless you return."
+                    ),
+                );
+                self.idle_warned = true;
             }
         }
     }
@@ -384,11 +407,18 @@ impl AppState {
     /// Resolve a queued idle-reclaim prompt: ask whether the away stretch was
     /// working time and either backfill it from `idle_since` or resume from now.
     fn resolve_idle_reclaim(&mut self) {
-        let Some(since) = self.pending_reclaim.take() else {
+        // Keep `pending_reclaim` set for the whole modal. `MessageBoxW` runs a
+        // nested message loop, so heartbeat timers still fire; if we cleared
+        // the guard first, each tick would re-queue another "you were away"
+        // prompt (with a climbing minute count as wall time advances).
+        let Some(since) = self.pending_reclaim else {
             return;
         };
         let mins = ((Utc::now() - since).num_seconds().max(0) + 30) / 60;
-        if self.prompt_reclaim(mins) {
+        let reclaim = self.prompt_reclaim(mins);
+        // Clear only after the answer, matching `resolve_after_hours`.
+        self.pending_reclaim = None;
+        if reclaim {
             self.clock_in_at("reclaimed", since);
             crate::logln!("reclaimed idle time ({mins} min)");
         } else {
@@ -417,44 +447,52 @@ impl AppState {
         r == IDYES
     }
 
-    /// Attribute this heartbeat's minute to the focused app's project. Records a
-    /// local-only activity sample when clocked in and active; paused/idle ticks
-    /// and unreadable foregrounds are skipped so dead time and background windows
-    /// aren't credited.
+    /// Sample the focused window into the activity tracker. Active only while
+    /// clocked in, not paused, and either recently active or on a call.
     fn record_activity_tick(&mut self) {
-        if self.paused || !self.is_clocked_in() {
-            return;
-        }
-        // Only credit the interval when there was input in the last minute, or a
-        // live mic/camera vouches for presence on a call. Mirrors the idle
-        // presence rules so away stretches aren't pinned on whatever window
-        // happened to hold focus.
-        let idle_secs = crate::idle::idle_duration().as_secs();
-        if idle_secs >= HEARTBEAT_SECS && !crate::media::in_use() {
+        let active = !self.paused
+            && self.is_clocked_in()
+            && (crate::idle::idle_duration().as_secs() < 60 || crate::media::in_use());
+        let now = Utc::now();
+        if !active {
+            self.activity.flush(&self.conn, now);
             return;
         }
         let Some(fg) = crate::foreground::foreground() else {
             return;
         };
-        // Don't attribute time to clocked's own windows (tray menu, settings) —
-        // reading the tracker isn't work on a project.
-        if fg.app == own_exe_name() {
-            return;
-        }
-        let project = self.rules.classify(&fg.app, &fg.title);
-        if let Err(e) = crate::db::record_activity(
+        let own = self.own_exe.clone();
+        // Prefer extension domain when Chrome/Edge/etc. is focused.
+        let (override_ctx, title) = if is_browser_app(&fg.app) {
+            let domain = self.bridge.fresh_domain();
+            let title = self
+                .bridge
+                .fresh_title()
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| fg.title.clone());
+            (domain, title)
+        } else {
+            (None, fg.title.clone())
+        };
+        self.activity.observe(
             &self.conn,
-            Utc::now(),
+            &self.rules,
+            self.config.store_titles,
+            true,
+            now,
             &fg.app,
-            &fg.title,
-            &project,
-            HEARTBEAT_SECS as i64,
-        ) {
-            crate::logln!("record_activity error: {e}");
-        }
+            &title,
+            &own,
+            override_ctx.as_deref(),
+        );
+    }
+
+    fn activity_flush(&mut self) {
+        self.activity.flush(&self.conn, Utc::now());
     }
 
     fn clock_out(&mut self, reason: &str) {
+        self.activity_flush();
         match crate::db::clock_out(&self.conn, reason, Utc::now()) {
             Ok(crate::db::ClockOut::Closed) => {
                 crate::logln!("clock out ({reason})");
@@ -474,6 +512,7 @@ impl AppState {
     /// where the spawned background sync would be killed with the process; a
     /// short timeout keeps us from stalling the exit if the network is down.
     fn clock_out_blocking(&mut self, reason: &str) {
+        self.activity_flush();
         match crate::db::clock_out(&self.conn, reason, Utc::now()) {
             Ok(crate::db::ClockOut::Closed) => crate::logln!("clock out ({reason})"),
             Ok(crate::db::ClockOut::DroppedEmpty) => {
@@ -490,7 +529,7 @@ impl AppState {
             return;
         }
         match crate::sync::run_blocking(&self.config, SHUTDOWN_SYNC_TIMEOUT) {
-            Ok(n) if n > 0 => crate::logln!("synced {n} session(s) before exit"),
+            Ok(n) if n > 0 => crate::logln!("synced {n} item(s) before exit"),
             Ok(_) => {}
             Err(e) => crate::logln!("shutdown sync error: {e}"),
         }
@@ -501,32 +540,34 @@ impl AppState {
             return "Paused".to_string();
         }
         match crate::db::open_session_start(&self.conn) {
-            Ok(Some(start)) => format!(
-                "Clocked in since {}",
-                start.with_timezone(&Local).format("%H:%M")
-            ),
-            _ => "Clocked out".to_string(),
+            Ok(Some(start)) => format!("Tracking · since {}", start.with_timezone(&Local).format("%H:%M")),
+            _ => "Not tracking".to_string(),
         }
     }
 
     fn today_line(&self) -> String {
         let secs = crate::db::today_total_secs(&self.conn, Utc::now()).unwrap_or(0);
-        let base = format!("Today: {}h {:02}m", secs / 3600, (secs % 3600) / 60);
+        let worked = fmt_dur(secs);
         let target = self.config.target_hours;
         if target > 0.0 {
-            let mark = if secs as f64 >= target * 3600.0 {
-                " ✓"
-            } else {
-                ""
-            };
-            format!("{base} / {}{mark}", fmt_hours(target))
+            let mark = if secs as f64 >= target * 3600.0 { " ✓" } else { "" };
+            format!("Today  {worked}  /  {}{mark}", fmt_hours(target))
         } else {
-            base
+            format!("Today  {worked}")
         }
     }
 
     fn update_tooltip(&mut self) {
-        let tip = format!("clocked · {} · {}", self.status_line(), self.today_line());
+        // Short hover tip — full breakdown lives in the menu.
+        let secs = crate::db::today_total_secs(&self.conn, Utc::now()).unwrap_or(0);
+        let state = if self.paused {
+            "paused"
+        } else if self.is_clocked_in() {
+            "tracking"
+        } else {
+            "idle"
+        };
+        let tip = format!("clocked · {state} · {}", fmt_dur(secs));
         crate::tray::set_tip(&mut self.nid, &tip);
         crate::tray::modify(&self.nid);
     }
@@ -599,16 +640,7 @@ fn to_wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-/// This process's own executable file name, lowercased (e.g. `"clocked.exe"`),
-/// so activity capture can skip clocked's own windows.
-fn own_exe_name() -> String {
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()))
-        .unwrap_or_default()
-}
-
-/// Format a duration in seconds as `2h 05m`, or `05m` under an hour, for the
+/// Format a duration in seconds as `2h 05m`, or `45m` under an hour, for the
 /// tray breakdown lines.
 fn fmt_dur(secs: i64) -> String {
     let h = secs / 3600;
@@ -616,8 +648,30 @@ fn fmt_dur(secs: i64) -> String {
     if h > 0 {
         format!("{h}h {m:02}m")
     } else {
-        format!("{m:02}m")
+        format!("{m}m")
     }
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    let n = s.chars().count();
+    if n <= max {
+        s.to_string()
+    } else {
+        let t: String = s.chars().take(max.saturating_sub(1)).collect();
+        format!("{t}…")
+    }
+}
+
+fn is_browser_app(app: &str) -> bool {
+    let a = app.to_ascii_lowercase();
+    a.contains("chrome")
+        || a.contains("msedge")
+        || a.contains("firefox")
+        || a.contains("brave")
+        || a.contains("opera")
+        || a.contains("vivaldi")
+        || a == "safari"
+        || a.ends_with("browser.exe")
 }
 
 /// Format a goal like `8h` or `7.5h`, dropping a trailing `.0`.
@@ -653,75 +707,110 @@ fn open_url(url: &str) {
 /// Build and show the tray context menu. Uses `TPM_RETURNCMD` and holds no
 /// borrow of `AppState` while `TrackPopupMenu` pumps its own modal loop.
 unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
-    let (status, today, breakdown, worker_url, clocked_in, update_label, update_enabled) = {
+    let (
+        status,
+        today,
+        breakdown,
+        contexts,
+        suggestions,
+        worker_url,
+        clocked_in,
+        configured,
+        update_label,
+        update_enabled,
+        update_is_download,
+    ) = {
         let app = &*ptr;
         let update = app.effective_update_status();
+        let now = Utc::now();
         (
             app.status_line(),
             app.today_line(),
-            crate::db::today_by_project(&app.conn, Utc::now()).unwrap_or_default(),
+            crate::db::today_by_project(&app.conn, now).unwrap_or_default(),
+            crate::db::today_by_context(&app.conn, now).unwrap_or_default(),
+            crate::db::suggest_assignments(&app.conn, &app.rules, 3).unwrap_or_default(),
             app.config.effective_worker_url().to_string(),
             app.is_clocked_in(),
+            app.config.is_configured(),
             update.menu_label(),
             update.menu_enabled(),
+            update.download_url().is_some(),
         )
     };
 
     let Ok(menu) = CreatePopupMenu() else {
         return;
     };
+
+    // —— Status (gray, scannable) ——
     let wstatus = to_wide(&status);
     let wtoday = to_wide(&today);
     let _ = AppendMenuW(menu, MF_GRAYED, 0, PCWSTR(wstatus.as_ptr()));
     let _ = AppendMenuW(menu, MF_GRAYED, 0, PCWSTR(wtoday.as_ptr()));
-    // Per-project breakdown of today's foreground time. Grayed, informational
-    // rows; AppendMenuW copies each label, so the transient buffers are fine.
-    if !breakdown.is_empty() {
+
+    // —— Compact breakdown (projects, then top sites) ——
+    if !breakdown.is_empty() || !contexts.is_empty() {
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-        let hdr = to_wide("Today by project");
-        let _ = AppendMenuW(menu, MF_GRAYED, 0, PCWSTR(hdr.as_ptr()));
+    }
+    if !breakdown.is_empty() {
         for (project, secs) in breakdown.iter().take(BREAKDOWN_MAX_ROWS) {
-            let line = to_wide(&format!("   {project} — {}", fmt_dur(*secs)));
+            // Fixed-width feel: "  Coding              1h 20m"
+            let line = to_wide(&format!("  {:<18}  {}", truncate(project, 18), fmt_dur(*secs)));
             let _ = AppendMenuW(menu, MF_GRAYED, 0, PCWSTR(line.as_ptr()));
         }
-        // Roll everything past the top rows into one "Other" line so a busy day
-        // with many apps doesn't stretch the menu into a wall of tiny slivers.
         if breakdown.len() > BREAKDOWN_MAX_ROWS {
             let other: i64 = breakdown[BREAKDOWN_MAX_ROWS..].iter().map(|(_, s)| s).sum();
-            let line = to_wide(&format!("   Other — {}", fmt_dur(other)));
+            let line = to_wide(&format!("  {:<18}  {}", "Other", fmt_dur(other)));
             let _ = AppendMenuW(menu, MF_GRAYED, 0, PCWSTR(line.as_ptr()));
         }
     }
+    if !contexts.is_empty() {
+        // Indent sites under projects so the menu reads as one block.
+        for (ctx, secs) in contexts.iter().take(CONTEXT_MAX_ROWS) {
+            let line = to_wide(&format!("    · {:<16} {}", truncate(ctx, 16), fmt_dur(*secs)));
+            let _ = AppendMenuW(menu, MF_GRAYED, 0, PCWSTR(line.as_ptr()));
+        }
+    }
+    // Unassigned apps with enough time — nudge to Settings → Projects.
+    if !suggestions.is_empty() {
+        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+        let _ = AppendMenuW(menu, MF_GRAYED, 0, w!("Unassigned (set in Settings)"));
+        for (app, secs) in suggestions.iter() {
+            let label = crate::rules::pretty_app_name(app);
+            let line = to_wide(&format!("  {:<18}  {}", truncate(&label, 18), fmt_dur(*secs)));
+            let _ = AppendMenuW(menu, MF_GRAYED, 0, PCWSTR(line.as_ptr()));
+        }
+    }
+
+    // —— Primary actions ——
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
     let pause_label = if clocked_in {
-        w!("Pause tracking")
+        w!("Pause")
     } else {
-        w!("Resume tracking")
+        w!("Resume")
     };
     let _ = AppendMenuW(menu, MF_STRING, IDM_PAUSE, pause_label);
-    // Opens the Worker dashboard (defaults to the current month). Grayed when
-    // syncing isn't configured, since there's no dashboard to open.
-    let timesheet_flags = if worker_url.trim().is_empty() {
-        MF_GRAYED
-    } else {
-        MF_STRING
-    };
-    let _ = AppendMenuW(
-        menu,
-        timesheet_flags,
-        IDM_OPEN_TIMESHEET,
-        w!("Open timesheet"),
-    );
-    let _ = AppendMenuW(menu, MF_STRING, IDM_SYNC_NOW, w!("Sync now"));
-    let _ = AppendMenuW(menu, MF_STRING, IDM_SETTINGS, w!("Settings…"));
-    let update_flags = if update_enabled { MF_STRING } else { MF_GRAYED };
-    let wupdate = to_wide(&update_label);
-    let _ = AppendMenuW(
-        menu,
-        update_flags,
-        IDM_DOWNLOAD_UPDATE,
-        PCWSTR(wupdate.as_ptr()),
-    );
+    if !worker_url.trim().is_empty() {
+        let _ = AppendMenuW(menu, MF_STRING, IDM_OPEN_TIMESHEET, w!("Open timesheet"));
+    }
+    let _ = AppendMenuW(menu, MF_STRING, IDM_SETTINGS, w!("Settings"));
+
+    // —— Secondary (only when useful) ——
+    if configured {
+        let _ = AppendMenuW(menu, MF_STRING, IDM_SYNC_NOW, w!("Sync now"));
+    }
+    // Hide noisy "up to date" / "checking" — only show when actionable or downloading.
+    if update_enabled || update_is_download {
+        let update_flags = if update_enabled { MF_STRING } else { MF_GRAYED };
+        let wupdate = to_wide(&update_label);
+        let _ = AppendMenuW(
+            menu,
+            update_flags,
+            IDM_DOWNLOAD_UPDATE,
+            PCWSTR(wupdate.as_ptr()),
+        );
+    }
+
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
     let _ = AppendMenuW(menu, MF_STRING, IDM_QUIT, w!("Quit"));
 
@@ -815,6 +904,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let app = &mut *ptr;
             app.config = Config::load();
             app.rules = crate::rules::Rules::load();
+            app.bridge.set_token(&app.config.bearer_token);
             app.update_tooltip();
             app.do_sync();
             LRESULT(0)
@@ -827,10 +917,24 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             match wparam.0 {
                 TIMER_HEARTBEAT => {
                     let app = &mut *ptr;
-                    let _ = crate::db::heartbeat(&app.conn, Utc::now());
+                    let now = Utc::now();
+                    let _ = crate::db::heartbeat(&app.conn, now);
+                    // Checkpoint open activity segments and prune old history.
+                    app.activity.checkpoint(&app.conn, now);
+                    let _ = crate::db::prune_activity(
+                        &app.conn,
+                        now,
+                        app.config.activity_retention_days,
+                    );
+                    // Enter working hours: dismiss a stale after-hours prompt /
+                    // "not working" answer without another user click.
+                    app.maybe_enter_working_hours();
                     app.check_idle();
                     app.record_activity_tick();
                     app.update_tooltip();
+                }
+                TIMER_ACTIVITY => {
+                    (*ptr).record_activity_tick();
                 }
                 TIMER_SYNC => (*ptr).do_sync(),
                 TIMER_UPDATE_CHECK => (*ptr).check_for_updates(false),
@@ -935,14 +1039,24 @@ pub fn run() -> windows::core::Result<()> {
             pending_open: None,
             update_status: crate::update::UpdateStatus::Unknown,
             update_checked_at: None,
+            activity: ActivityTracker::new(),
+            own_exe: std::env::current_exe()
+                .ok()
+                .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()))
+                .unwrap_or_default(),
+            bridge: BridgeState::new(Config::load().bearer_token),
         }));
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, ptr as isize);
 
         // Startup sequence.
         {
             let app = &mut *ptr;
-            let _ = crate::db::recover_crashed(&app.conn, Utc::now());
-            let _ = crate::db::heartbeat(&app.conn, Utc::now());
+            let now = Utc::now();
+            let _ = crate::db::recover_crashed(&app.conn, now);
+            let _ = crate::db::heartbeat(&app.conn, now);
+            let _ = crate::db::prune_activity(&app.conn, now, app.config.activity_retention_days);
+            // Browser extension bridge (127.0.0.1 only). Needs a token to accept tabs.
+            crate::bridge::start(Arc::clone(&app.bridge), crate::bridge::DEFAULT_PORT);
             app.open_event("start");
 
             let _ = RegisterSuspendResumeNotification(HANDLE(hwnd.0), DEVICE_NOTIFY_WINDOW_HANDLE);
@@ -951,6 +1065,8 @@ pub fn run() -> windows::core::Result<()> {
             app.update_tooltip();
 
             let _ = SetTimer(Some(hwnd), TIMER_HEARTBEAT, 60_000, None);
+            // 5s focus poll — segment tracker attributes exact elapsed times.
+            let _ = SetTimer(Some(hwnd), TIMER_ACTIVITY, 5_000, None);
             let _ = SetTimer(Some(hwnd), TIMER_SYNC, 3_600_000, None);
             let _ = SetTimer(Some(hwnd), TIMER_UPDATE_CHECK, 21_600_000, None);
             app.do_sync();

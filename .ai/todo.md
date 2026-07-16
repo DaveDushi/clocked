@@ -1,105 +1,38 @@
-# macOS port — plan & progress
+# clocked — plan & progress
 
-## Context
-`clocked` is a native Rust + Win32 app (no cross-platform GUI framework). Goal: ship a
-macOS build with parity. The Cloudflare Worker backend (`worker/`) is untouched — the Mac
-app talks to the same HTTPS API. Strategy: keep one Rust codebase, `cfg`-gate the OS glue,
-reimplement each platform module natively (Cocoa/IOKit via `objc2`/`core-graphics`/`security-framework`).
+## Activity + privacy (2026-07-15) — DONE in tree
 
-Hard constraint: this dev machine is Windows, so **macOS code cannot be compiled/notarized here** —
-only the Windows build + shared unit tests are verifiable locally. Mac binary is produced on a
-macOS CI runner. Every step must keep the Windows build green (baseline: builds + 21 tests pass).
+- [x] Privacy defaults: titles off; opt-in sanitized titles; private-app list; retention (90d)
+- [x] Segment-based activity tracker (focus changes + 5s poll + checkpoint)
+- [x] Rules: ignore → Non-work; optional title_rules; Settings honesty
+- [x] Token UI: never re-display full token; blank save keeps DPAPI/Keychain secret
+- [x] Windows drives `engine` for idle/after-hours (no policy drift)
+- [x] Daily `activity_day` sync → Worker `POST /activity` + dashboard/email project summary
+- [x] macOS foreground via NSWorkspace (app only); activity ticks on heartbeat
+- [x] Marketing tip no longer claims "never records apps"
+- [x] Privacy-safe **context** (browser domain / document name) from title bar heuristics
+- [x] Segments keyed by (app, project, context); tray "sites & docs"; match rules in Settings
 
-## The only shared→platform coupling
-`config.rs` → `secret` (token storage). Everything else platform-specific (`idle`, `media`,
-`tray`, `autostart`, `keepalive`, window/run-loop) is consumed only from the platform UI layer.
+## Remaining / device verification
 
-## Steps
+- [ ] On a Mac: build, run, confirm NSWorkspace foreground + Keychain + bridge
+- [x] Apply migration `0012_activity.sql` on remote D1 and deploy Worker (2026-07-16)
+- [ ] packaging/macos/clocked.icns + notarize secrets
+- [ ] Stripe live price IDs (still TEST in wrangler vars)
+- [ ] Optional: richer browser domain capture via extension (strict opt-in)
+- [ ] macOS call detection (media.rs still fail-closed)
 
-### Phase 1 — cross-platform foundation (DONE, Windows green: build + 30 tests)
-- [x] Cargo.toml: `windows`/`winreg`/`winresource` under `[target.'cfg(windows)']`; macOS deps
-      (`objc2`, `objc2-foundation`, `objc2-app-kit`, `security-framework`) under `cfg(target_os="macos")`.
-      Idle links CoreGraphics directly (no core-graphics crate). Description de-Windows'd.
-- [x] `secret.rs`: cfg-split — Windows DPAPI / macOS Keychain (`security_framework::passwords`).
-- [x] `idle.rs`: cfg-split — Win32 `GetLastInputInfo` / macOS `CGEventSourceSecondsSinceLastEventType`.
-- [x] `media.rs`: cfg-split — Windows registry / macOS fail-closed stub (real detection = TODO).
-- [x] `autostart.rs`: cfg-split — HKCU Run / macOS LaunchAgent plist (RunAtLoad + KeepAlive).
-- [x] `keepalive.rs`: cfg-split — schtasks / macOS delegates to the LaunchAgent.
-- [x] `events.rs`: `Action` shared; Win32 mappings gated; macOS notification-name mapping added.
-- [x] `main.rs`: Win32 UI gated `#[cfg(windows)]`; `#[cfg(target_os="macos")] mod macos`; per-platform dispatch.
-- [x] Verified: Windows `cargo build` + `cargo test` green (30 passed).
+## Fixed in tree (2026-07-16)
 
-### Phase 2 — shared engine (DONE, unit-tested on Windows)
-- [x] `engine.rs`: pure clock/idle/reclaim/after-hours policy as intent-returning functions + 9 tests.
-- [ ] FOLLOW-UP: migrate Windows `window.rs::AppState` onto `engine` to kill the duplicated policy
-      (safe, testable on Windows — do before the two drift).
-
-### Phase 3 — macOS UI layer (DONE; typechecks for aarch64-apple-darwin)
-- [x] `macos/mod.rs`: portable `AppState` state machine driven by `engine` (clock/idle/after-hours/sync).
-- [x] `macos/runloop.rs` `imp`: full objc2 AppKit run loop — `NSApplication` (accessory),
-      `NSStatusItem` menu (Pause/Resume, Open timesheet, Sync now, Set sync token…, Start at login,
-      Quit), `NSWorkspace` sleep/wake + distributed lock/unlock observers, `NSTimer`
-      heartbeat/sync/update, `NSAlert` prompts, `performSelectorOnMainThread:` deferral.
-- [x] Threading: sync guarded by a `Send` `AtomicBool` (no marshaling); notifications via `osascript`;
-      token entry via `osascript` dialog; all objc2 touches on the main thread.
-- [x] Verified WITHOUT a Mac: `cargo check --target aarch64-apple-darwin` compiles clean (0 warnings).
-      Only framework LINKING is unverified until a real macOS build.
-- [ ] On a Mac: `cargo build --target aarch64-apple-darwin`, run the `.app`, confirm the objc2
-      method-name/mtm details noted in `runloop.rs` (e.g. `NSStatusItem::button(mtm)`, `NSAlert::new`).
-
-### Phase 4 — packaging + CI (files DONE; secrets/icns pending)
-- [x] `packaging/macos/Info.plist` (LSUIElement=1) + `entitlements.plist` (hardened runtime).
-- [x] `packaging/macos/build-app.sh`: universal binary → `.app` → sign → `.dmg` → notarize+staple.
-- [x] `.github/workflows/release.yml`: macOS sign+notarize+dmg job; Windows installer job.
-- [x] macOS update check wired (osascript notification) reusing portable `update::check_latest`.
-- [ ] Add `packaging/macos/clocked.icns` (convert `assets/clocked.ico`); set the 6 macOS repo secrets.
-- [ ] Point the download page / `update::DOWNLOAD_URL` redirect at the macOS `.dmg`.
-
-### Per-platform dependency notes (Cargo.toml)
-- TLS: Windows = rustls (unchanged); macOS = native-tls (Security.framework, already linked for Keychain).
-- SQLite: Windows = bundled; macOS = system libsqlite3.
-- Both choices also let the macOS target typecheck on a Windows host (no `cc`/ring/bundled-sqlite C build).
+- [x] After-hours prompt auto-dismisses when working hours begin
+- [x] Extension stores token in storage.local (not sync)
+- [x] past_due 14-day grace for paid access
+- [x] Session id validation on ingest; manual-session rate limit
+- [x] GET /api/export + POST /api/account/delete
+- [x] macOS starts localhost bridge; tray unassigned-app suggestions
+- [x] Dashboard Privacy: export / delete cloud data
 
 ## Testing
-- Windows regression: `cargo test`, `cargo build`, run tray app, verify clock in/out unaffected.
-- macOS (on a Mac): `cargo build --target aarch64-apple-darwin`, run `.app`, verify sleep/wake +
-  lock/unlock clock in/out, idle, tray menu, Keychain token, launch-at-login.
 
-## Local-only activity MVP (2026-07-13)
-Capture foreground app/title on the heartbeat, classify to a project via rules,
-store locally, show a per-project breakdown in the tray. No sync/dashboard/extension.
-
-- [x] `foreground.rs` — Win32 GetForegroundWindow → exe name + title (macOS stub → None).
-- [x] `rules.rs` — pure ordered rules engine (first substring match wins), `rules.toml`
-      auto-written with sensible defaults; reloaded on Settings save. Unit-tested.
-- [x] `db.rs` — `activity` table + `record_activity` + `today_by_project` (local-day, busiest first).
-- [x] `window.rs` — `record_activity_tick()` on each active heartbeat (skips paused/idle/no-input,
-      credits 60s to the focused window's project); "Today by project" section in the tray menu.
-- [x] `cargo test` 35/35 green; live foreground capture smoke-verified (read jean.exe / "Jean").
-
-### Testing
-- `cargo test` — rules + `today_by_project` aggregation.
-- Run the tray app; after ~1 min of activity, right-click the tray icon → "Today by project"
-  lists projects with time. Edit `%APPDATA%\clocked\data\rules.toml`, open Settings→Save, confirm
-  reclassification. Idle >1 min with no mic/cam → no new samples credited.
-
-### Refinement (2026-07-13, post-MVP feedback)
-- Zero-config fallback: blank `default_project` labels unmatched windows by app
-  name (jean.exe → "Jean") instead of a single "Unassigned" bucket. Set a value
-  (e.g. "Other") for a single catch-all. Shipped template now defaults to blank.
-
-### Projects in Settings — assignment UI (2026-07-13)
-- Rules model is now a straight **app → project** map: `Rules { default_project,
-  assignments: BTreeMap<app_exe, project> }`. `classify` looks up the lowercased
-  exe; unassigned → blank default → app-name fallback. (Replaced free-form text /
-  keyword forms — those "get messy fast".)
-- `settings.rs` Projects tab lists the **apps you've actually used** (from
-  `db::apps_seen`, busiest first, + already-assigned apps, capped at 12 rows),
-  each with a project box pre-filled from the current assignment. Save folds each
-  box back onto its app (blank clears it), starting from the stored rules so
-  off-list assignments survive. `Ctx.apps` holds the row→app pairing.
-- Tray breakdown capped at top 4 + "Other"; tray kept lean (no rules item).
-
-### Follow-ups (not in MVP)
-- macOS foreground capture (NSWorkspace.frontmostApplication) — currently returns None.
-- Richer local view (per-app drill-down / date range) if the tray breakdown proves too thin.
+- `cargo test` / `cargo build` on Windows
+- Worker: `npm test` after building `.tmp-test` as usual

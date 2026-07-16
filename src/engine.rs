@@ -7,11 +7,9 @@
 //! caller still owns side effects and the mutable flags (`idle_warned`,
 //! `idle_out`, remembered after-hours answer, etc.).
 //!
-//! This mirrors the inline logic in the Windows `window.rs::AppState`; the
-//! Windows layer will migrate onto these functions in a follow-up. Until then the
-//! module is consumed only by the macOS layer, hence `allow(dead_code)` so the
-//! Windows build stays warning-clean.
-#![allow(dead_code)]
+//! Both Windows (`window.rs`) and macOS (`macos/mod.rs`) drive this module so
+//! idle / after-hours policy cannot drift between platforms.
+
 
 // Warn this many seconds before an idle auto-clock-out.
 pub const IDLE_WARN_LEAD_SECS: u64 = 120;
@@ -140,6 +138,16 @@ pub fn decide_open(within_hours: Option<bool>, remembered: Option<bool>) -> Open
             None => OpenDecision::Prompt,
         },
     }
+}
+
+/// True when a deferred "are you working?" prompt should be auto-dismissed and
+/// treated as a normal clock-in: working hours are on (or the feature is off).
+///
+/// Callers re-check this (1) before showing the modal, (2) after the user
+/// answers if the dialog sat open past work start, and (3) on heartbeat so a
+/// laptop left open after a "not working" answer starts tracking at 9:00.
+pub fn should_auto_accept_after_hours(within_hours: Option<bool>) -> bool {
+    !matches!(within_hours, Some(false))
 }
 
 #[cfg(test)]
@@ -280,5 +288,12 @@ mod tests {
             OpenDecision::ClockInAfterHours
         );
         assert_eq!(decide_open(Some(false), Some(false)), OpenDecision::Skip);
+    }
+
+    #[test]
+    fn after_hours_prompt_auto_accepts_inside_hours_or_when_disabled() {
+        assert!(should_auto_accept_after_hours(None));
+        assert!(should_auto_accept_after_hours(Some(true)));
+        assert!(!should_auto_accept_after_hours(Some(false)));
     }
 }

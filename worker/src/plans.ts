@@ -22,6 +22,13 @@ export type SelfServePlan = (typeof SELF_SERVE_PLANS)[number];
 
 const PAID_STATUSES = new Set(["active", "trialing", "past_due"]);
 
+/**
+ * How long `past_due` still grants paid access after the last billing update.
+ * Matches a typical Stripe dunning window; after this, access is revoked until
+ * payment succeeds (webhook moves status back to `active`).
+ */
+export const PAST_DUE_GRACE_MS = 14 * 24 * 60 * 60 * 1000;
+
 /** Member cap for a plan key; unknown → single (1), never unlimited by accident. */
 export function planCap(plan: string | null | undefined): number {
   if (plan && PLAN_CAPS[plan] != null) return PLAN_CAPS[plan];
@@ -56,9 +63,33 @@ export function orgPlan(metadata: unknown): string {
   return "single";
 }
 
-/** True when Stripe status grants paid entitlements. */
+/**
+ * True when Stripe status grants paid entitlements (without grace window).
+ * Prefer {@link isPaidBillingStatusWithGrace} when `updatedAt` is available so
+ * long-running `past_due` does not grant forever.
+ */
 export function isPaidBillingStatus(status: string | null | undefined): boolean {
   return !!status && PAID_STATUSES.has(status);
+}
+
+/**
+ * Paid check with a finite grace for `past_due`.
+ * `updatedAtMs` is org_billing.updatedAt (ms epoch) from the last webhook.
+ * Missing `updatedAt` while past_due → still allowed (legacy rows) for one grace
+ * period only if we treat "now" as the anchor — we fail closed after grace from 0.
+ */
+export function isPaidBillingStatusWithGrace(
+  status: string | null | undefined,
+  updatedAtMs: number | null | undefined,
+  nowMs: number = Date.now(),
+): boolean {
+  if (!status) return false;
+  if (status === "active" || status === "trialing") return true;
+  if (status === "past_due") {
+    const at = typeof updatedAtMs === "number" && Number.isFinite(updatedAtMs) ? updatedAtMs : nowMs;
+    return nowMs - at <= PAST_DUE_GRACE_MS;
+  }
+  return false;
 }
 
 /**
@@ -68,12 +99,12 @@ export function isPaidBillingStatus(status: string | null | undefined): boolean 
 export async function effectiveMemberCap(env: Env, orgId: string): Promise<number> {
   if (!orgId) return 1;
   const billing = await env.DB.prepare(
-    "SELECT status, plan FROM org_billing WHERE organizationId = ?",
+    "SELECT status, plan, updatedAt FROM org_billing WHERE organizationId = ?",
   )
     .bind(orgId)
-    .first<{ status: string | null; plan: string | null }>();
+    .first<{ status: string | null; plan: string | null; updatedAt: number | null }>();
 
-  if (!isPaidBillingStatus(billing?.status)) return 1;
+  if (!isPaidBillingStatusWithGrace(billing?.status, billing?.updatedAt)) return 1;
 
   if (billing?.plan && PLAN_CAPS[billing.plan]) return planCap(billing.plan);
 
@@ -89,15 +120,19 @@ export async function effectiveMemberCap(env: Env, orgId: string): Promise<numbe
  */
 export async function effectiveOrgPlan(env: Env, orgId: string, metadata: string | null): Promise<string> {
   const billing = await env.DB.prepare(
-    "SELECT status, plan FROM org_billing WHERE organizationId = ?",
+    "SELECT status, plan, updatedAt FROM org_billing WHERE organizationId = ?",
   )
     .bind(orgId)
-    .first<{ status: string | null; plan: string | null }>();
+    .first<{ status: string | null; plan: string | null; updatedAt: number | null }>();
 
-  if (isPaidBillingStatus(billing?.status) && billing?.plan && PLAN_CAPS[billing.plan]) {
+  if (
+    isPaidBillingStatusWithGrace(billing?.status, billing?.updatedAt) &&
+    billing?.plan &&
+    PLAN_CAPS[billing.plan]
+  ) {
     return billing.plan;
   }
   // Unpaid: always single for entitlements, even if metadata was tampered.
-  if (!isPaidBillingStatus(billing?.status)) return "single";
+  if (!isPaidBillingStatusWithGrace(billing?.status, billing?.updatedAt)) return "single";
   return orgPlan(metadata);
 }

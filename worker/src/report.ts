@@ -1,4 +1,5 @@
 import type { Env } from "./types";
+import { projectTotalsForPeriod } from "./activity";
 import { expandCalendarDays } from "./calendar-days";
 import {
   formatDateLabel,
@@ -183,5 +184,16 @@ export async function buildReportCsv(env: Env, period: string, userId: string): 
 
   lines.push(",,,,");
   lines.push(`,,,Total,${formatHours(totalMinutes)}`);
+
+  // Optional project summary from synced app aggregates (no titles/URLs).
+  const projects = await projectTotalsForPeriod(env, userId, period);
+  if (projects.length > 0) {
+    lines.push("");
+    lines.push("Project,Hours");
+    for (const p of projects) {
+      lines.push(`${csvField(p.project)},${formatHours(p.minutes)}`);
+    }
+  }
+
   return lines.join("\n") + "\n";
 }

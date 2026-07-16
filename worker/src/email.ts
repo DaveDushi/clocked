@@ -1,4 +1,5 @@
 import type { Env } from "./types";
+import { projectTotalsForPeriod } from "./activity";
 import { buildReportCsv, buildHoursReport, formatHours, isWorkDay, type HoursReport } from "./report";
 import { getEffectiveRecipients, getEffectiveSendDay } from "./settings";
 
@@ -38,7 +39,11 @@ function esc(s: string): string {
  * weekends without hours are omitted. The full breakdown rides along as a CSV
  * attachment.
  */
-function renderReportEmail(period: string, report: HoursReport): { html: string; text: string } {
+function renderReportEmail(
+  period: string,
+  report: HoursReport,
+  projects: { project: string; minutes: number }[],
+): { html: string; text: string } {
   const title = monthTitle(period);
   const total = formatHours(report.totalMinutes);
   const worked = report.activeDays;
@@ -51,6 +56,22 @@ function renderReportEmail(period: string, report: HoursReport): { html: string;
         <div style="font-size:12px;color:#6b7280;margin-top:6px;text-transform:uppercase;letter-spacing:.04em;">${label}</div>
       </div>
     </td>`;
+
+  const projectRows = projects
+    .slice(0, 12)
+    .map(
+      (p) =>
+        `<tr><td style="padding:6px 0;border-bottom:1px solid #f0f1f3;color:#111827;">${esc(p.project)}</td>` +
+        `<td style="padding:6px 0;border-bottom:1px solid #f0f1f3;text-align:right;color:#6b7280;">${formatHours(p.minutes)}</td></tr>`,
+    )
+    .join("");
+  const projectBlock =
+    projects.length > 0
+      ? `<tr><td style="padding:8px 28px 4px;font-size:13px;font-weight:600;color:#111827;">By project</td></tr>
+    <tr><td style="padding:0 28px 12px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${projectRows}</table>
+    </td></tr>`
+      : "";
 
   const html = `<!doctype html>
 <html>
@@ -67,6 +88,7 @@ function renderReportEmail(period: string, report: HoursReport): { html: string;
         ${tile(String(vacation), vacation === 1 ? "Vacation day" : "Vacation days")}
       </tr></table>
     </td></tr>
+    ${projectBlock}
     <tr><td style="padding:20px 28px 8px;color:#9ca3af;font-size:12px;">
       The full day-by-day breakdown is attached as <strong>clocked-${esc(period)}.csv</strong>.
     </td></tr>
@@ -79,12 +101,22 @@ function renderReportEmail(period: string, report: HoursReport): { html: string;
 </body>
 </html>`;
 
+  const textProjects =
+    projects.length > 0
+      ? [
+          ``,
+          `By project:`,
+          ...projects.slice(0, 12).map((p) => `  ${p.project}: ${formatHours(p.minutes)}`),
+        ]
+      : [];
+
   const text = [
     `Timesheet — ${title}`,
     ``,
     `Total hours: ${total}`,
     `Days worked: ${worked}`,
     `Vacation days: ${vacation}`,
+    ...textProjects,
     ``,
     `Full day-by-day breakdown attached as clocked-${period}.csv.`,
     ``,
@@ -138,9 +170,10 @@ export async function buildAndSendReport(
   const csv = await buildReportCsv(env, period, userId);
   const rows = csv ? csv.trimEnd().split("\n").length : 0;
   const report = await buildHoursReport(env, period, userId);
+  const projects = await projectTotalsForPeriod(env, userId, period);
   const body =
     rows > 0
-      ? renderReportEmail(period, report)
+      ? renderReportEmail(period, report, projects)
       : {
           html: undefined,
           text: `No sessions recorded for this month.\n\n${MARKETING_FOOTER_TEXT}`,

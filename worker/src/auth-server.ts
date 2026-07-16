@@ -77,7 +77,7 @@ export function makeAuth(env: Env, allowSignUp = true) {
     trustedOrigins: [
       env.BETTER_AUTH_URL,
       "https://clocked.daviddusi.com",
-      "http://clocked.daviddusi.com",
+      // Local dev only — production is HTTPS.
       "http://localhost:8787",
       "http://127.0.0.1:8787",
     ].filter(Boolean),

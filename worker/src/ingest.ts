@@ -125,6 +125,8 @@ const MAX_REASON_LEN = 64;
 const MAX_ID_LEN = 128;
 /** Reject absurd multi-year spans (likely bad client data). */
 const MAX_DURATION_MS = 1000 * 60 * 60 * 24 * 40; // 40 days
+/** Desktop uses UUID v4; accept UUID-ish ids (with optional common prefixes). */
+const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
 
 function isValid(s: unknown): s is SessionIn {
   const o = s as Record<string, unknown>;
@@ -136,7 +138,7 @@ function isValid(s: unknown): s is SessionIn {
   ) {
     return false;
   }
-  if (o.id.length === 0 || o.id.length > MAX_ID_LEN) return false;
+  if (o.id.length === 0 || o.id.length > MAX_ID_LEN || !ID_RE.test(o.id)) return false;
   const start = Date.parse(o.start_utc);
   const end = Date.parse(o.end_utc);
   if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return false;

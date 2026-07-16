@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { isValidPeriod, parsePeriodParam } from "../.tmp-test/security.js";
-import { planCap, orgPlan, isPaidBillingStatus } from "../.tmp-test/plans.js";
+import {
+  planCap,
+  orgPlan,
+  isPaidBillingStatus,
+  isPaidBillingStatusWithGrace,
+  PAST_DUE_GRACE_MS,
+} from "../.tmp-test/plans.js";
 import { rateLimitAllow } from "../.tmp-test/rate-limit.js";
 import { MAX_SESSIONS_PER_REQUEST } from "../.tmp-test/ingest.js";
 
@@ -24,6 +30,17 @@ test("unpaid / unknown plan never grants multi-seat free tier", () => {
   assert.equal(isPaidBillingStatus("active"), true);
   assert.equal(isPaidBillingStatus("canceled"), false);
   assert.equal(isPaidBillingStatus(""), false);
+});
+
+test("past_due grants access only within grace window", () => {
+  const now = 1_700_000_000_000;
+  assert.equal(isPaidBillingStatusWithGrace("active", null, now), true);
+  assert.equal(isPaidBillingStatusWithGrace("past_due", now - 1000, now), true);
+  assert.equal(
+    isPaidBillingStatusWithGrace("past_due", now - PAST_DUE_GRACE_MS - 1, now),
+    false,
+  );
+  assert.equal(isPaidBillingStatusWithGrace("canceled", now, now), false);
 });
 
 test("in-memory rate limiter trips after max", () => {

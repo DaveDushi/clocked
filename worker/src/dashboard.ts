@@ -827,6 +827,10 @@ const HTML = /* html */ `<!doctype html>
           </table>
         </div>
         <div class="total"><span class="muted">Total</span><b id="totalRow">0:00</b></div>
+        <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
+          <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">By project</div>
+          <div id="projectList"></div>
+        </div>
         <div id="hoursMsg" class="msg" role="status"></div>
         <details class="soft" id="manualEditWrap">
           <summary>Add or remove time</summary>
@@ -881,6 +885,15 @@ const HTML = /* html */ `<!doctype html>
         </div>
         <p class="token-help">Treat this like a password. It can sync sessions and open your dashboard from the tray app. Shown in full only when created or regenerated.</p>
         <div id="tokenMsg" class="msg" role="status"></div>
+        <div style="margin-top:22px;padding-top:16px;border-top:1px solid var(--border)">
+          <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Privacy</div>
+          <p class="hint" style="margin:0 0 10px">Download a copy of your cloud sessions and project totals, or erase them from this host. Cancel billing in Manage billing first if you also want to stop subscription charges.</p>
+          <div class="inline-actions">
+            <button id="exportData" class="ghost" type="button">Export my data</button>
+            <button id="deleteData" class="ghost del" type="button">Delete cloud data</button>
+          </div>
+          <div id="privacyMsg" class="msg" role="status"></div>
+        </div>
       </div>
     </div>
 
@@ -1949,6 +1962,63 @@ $("regenToken").onclick = async () => {
   else { const e = await r.json().catch(()=>({})); $("tokenMsg").textContent = e.error || "Could not regenerate."; $("tokenMsg").className = "msg err"; }
 };
 
+const exportBtn = $("exportData");
+if (exportBtn) exportBtn.onclick = async () => {
+  const msg = $("privacyMsg");
+  if (msg) { msg.textContent = "Preparing export…"; msg.className = "msg"; }
+  const r = await api("/api/export");
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({}));
+    if (msg) { msg.textContent = d.error || "Export failed."; msg.className = "msg err"; }
+    return;
+  }
+  const blob = await r.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "clocked-export.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  if (msg) { msg.textContent = "Download started."; msg.className = "msg ok"; }
+};
+
+let deleteArmed = false;
+const deleteBtn = $("deleteData");
+if (deleteBtn) deleteBtn.onclick = async () => {
+  const msg = $("privacyMsg");
+  if (!deleteArmed) {
+    deleteArmed = true;
+    deleteBtn.textContent = "Confirm delete?";
+    if (msg) {
+      msg.textContent = "This erases your cloud sessions, project totals, and sync token. Desktop SQLite is unaffected. Click again to confirm.";
+      msg.className = "msg";
+    }
+    setTimeout(() => {
+      deleteArmed = false;
+      deleteBtn.textContent = "Delete cloud data";
+    }, 5000);
+    return;
+  }
+  deleteArmed = false;
+  deleteBtn.textContent = "Delete cloud data";
+  deleteBtn.disabled = true;
+  const r = await api("/api/account/delete", {
+    method: "POST",
+    body: JSON.stringify({ confirm: "DELETE" }),
+  });
+  deleteBtn.disabled = false;
+  if (r.ok) {
+    if (msg) {
+      msg.textContent = "Cloud data deleted. Regenerate a token if you re-subscribe.";
+      msg.className = "msg ok";
+    }
+    setTokenView({ token: null, prefix: null, exists: false, created: false });
+    fullToken = "";
+  } else {
+    const d = await r.json().catch(() => ({}));
+    if (msg) { msg.textContent = d.error || "Delete failed."; msg.className = "msg err"; }
+  }
+};
+
 // ---- hours ----
 function rowHtml(x, max, i) {
   const dt = new Date(x.date + "T00:00:00");
@@ -1990,8 +2060,27 @@ async function loadHours() {
   const activeDays = d.activeDays ?? d.days.filter((x) => x.minutes > 0).length;
   $("statDays").textContent = String(activeDays);
   $("statAvg").textContent = activeDays ? fmt(Math.round(d.totalMinutes / activeDays)) : "0:00";
+  renderProjects(d.projects || []);
   loadManualEntries();
   if (openMemberId) loadTeamMemberHours(); // keep an open team member in sync with the month
+}
+
+function renderProjects(list) {
+  const box = $("projectList");
+  if (!box) return;
+  if (!list || !list.length) {
+    box.innerHTML = "<div class='muted' style='font-size:13px;padding:4px 0'>No app/project breakdown synced for this month yet. The tray app attributes time locally; totals appear here after the next sync.</div>";
+    return;
+  }
+  const max = list.reduce((a, x) => Math.max(a, x.minutes || 0), 0) || 1;
+  box.innerHTML = list.slice(0, 12).map((p) => {
+    const mins = Number(p.minutes) || 0;
+    const pct = Math.max(4, Math.round((mins / max) * 100));
+    return "<div class='proj-row' style='display:flex;align-items:center;gap:10px;margin:6px 0'>" +
+      "<div style='flex:0 0 120px;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap' title='" + pvEsc(p.project).replace(/'/g, "&#39;") + "'>" + pvEsc(p.project) + "</div>" +
+      "<div class='track' style='flex:1;height:8px;border-radius:4px;background:var(--border)'><div style='width:" + pct + "%;height:100%;border-radius:4px;background:var(--amber)'></div></div>" +
+      "<div class='num' style='flex:0 0 48px;text-align:right;font-size:13px'>" + fmt(mins) + "</div></div>";
+  }).join("");
 }
 
 function shiftMonth(delta) {

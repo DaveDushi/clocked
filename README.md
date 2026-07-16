@@ -25,7 +25,11 @@ Windows tray app (Rust)                     Cloudflare Worker (TypeScript)
 
 Most trackers make you babysit a timer. clocked uses what Windows already knows
 (unlock, lock, idle, sleep) so freelancers and small teams get honest hours
-without screenshots or keylogging.
+without screenshots or keylogging. While you're clocked in it also attributes
+time to the focused app, and infers a **privacy-safe context** when it can
+(browser hostname, document name from the title bar — never full URLs or
+keystrokes). Full window titles stay off by default. Totals stay local first,
+with optional project rollups in the cloud.
 
 ## Clock rules
 
@@ -90,14 +94,11 @@ Run `clocked.exe`. It creates `%APPDATA%\clocked\data\` containing:
 - `config.toml` — sync settings (written as a blank template on first run)
 - `clocked.log` — diagnostics
 
-Right-click the tray icon for: status, today's total (vs. your `target_hours`
-goal), **Pause / Resume tracking**, **Sync now**, **Settings…**, update status,
-**Quit**. The app checks for updates on startup
-and periodically. Until that check finishes, the menu says **Check for updates •
-vX.Y.Z**; if a newer release exists it changes to **Download latest update •
-vX.Y.Z** and opens the latest installer download in your browser. The
-**Settings…** window edits `config.toml` (sync, idle, goal, working hours) plus
-two launch options:
+Right-click the tray icon for a short status (tracking / today / top projects
+and sites), **Pause**, **Open timesheet**, **Settings**, optional **Sync now**,
+and **Quit**. Updates only appear when a download is available or a check is
+actionable. The **Settings** window edits `config.toml` (sync, idle, goal,
+working hours) plus:
 
 - **Start at login** — enabled by default by the installer; a per-user
   `HKCU\...\Run` entry runs clocked at each Windows **sign-in** (not on
@@ -105,6 +106,13 @@ two launch options:
 - **Keep clocked running** — a per-user Scheduled Task (`clocked-keepalive`) that
   relaunches clocked at **logon and on workstation unlock**. Combined with the
   single-instance guard, unlocking after a quit brings it back.
+
+### Browser extension (optional)
+
+For accurate browser sites (not just window-title guesses), load the unpacked
+extension from `extension/chrome` in Chrome/Edge and paste the **same** `clk_…`
+token. The tray app listens on `http://127.0.0.1:19532` and only accepts that
+token; only hostnames are sent, never full URLs.
 
 Local-only mode works with no config — it just won't sync or email.
 
@@ -183,6 +191,7 @@ npx wrangler deploy
 | POST   | `/api/token/regenerate`     | Cookie  | revoke + reissue this account's token            |
 | GET    | `/api/hours?period=YYYY-MM` | Cookie  | this account's per-day hours (dashboard)         |
 | POST   | `/sessions`                 | Bearer  | ingest synced sessions for the token's account (upsert by id) |
+| POST   | `/activity`                 | Bearer  | daily app/project aggregates (no titles; paid account only) |
 | GET    | `/preview?period=YYYY-MM`   | Cookie  | this account's report body (no email)            |
 | POST   | `/send-test?period=YYYY-MM` | Cookie  | build **and email** this account's report now (bypasses gate) |
 

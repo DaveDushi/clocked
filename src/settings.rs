@@ -48,6 +48,8 @@ const ID_LBL_TARGET: i32 = 1023;
 const ID_LBL_START: i32 = 1024;
 const ID_LBL_END: i32 = 1025;
 const ID_LBL_DAYS: i32 = 1026;
+const ID_TOKEN_HINT: i32 = 1027;
+const ID_STORE_TITLES: i32 = 1028;
 // Tab control + Projects-tab controls.
 const ID_TABS: i32 = 900;
 const ID_RULES_HELP: i32 = 1200;
@@ -55,23 +57,39 @@ const ID_LBL_DEFAULT: i32 = 1202;
 const ID_DEFAULT_BUCKET: i32 = 1203;
 const ID_COL_APP: i32 = 1204;
 const ID_COL_PROJ: i32 = 1205;
+const ID_PRIVACY_HELP: i32 = 1206;
+const ID_MATCH_HELP: i32 = 1207;
+const ID_MATCH_COL_IF: i32 = 1208;
+const ID_MATCH_COL_PROJ: i32 = 1209;
 // One row per used app: a name label + a project edit box. Ids are base + row.
 const ID_ROW_LABEL_BASE: i32 = 1300;
 const ID_ROW_PROJ_BASE: i32 = 1340;
+// Window text / domain match rules (if contains → project).
+const ID_MATCH_CONTAINS_BASE: i32 = 1400;
+const ID_MATCH_PROJ_BASE: i32 = 1410;
 // Most-used apps listed for assignment; the long tail stays on app-name fallback.
-const MAX_APP_ROWS: usize = 12;
+const MAX_APP_ROWS: usize = 10;
+const MAX_MATCH_ROWS: usize = 3;
 
 // Every General-tab control except the Advanced-gated worker URL pair, which is
 // shown/hidden by the Advanced toggle instead.
 const GENERAL_CORE_IDS: &[i32] = &[
-    ID_LBL_TOKEN, ID_TOKEN, ID_LBL_IDLE, ID_LBL_TARGET, ID_IDLE, ID_TARGET, ID_LBL_START,
-    ID_LBL_END, ID_START, ID_END, ID_LBL_DAYS, ID_DAY_BASE, ID_DAY_BASE + 1, ID_DAY_BASE + 2,
-    ID_DAY_BASE + 3, ID_DAY_BASE + 4, ID_DAY_BASE + 5, ID_DAY_BASE + 6, ID_AUTOSTART,
-    ID_KEEPALIVE, ID_ADVANCED,
+    ID_LBL_TOKEN, ID_TOKEN, ID_TOKEN_HINT, ID_LBL_IDLE, ID_LBL_TARGET, ID_IDLE, ID_TARGET,
+    ID_LBL_START, ID_LBL_END, ID_START, ID_END, ID_LBL_DAYS, ID_DAY_BASE, ID_DAY_BASE + 1,
+    ID_DAY_BASE + 2, ID_DAY_BASE + 3, ID_DAY_BASE + 4, ID_DAY_BASE + 5, ID_DAY_BASE + 6,
+    ID_AUTOSTART, ID_KEEPALIVE, ID_STORE_TITLES, ID_ADVANCED,
 ];
 // Fixed (non-row) Projects-tab controls; the per-app rows are toggled separately.
 const PROJECT_IDS: &[i32] = &[
-    ID_RULES_HELP, ID_COL_APP, ID_COL_PROJ, ID_LBL_DEFAULT, ID_DEFAULT_BUCKET,
+    ID_RULES_HELP,
+    ID_PRIVACY_HELP,
+    ID_COL_APP,
+    ID_COL_PROJ,
+    ID_LBL_DEFAULT,
+    ID_DEFAULT_BUCKET,
+    ID_MATCH_HELP,
+    ID_MATCH_COL_IF,
+    ID_MATCH_COL_PROJ,
 ];
 
 const DAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -129,7 +147,7 @@ pub fn open(main_hwnd_raw: isize, saved_msg: u32) {
             }
         }
 
-        let (w, h) = (468, 600);
+        let (w, h) = (468, 680);
         let x = (GetSystemMetrics(SM_CXSCREEN) - w) / 2;
         let y = (GetSystemMetrics(SM_CYSCREEN) - h) / 2;
         let ctx = Box::into_raw(Box::new(Ctx {
@@ -275,47 +293,80 @@ unsafe fn build_controls(hwnd: HWND) {
     tabs(hwnd, m - 12, 10, fw + 24, 28, hinst, font);
 
     // --- General page ---
-    label_id(hwnd, ID_LBL_TOKEN, "Bearer token", m, 44, fw, lh, hinst, font);
-    edit(hwnd, ID_TOKEN, m, 66, fw, eh, WINDOW_STYLE(ES_PASSWORD as u32), hinst, font);
-
-    label_id(hwnd, ID_LBL_IDLE, "Idle timeout   ?   minutes, 0 = off", m, 106, half, lh, hinst, font);
-    label_id(hwnd, ID_LBL_TARGET, "Daily goal   ?   hours, 0 = hide", right, 106, half, lh, hinst, font);
-    edit(hwnd, ID_IDLE, m, 128, half, eh, WINDOW_STYLE(ES_NUMBER as u32), hinst, font);
-    edit(hwnd, ID_TARGET, right, 128, half, eh, WINDOW_STYLE(0), hinst, font);
-
-    label_id(hwnd, ID_LBL_START, "Work start", m, 168, half, lh, hinst, font);
-    label_id(hwnd, ID_LBL_END, "Work end", right, 168, half, lh, hinst, font);
-    time_picker(hwnd, ID_START, m, 190, half, eh, hinst, font);
-    time_picker(hwnd, ID_END, right, 190, half, eh, hinst, font);
-
-    label_id(hwnd, ID_LBL_DAYS, "Work days   ?   none = after-hours prompt off", m, 230, fw, lh, hinst, font);
-    let dw = (fw + 6) / 7; // even column width across the row
-    for (i, d) in DAYS.iter().enumerate() {
-        check(hwnd, ID_DAY_BASE + i as i32, d, m + i as i32 * dw, 254, dw - 6, hinst, font);
-    }
-
-    check(hwnd, ID_AUTOSTART, "Start clocked automatically at login", m, 288, fw, hinst, font);
-    check(hwnd, ID_KEEPALIVE, "Keep clocked running (relaunch on unlock too)", m, 314, fw, hinst, font);
-
-    button(hwnd, ID_ADVANCED, "Advanced settings...", m, 350, 154, hinst, font, false);
+    // Token is password-masked; leave blank to keep the saved token (never shown).
+    label_id(hwnd, ID_LBL_TOKEN, "Sync token", m, 44, fw, lh, hinst, font);
+    edit(
+        hwnd,
+        ID_TOKEN,
+        m,
+        66,
+        fw,
+        eh,
+        WINDOW_STYLE(ES_PASSWORD as u32),
+        hinst,
+        font,
+    );
     label_id(
         hwnd,
-        ID_WORKER_URL_LABEL,
-        "Worker URL   ?   defaults to clocked.daviddusi.com",
+        ID_TOKEN_HINT,
+        "Leave blank to keep. Same token for sync + Chrome extension bridge.",
         m,
-        390,
+        96,
         fw,
         lh,
         hinst,
         font,
     );
-    edit(hwnd, ID_WORKER_URL, m, 412, fw, eh, WINDOW_STYLE(0), hinst, font);
+
+    label_id(hwnd, ID_LBL_IDLE, "Idle timeout   ?   minutes, 0 = off", m, 122, half, lh, hinst, font);
+    label_id(hwnd, ID_LBL_TARGET, "Daily goal   ?   hours, 0 = hide", right, 122, half, lh, hinst, font);
+    edit(hwnd, ID_IDLE, m, 144, half, eh, WINDOW_STYLE(ES_NUMBER as u32), hinst, font);
+    edit(hwnd, ID_TARGET, right, 144, half, eh, WINDOW_STYLE(0), hinst, font);
+
+    label_id(hwnd, ID_LBL_START, "Work start", m, 184, half, lh, hinst, font);
+    label_id(hwnd, ID_LBL_END, "Work end", right, 184, half, lh, hinst, font);
+    time_picker(hwnd, ID_START, m, 206, half, eh, hinst, font);
+    time_picker(hwnd, ID_END, right, 206, half, eh, hinst, font);
+
+    label_id(hwnd, ID_LBL_DAYS, "Work days   ?   none = after-hours prompt off", m, 246, fw, lh, hinst, font);
+    let dw = (fw + 6) / 7; // even column width across the row
+    for (i, d) in DAYS.iter().enumerate() {
+        check(hwnd, ID_DAY_BASE + i as i32, d, m + i as i32 * dw, 270, dw - 6, hinst, font);
+    }
+
+    check(hwnd, ID_AUTOSTART, "Start clocked automatically at login", m, 304, fw, hinst, font);
+    check(hwnd, ID_KEEPALIVE, "Keep clocked running (relaunch on unlock too)", m, 328, fw, hinst, font);
+    check(
+        hwnd,
+        ID_STORE_TITLES,
+        "Also store full window titles (opt-in; sanitized; local only)",
+        m,
+        352,
+        fw,
+        hinst,
+        font,
+    );
+    // Hint under privacy: extension uses the same token (no extra control needed).
+
+    button(hwnd, ID_ADVANCED, "Advanced settings...", m, 384, 154, hinst, font, false);
+    label_id(
+        hwnd,
+        ID_WORKER_URL_LABEL,
+        "Worker URL   ?   defaults to clocked.daviddusi.com",
+        m,
+        420,
+        fw,
+        lh,
+        hinst,
+        font,
+    );
+    edit(hwnd, ID_WORKER_URL, m, 442, fw, eh, WINDOW_STYLE(0), hinst, font);
 
     // --- Projects page: one row per used app, assign it to a project bucket ---
     label_id(
         hwnd,
         ID_RULES_HELP,
-        "Apps you've used — type a project next to each to group them.",
+        "Apps you've used — type a project next to each (or Non-work to ignore).",
         m,
         44,
         fw,
@@ -323,27 +374,100 @@ unsafe fn build_controls(hwnd: HWND) {
         hinst,
         font,
     );
-    let proj_x = m + 200;
-    label_id(hwnd, ID_COL_APP, "App", m, 70, 190, lh, hinst, font);
-    label_id(hwnd, ID_COL_PROJ, "Project", proj_x, 70, fw - 200, lh, hinst, font);
-    build_app_rows(hwnd, m, 92, proj_x, fw, hinst, font);
-
     label_id(
         hwnd,
-        ID_LBL_DEFAULT,
-        "Everything else   ?   leave blank to group by app name",
+        ID_PRIVACY_HELP,
+        "App + safe site/doc context while clocked in. Full titles off by default.",
         m,
-        462,
+        64,
         fw,
         lh,
         hinst,
         font,
     );
-    edit(hwnd, ID_DEFAULT_BUCKET, m, 484, half, eh, WINDOW_STYLE(0), hinst, font);
+    let proj_x = m + 200;
+    label_id(hwnd, ID_COL_APP, "App", m, 88, 190, lh, hinst, font);
+    label_id(hwnd, ID_COL_PROJ, "Project", proj_x, 88, fw - 200, lh, hinst, font);
+    build_app_rows(hwnd, m, 110, proj_x, fw, hinst, font);
+
+    // Match rules: if window text or domain contains X → project (zero daily effort).
+    let match_top = 110 + MAX_APP_ROWS as i32 * 30 + 8;
+    label_id(
+        hwnd,
+        ID_MATCH_HELP,
+        "If site/doc/window contains… (e.g. acme.com or Invoice) → project",
+        m,
+        match_top,
+        fw,
+        lh,
+        hinst,
+        font,
+    );
+    label_id(hwnd, ID_MATCH_COL_IF, "Contains", m, match_top + 22, half, lh, hinst, font);
+    label_id(
+        hwnd,
+        ID_MATCH_COL_PROJ,
+        "Project",
+        m + half + gap,
+        match_top + 22,
+        half,
+        lh,
+        hinst,
+        font,
+    );
+    for i in 0..MAX_MATCH_ROWS as i32 {
+        let y = match_top + 44 + i * 30;
+        edit(
+            hwnd,
+            ID_MATCH_CONTAINS_BASE + i,
+            m,
+            y,
+            half,
+            eh,
+            WINDOW_STYLE(0),
+            hinst,
+            font,
+        );
+        edit(
+            hwnd,
+            ID_MATCH_PROJ_BASE + i,
+            m + half + gap,
+            y,
+            half,
+            eh,
+            WINDOW_STYLE(0),
+            hinst,
+            font,
+        );
+    }
+
+    let default_y = match_top + 44 + MAX_MATCH_ROWS as i32 * 30 + 10;
+    label_id(
+        hwnd,
+        ID_LBL_DEFAULT,
+        "Everything else   ?   leave blank to group by app name",
+        m,
+        default_y,
+        fw,
+        lh,
+        hinst,
+        font,
+    );
+    edit(
+        hwnd,
+        ID_DEFAULT_BUCKET,
+        m,
+        default_y + 22,
+        half,
+        eh,
+        WINDOW_STYLE(0),
+        hinst,
+        font,
+    );
 
     // --- Shared footer buttons ---
-    button(hwnd, ID_CANCEL, "Cancel", m + fw - 104, 520, 104, hinst, font, false);
-    button(hwnd, ID_SAVE, "Save", m + fw - 104 - 116, 520, 104, hinst, font, true);
+    button(hwnd, ID_CANCEL, "Cancel", m + fw - 104, 600, 104, hinst, font, false);
+    button(hwnd, ID_SAVE, "Save", m + fw - 104 - 116, 600, 104, hinst, font, true);
 
     populate(hwnd);
     apply_visibility(hwnd);
@@ -423,7 +547,12 @@ unsafe fn build_app_rows(
             hinst,
             font,
         );
-        set_text(parent, ID_ROW_PROJ_BASE + i as i32, rules.assigned(app).unwrap_or(""));
+        let prefill = if rules.is_ignored(app) {
+            "Non-work"
+        } else {
+            rules.assigned(app).unwrap_or("")
+        };
+        set_text(parent, ID_ROW_PROJ_BASE + i as i32, prefill);
     }
 
     if let Some(ctx) = ctx_ref(parent) {
@@ -486,6 +615,10 @@ unsafe fn apply_visibility(hwnd: HWND) {
     for i in 0..MAX_APP_ROWS as i32 {
         show_ctrl(hwnd, ID_ROW_LABEL_BASE + i, !general);
         show_ctrl(hwnd, ID_ROW_PROJ_BASE + i, !general);
+    }
+    for i in 0..MAX_MATCH_ROWS as i32 {
+        show_ctrl(hwnd, ID_MATCH_CONTAINS_BASE + i, !general);
+        show_ctrl(hwnd, ID_MATCH_PROJ_BASE + i, !general);
     }
     show_ctrl(hwnd, ID_WORKER_URL_LABEL, general && advanced);
     show_ctrl(hwnd, ID_WORKER_URL, general && advanced);
@@ -745,7 +878,20 @@ unsafe fn toggle_advanced(parent: HWND) {
 unsafe fn populate(hwnd: HWND) {
     let c = Config::load();
     set_text(hwnd, ID_WORKER_URL, c.effective_worker_url());
-    set_text(hwnd, ID_TOKEN, &c.bearer_token);
+    // Never put the full token in the edit box — leave empty so Save keeps it.
+    set_text(hwnd, ID_TOKEN, "");
+    if !c.bearer_token.is_empty() {
+        let prefix = if c.bearer_token.len() > 12 {
+            format!("{}…", &c.bearer_token[..12])
+        } else {
+            "saved".to_string()
+        };
+        set_text(
+            hwnd,
+            ID_TOKEN_HINT,
+            &format!("Saved token: {prefix}  ·  leave blank to keep · paste new clk_… to replace"),
+        );
+    }
     // Shown in minutes; stored in seconds.
     set_text(hwnd, ID_IDLE, &(c.idle_timeout_secs / 60).to_string());
     set_text(hwnd, ID_TARGET, &fmt_hours(c.target_hours));
@@ -770,10 +916,24 @@ unsafe fn populate(hwnd: HWND) {
             SendMessageW(h, BM_SETCHECK, Some(WPARAM(1)), None);
         }
     }
+    if c.store_titles {
+        if let Ok(h) = GetDlgItem(Some(hwnd), ID_STORE_TITLES) {
+            SendMessageW(h, BM_SETCHECK, Some(WPARAM(1)), None);
+        }
+    }
 
-    // Projects tab: the per-app rows are pre-filled when built; here just the
-    // fallback bucket.
-    set_text(hwnd, ID_DEFAULT_BUCKET, &crate::rules::Rules::load().default_project);
+    // Projects tab: fallback bucket + match rules.
+    let rules = crate::rules::Rules::load();
+    set_text(hwnd, ID_DEFAULT_BUCKET, &rules.default_project);
+    for i in 0..MAX_MATCH_ROWS {
+        let (contains, project) = rules
+            .title_rules
+            .get(i)
+            .map(|r| (r.contains.as_str(), r.project.as_str()))
+            .unwrap_or(("", ""));
+        set_text(hwnd, ID_MATCH_CONTAINS_BASE + i as i32, contains);
+        set_text(hwnd, ID_MATCH_PROJ_BASE + i as i32, project);
+    }
 }
 
 fn fmt_hours(h: f64) -> String {
@@ -800,15 +960,25 @@ unsafe fn save_and_close(hwnd: HWND) {
         .map(|(_, d)| d.to_string())
         .collect();
 
+    let existing = Config::load();
+    let token_field = get_text(hwnd, ID_TOKEN).trim().to_string();
+    // Empty password field = keep existing DPAPI token (never re-displayed).
+    let bearer_token = if token_field.is_empty() {
+        existing.bearer_token
+    } else {
+        token_field
+    };
     let cfg = Config {
         worker_url: get_text(hwnd, ID_WORKER_URL).trim().to_string(),
-        bearer_token: get_text(hwnd, ID_TOKEN).trim().to_string(),
+        bearer_token,
         // Entered in minutes; stored in seconds.
         idle_timeout_secs: get_text(hwnd, ID_IDLE).trim().parse::<u64>().unwrap_or(0) * 60,
         target_hours: get_text(hwnd, ID_TARGET).trim().parse().unwrap_or(0.0),
         work_start: get_time(hwnd, ID_START),
         work_end: get_time(hwnd, ID_END),
         work_days,
+        store_titles: is_checked(hwnd, ID_STORE_TITLES),
+        activity_retention_days: existing.activity_retention_days.max(7),
     };
 
     // Apply the "start at login" choice (registry, not config.toml).
@@ -839,16 +1009,36 @@ unsafe fn save_and_close(hwnd: HWND) {
 
     // Projects tab: fold each row's project box back onto its app. Start from the
     // existing assignments so apps not currently listed aren't lost; a blank box
-    // clears that app's assignment.
+    // clears that app's assignment. Typing "Non-work" also adds to the ignore set.
     let mut rules = crate::rules::Rules::load();
     rules.default_project = get_text(hwnd, ID_DEFAULT_BUCKET).trim().to_string();
     let apps = ctx.apps.borrow().clone();
     for (i, app) in apps.iter().enumerate() {
         let project = get_text(hwnd, ID_ROW_PROJ_BASE + i as i32).trim().to_string();
+        let key = app.trim().to_ascii_lowercase();
+        if project.eq_ignore_ascii_case("non-work") || project.eq_ignore_ascii_case("ignore") {
+            rules.ignore.insert(key.clone());
+            rules.assignments.remove(&key);
+            continue;
+        }
+        rules.ignore.remove(&key);
         if project.is_empty() {
-            rules.assignments.remove(app);
+            rules.assignments.remove(&key);
         } else {
-            rules.assignments.insert(app.clone(), project);
+            rules.assignments.insert(key, project);
+        }
+    }
+    // Match rules: only keep rows with both fields; order preserved.
+    rules.title_rules.clear();
+    for i in 0..MAX_MATCH_ROWS {
+        let contains = get_text(hwnd, ID_MATCH_CONTAINS_BASE + i as i32)
+            .trim()
+            .to_string();
+        let project = get_text(hwnd, ID_MATCH_PROJ_BASE + i as i32)
+            .trim()
+            .to_string();
+        if !contains.is_empty() && !project.is_empty() {
+            rules.title_rules.push(crate::rules::TitleRule { contains, project });
         }
     }
     if let Err(e) = rules.save() {

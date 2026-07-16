@@ -5,14 +5,17 @@
 mod log;
 
 // Portable core — compiles on every platform.
+mod activity;
 mod autostart;
+mod bridge;
 mod config;
+mod context;
 mod db;
 mod events;
-// Foreground-app capture + rules-based classification into projects. Consumed by
-// the Windows UI layer today; portable (macOS uses a no-op capture stub).
+// Foreground-app capture + rules-based classification into projects.
 mod foreground;
 mod idle;
+mod privacy;
 mod rules;
 // "Keep running" relaunch is a Windows scheduled-task concept; on macOS the
 // LaunchAgent's KeepAlive (see `autostart`) covers it, so the module is Win-only.
@@ -24,9 +27,7 @@ mod secret;
 mod sync;
 mod update;
 
-// Shared clock/idle/after-hours policy the platform UI layers drive. Unit-tested
-// on any host; consumed today by the macOS layer (Windows still uses its inline
-// AppState — migrating it onto `engine` is a tracked follow-up).
+// Shared clock/idle/after-hours policy both platform UI layers drive.
 mod engine;
 
 // Windows UI layer: hidden Win32 window + message loop, tray, native settings.

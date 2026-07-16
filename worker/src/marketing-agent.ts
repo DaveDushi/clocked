@@ -72,9 +72,9 @@ const TIP_POOL: Tip[] = [
     x: "Month-end = a CSV in your inbox with total hours, days worked, and vacation flagged. Invoice, done. https://clocked.daviddusi.com",
   },
   {
-    title: "Presence, not keystrokes",
-    body: "clocked reads OS power and input events — unlock, lock, sleep, idle. It never records what you type, what's on screen, or which apps you use. Honest hours, zero surveillance.",
-    x: "clocked tracks presence from unlock/lock/idle — never keystrokes, screens, or app names. Time tracking you can show a client. https://clocked.daviddusi.com",
+    title: "Presence first — apps optional, private by default",
+    body: "clocked clocks hours from unlock, lock, sleep, and idle. Locally it can also attribute time to the focused app (titles off by default; never keystrokes or screenshots). Your machine stays the source of truth.",
+    x: "clocked: automatic hours from unlock/lock/idle + optional local app breakdown. No keylogging, no screenshots, titles off by default. https://clocked.daviddusi.com",
   },
   {
     title: "Cheaper than the timer you forget",

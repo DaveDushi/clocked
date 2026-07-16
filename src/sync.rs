@@ -1,4 +1,4 @@
-//! Push unsynced sessions to the Cloudflare Worker.
+//! Push unsynced sessions and daily activity aggregates to the Cloudflare Worker.
 //!
 //! Runs on a dedicated OS thread with its own SQLite connection so the Win32
 //! message loop never blocks on the network. When done it posts `done_msg`
@@ -42,7 +42,7 @@ pub fn spawn(hwnd_raw: isize, done_msg: u32, config: Config) {
     std::thread::spawn(move || {
         let _done = SignalDone(hwnd_raw, done_msg);
         match run(&config, DEFAULT_TIMEOUT) {
-            Ok(n) if n > 0 => crate::logln!("synced {n} session(s)"),
+            Ok(n) if n > 0 => crate::logln!("synced {n} item(s)"),
             Ok(_) => {}
             Err(e) => crate::logln!("sync error: {e}"),
         }
@@ -50,9 +50,7 @@ pub fn spawn(hwnd_raw: isize, done_msg: u32, config: Config) {
 }
 
 /// Sync on the calling thread, blocking until it finishes or `timeout` elapses.
-/// Returns the number of sessions pushed. Used on shutdown/quit, where a
-/// detached thread would be killed before it could complete — keep `timeout`
-/// small so we don't stall the OS shutdown sequence.
+/// Returns the number of items pushed (sessions + activity day rows).
 pub fn run_blocking(cfg: &Config, timeout: Duration) -> Result<usize, Box<dyn std::error::Error>> {
     run(cfg, timeout)
 }
@@ -103,20 +101,36 @@ fn run(cfg: &Config, timeout: Duration) -> Result<usize, Box<dyn std::error::Err
     let endpoint = cfg.effective_worker_url().trim_end_matches('/');
     if crate::db::meta_get(&conn, "synced_endpoint")?.as_deref() != Some(endpoint) {
         let n = crate::db::reset_synced(&conn)?;
+        let a = crate::db::reset_activity_synced(&conn)?;
         crate::db::meta_set(&conn, "synced_endpoint", endpoint)?;
-        if n > 0 {
-            crate::logln!("sync endpoint changed -> re-queued {n} session(s) for {endpoint}");
+        if n + a > 0 {
+            crate::logln!(
+                "sync endpoint changed -> re-queued {n} session(s) + {a} activity day(s) for {endpoint}"
+            );
         }
-    }
-
-    let pending = crate::db::unsynced(&conn)?;
-    if pending.is_empty() {
-        return Ok(0);
     }
 
     let client = reqwest::blocking::Client::builder()
         .timeout(timeout)
         .build()?;
+
+    let mut total = 0usize;
+    total += push_sessions(&client, &conn, cfg, endpoint)?;
+    total += push_activity(&client, &conn, cfg, endpoint)?;
+    Ok(total)
+}
+
+fn push_sessions(
+    client: &reqwest::blocking::Client,
+    conn: &rusqlite::Connection,
+    cfg: &Config,
+    endpoint: &str,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let pending = crate::db::unsynced(conn)?;
+    if pending.is_empty() {
+        return Ok(0);
+    }
+
     let url = format!("{endpoint}/sessions");
     let resp = client
         .post(url)
@@ -125,11 +139,9 @@ fn run(cfg: &Config, timeout: Duration) -> Result<usize, Box<dyn std::error::Err
         .send()?;
 
     if !resp.status().is_success() {
-        return Err(format!("worker returned HTTP {}", resp.status()).into());
+        return Err(format!("worker returned HTTP {} on /sessions", resp.status()).into());
     }
 
-    // Prefer the Worker's `accepted` list so invalid/rejected sessions stay
-    // unsynced and can be retried. Fall back only for older Workers that omit it.
     #[derive(serde::Deserialize)]
     struct IngestResp {
         accepted: Option<Vec<String>>,
@@ -151,6 +163,57 @@ fn run(cfg: &Config, timeout: Duration) -> Result<usize, Box<dyn std::error::Err
     if ids.is_empty() {
         return Ok(0);
     }
-    crate::db::mark_synced(&conn, &ids)?;
+    crate::db::mark_synced(conn, &ids)?;
     Ok(ids.len())
+}
+
+/// Push daily app/project aggregates (never window titles). Soft-fails if the
+/// Worker is older and doesn't know `/activity` yet.
+fn push_activity(
+    client: &reqwest::blocking::Client,
+    conn: &rusqlite::Connection,
+    cfg: &Config,
+    endpoint: &str,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let pending = crate::db::unsynced_activity(conn)?;
+    if pending.is_empty() {
+        return Ok(0);
+    }
+
+    let url = format!("{endpoint}/activity");
+    let resp = client
+        .post(url)
+        .bearer_auth(&cfg.bearer_token)
+        .json(&serde_json::json!({ "days": pending }))
+        .send()?;
+
+    // Older Workers return 404 — leave rows unsynced; next release will catch up.
+    if resp.status().as_u16() == 404 {
+        crate::logln!("activity sync skipped (Worker has no /activity yet)");
+        return Ok(0);
+    }
+    if !resp.status().is_success() {
+        return Err(format!("worker returned HTTP {} on /activity", resp.status()).into());
+    }
+
+    #[derive(serde::Deserialize)]
+    struct ActResp {
+        accepted: Option<usize>,
+        upserted: Option<usize>,
+    }
+    let body: ActResp = resp.json().unwrap_or(ActResp {
+        accepted: None,
+        upserted: None,
+    });
+    let n = body.accepted.or(body.upserted).unwrap_or(pending.len());
+    if n == 0 {
+        return Ok(0);
+    }
+    // Mark everything we sent; the Worker replaces aggregates by primary key.
+    let keys: Vec<(String, String, String)> = pending
+        .iter()
+        .map(|r| (r.day.clone(), r.app.clone(), r.project.clone()))
+        .collect();
+    crate::db::mark_activity_synced(conn, &keys)?;
+    Ok(keys.len())
 }

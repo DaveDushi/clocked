@@ -41,14 +41,14 @@ impl UpdateStatus {
     pub fn menu_label(&self) -> String {
         match self {
             UpdateStatus::Unknown | UpdateStatus::Failed => {
-                format!("Check for updates • {}", display_version(CURRENT_VERSION))
+                format!("Check for updates  {}", display_version(CURRENT_VERSION))
             }
             UpdateStatus::Checking => "Checking for updates…".to_string(),
             UpdateStatus::UpToDate { version } => {
-                format!("Up to date • {}", display_version(version))
+                format!("Up to date  {}", display_version(version))
             }
             UpdateStatus::Available { version, .. } => {
-                format!("Download latest update • {}", display_version(version))
+                format!("Update available  v{}", version.trim_start_matches('v'))
             }
         }
     }
@@ -185,7 +185,7 @@ mod tests {
             download_url: DOWNLOAD_URL.to_string(),
         };
 
-        assert_eq!(status.menu_label(), "Download latest update • v0.2.0");
+        assert_eq!(status.menu_label(), "Update available  v0.2.0");
         assert!(status.menu_enabled());
         assert_eq!(status.download_url(), Some(DOWNLOAD_URL));
     }
@@ -194,7 +194,7 @@ mod tests {
     fn menu_label_starts_as_check_for_updates() {
         assert_eq!(
             UpdateStatus::Unknown.menu_label(),
-            format!("Check for updates • v{}", env!("CARGO_PKG_VERSION"))
+            format!("Check for updates  v{}", env!("CARGO_PKG_VERSION"))
         );
         assert!(UpdateStatus::Unknown.menu_enabled());
     }
@@ -205,7 +205,7 @@ mod tests {
             version: "0.1.0".to_string(),
         };
 
-        assert_eq!(status.menu_label(), "Up to date • v0.1.0");
+        assert_eq!(status.menu_label(), "Up to date  v0.1.0");
         assert!(!status.menu_enabled());
     }
 

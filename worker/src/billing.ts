@@ -12,6 +12,7 @@ import Stripe from "stripe";
 import { makeAuth } from "./auth-server";
 import {
   isPaidBillingStatus,
+  isPaidBillingStatusWithGrace,
   orgPlan,
   planCap,
   SELF_SERVE_PLANS,
@@ -165,17 +166,18 @@ export async function ensureTeamOrg(
 /** True when the user belongs to any org with an active Stripe subscription. */
 export async function userHasPaidAccess(env: Env, userId: string): Promise<boolean> {
   if (!userId) return false;
-  const row = await env.DB.prepare(
-    `SELECT 1 AS ok
+  // Fetch candidate paid-ish rows and apply past_due grace in JS (D1 has no
+  // portable "now - updatedAt" helper we want to couple to).
+  const res = await env.DB.prepare(
+    `SELECT b.status AS status, b.updatedAt AS updatedAt
        FROM member m
        JOIN org_billing b ON b.organizationId = m.organizationId
       WHERE m.userId = ?
-        AND b.status IN ('active', 'trialing', 'past_due')
-      LIMIT 1`,
+        AND b.status IN ('active', 'trialing', 'past_due')`,
   )
     .bind(userId)
-    .first<{ ok: number }>();
-  return !!row;
+    .all<{ status: string | null; updatedAt: number | null }>();
+  return (res.results ?? []).some((r) => isPaidBillingStatusWithGrace(r.status, r.updatedAt));
 }
 
 /** Create a Checkout Session for a plan and return its hosted URL. */
