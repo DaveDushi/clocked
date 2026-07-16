@@ -117,7 +117,10 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   if (req.method === "GET" && url.pathname === "/sitemap.xml") return sitemapXmlResponse();
   if (req.method === "GET" && url.pathname === "/llms.txt") return llmsTxtResponse();
   if (req.method === "GET" && url.pathname === "/press") return pressPageResponse();
-  if (req.method === "GET" && url.pathname === "/privacy/extension") {
+  if (
+    (req.method === "GET" || req.method === "HEAD") &&
+    url.pathname === "/privacy/extension"
+  ) {
     return extensionPrivacyPageResponse();
   }
   if (req.method === "GET" && url.pathname === "/news") return newsPageResponse(env);
