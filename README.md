@@ -25,11 +25,13 @@ Windows tray app (Rust)                     Cloudflare Worker (TypeScript)
 
 Most trackers make you babysit a timer. clocked uses what Windows already knows
 (unlock, lock, idle, sleep) so freelancers and small teams get honest hours
-without screenshots or keylogging. While you're clocked in it also attributes
-time to the focused app, and infers a **privacy-safe context** when it can
-(browser hostname, document name from the title bar — never full URLs or
+without screenshots or keylogging. By default it only tracks **presence**
+(when you were working) — no app or project breakdown. Optional **project
+tracking** (`track_projects = true` in `config.toml`, or Settings → Advanced)
+attributes time to the focused app and infers a privacy-safe context when it
+can (browser hostname, document name from the title bar — never full URLs or
 keystrokes). Full window titles stay off by default. Totals stay local first,
-with optional project rollups in the cloud.
+with optional project rollups in the cloud when that feature is on.
 
 ## Clock rules
 
@@ -94,11 +96,11 @@ Run `clocked.exe`. It creates `%APPDATA%\clocked\data\` containing:
 - `config.toml` — sync settings (written as a blank template on first run)
 - `clocked.log` — diagnostics
 
-Right-click the tray icon for a short status (tracking / today / top projects
-and sites), **Pause**, **Open timesheet**, **Settings**, optional **Sync now**,
-**Check for updates**, and **Quit**. When a newer release exists the update line
-becomes a download link; otherwise it re-checks GitHub. The **Settings** window
-edits `config.toml` (sync, idle, goal,
+Right-click the tray icon for a short status (tracking / today; with project
+tracking on, also top projects and sites), **Pause**, **Open timesheet**,
+**Settings**, optional **Sync now**, **Check for updates**, and **Quit**. When a
+newer release exists the update line becomes a download link; otherwise it
+re-checks GitHub. The **Settings** window edits `config.toml` (sync, idle, goal,
 working hours) plus:
 
 - **Start at login** — enabled by default by the installer; a per-user

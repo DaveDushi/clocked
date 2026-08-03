@@ -116,7 +116,10 @@ fn run(cfg: &Config, timeout: Duration) -> Result<usize, Box<dyn std::error::Err
 
     let mut total = 0usize;
     total += push_sessions(&client, &conn, cfg, endpoint)?;
-    total += push_activity(&client, &conn, cfg, endpoint)?;
+    // Project/app day aggregates only when the optional feature is on.
+    if cfg.track_projects {
+        total += push_activity(&client, &conn, cfg, endpoint)?;
+    }
     Ok(total)
 }
 

@@ -828,7 +828,7 @@ const HTML = /* html */ `<!doctype html>
           </table>
         </div>
         <div class="total"><span class="muted">Total</span><b id="totalRow">0:00</b></div>
-        <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
+        <div id="projectSection" style="display:none;margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
           <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">By project</div>
           <div id="projectList"></div>
         </div>
@@ -2068,12 +2068,16 @@ async function loadHours() {
 }
 
 function renderProjects(list) {
+  const section = $("projectSection");
   const box = $("projectList");
   if (!box) return;
+  // Hidden unless the desktop app has project tracking enabled and synced data.
   if (!list || !list.length) {
-    box.innerHTML = "<div class='muted' style='font-size:13px;padding:4px 0'>No app/project breakdown synced for this month yet. The tray app attributes time locally; totals appear here after the next sync.</div>";
+    box.innerHTML = "";
+    if (section) section.style.display = "none";
     return;
   }
+  if (section) section.style.display = "block";
   const max = list.reduce((a, x) => Math.max(a, x.minutes || 0), 0) || 1;
   box.innerHTML = list.slice(0, 12).map((p) => {
     const mins = Number(p.minutes) || 0;

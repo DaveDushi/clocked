@@ -109,6 +109,10 @@ impl AppState {
     }
 
     fn record_activity_tick(&mut self) {
+        if !self.config.track_projects {
+            self.activity.flush(&self.conn, Utc::now());
+            return;
+        }
         let active = !self.paused
             && self.is_clocked_in()
             && (crate::idle::idle_duration().as_secs() < 60 || crate::media::in_use());
@@ -441,11 +445,13 @@ impl AppState {
     pub(crate) fn heartbeat_tick(&mut self) {
         let now = Utc::now();
         let _ = crate::db::heartbeat(&self.conn, now);
-        self.activity.checkpoint(&self.conn, now);
-        let _ = crate::db::prune_activity(&self.conn, now, self.config.activity_retention_days);
+        if self.config.track_projects {
+            self.activity.checkpoint(&self.conn, now);
+            let _ = crate::db::prune_activity(&self.conn, now, self.config.activity_retention_days);
+            self.record_activity_tick();
+        }
         self.maybe_enter_working_hours();
         self.check_idle();
-        self.record_activity_tick();
     }
 
     pub(crate) fn open_cmd(&mut self, reason: &'static str) {

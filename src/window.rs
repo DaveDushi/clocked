@@ -449,7 +449,13 @@ impl AppState {
 
     /// Sample the focused window into the activity tracker. Active only while
     /// clocked in, not paused, and either recently active or on a call.
+    /// No-op when `track_projects` is off (presence sessions only).
     fn record_activity_tick(&mut self) {
+        if !self.config.track_projects {
+            // Drop any open segment if the flag was just turned off.
+            self.activity.flush(&self.conn, Utc::now());
+            return;
+        }
         let active = !self.paused
             && self.is_clocked_in()
             && (crate::idle::idle_duration().as_secs() < 60 || crate::media::in_use());
@@ -722,12 +728,21 @@ unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
         let app = &*ptr;
         let update = app.effective_update_status();
         let now = Utc::now();
+        let (breakdown, contexts, suggestions) = if app.config.track_projects {
+            (
+                crate::db::today_by_project(&app.conn, now).unwrap_or_default(),
+                crate::db::today_by_context(&app.conn, now).unwrap_or_default(),
+                crate::db::suggest_assignments(&app.conn, &app.rules, 3).unwrap_or_default(),
+            )
+        } else {
+            (Vec::new(), Vec::new(), Vec::new())
+        };
         (
             app.status_line(),
             app.today_line(),
-            crate::db::today_by_project(&app.conn, now).unwrap_or_default(),
-            crate::db::today_by_context(&app.conn, now).unwrap_or_default(),
-            crate::db::suggest_assignments(&app.conn, &app.rules, 3).unwrap_or_default(),
+            breakdown,
+            contexts,
+            suggestions,
             app.config.effective_worker_url().to_string(),
             app.is_clocked_in(),
             app.config.is_configured(),
@@ -916,22 +931,26 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     let app = &mut *ptr;
                     let now = Utc::now();
                     let _ = crate::db::heartbeat(&app.conn, now);
-                    // Checkpoint open activity segments and prune old history.
-                    app.activity.checkpoint(&app.conn, now);
-                    let _ = crate::db::prune_activity(
-                        &app.conn,
-                        now,
-                        app.config.activity_retention_days,
-                    );
+                    if app.config.track_projects {
+                        // Checkpoint open activity segments and prune old history.
+                        app.activity.checkpoint(&app.conn, now);
+                        let _ = crate::db::prune_activity(
+                            &app.conn,
+                            now,
+                            app.config.activity_retention_days,
+                        );
+                        app.record_activity_tick();
+                    }
                     // Enter working hours: dismiss a stale after-hours prompt /
                     // "not working" answer without another user click.
                     app.maybe_enter_working_hours();
                     app.check_idle();
-                    app.record_activity_tick();
                     app.update_tooltip();
                 }
                 TIMER_ACTIVITY => {
-                    (*ptr).record_activity_tick();
+                    if (*ptr).config.track_projects {
+                        (*ptr).record_activity_tick();
+                    }
                 }
                 TIMER_SYNC => (*ptr).do_sync(),
                 TIMER_UPDATE_CHECK => (*ptr).check_for_updates(false),

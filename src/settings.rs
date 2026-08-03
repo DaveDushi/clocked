@@ -50,6 +50,8 @@ const ID_LBL_END: i32 = 1025;
 const ID_LBL_DAYS: i32 = 1026;
 const ID_TOKEN_HINT: i32 = 1027;
 const ID_STORE_TITLES: i32 = 1028;
+/// Advanced: optional app/project attribution (off by default).
+const ID_TRACK_PROJECTS: i32 = 1029;
 // Tab control + Projects (bucket) tab controls.
 const ID_TABS: i32 = 900;
 const ID_RULES_HELP: i32 = 1200;
@@ -74,13 +76,13 @@ const ID_BUCKET_HINT: i32 = 1217;
 /// Special first bucket: apps here are ignored as Non-work.
 const BUCKET_NON_WORK: &str = "Non-work";
 
-// Every General-tab control except the Advanced-gated worker URL pair, which is
-// shown/hidden by the Advanced toggle instead.
+// Every General-tab control except Advanced-gated rows (worker URL, track projects)
+// and project-only privacy (store_titles).
 const GENERAL_CORE_IDS: &[i32] = &[
     ID_LBL_TOKEN, ID_TOKEN, ID_TOKEN_HINT, ID_LBL_IDLE, ID_LBL_TARGET, ID_IDLE, ID_TARGET,
     ID_LBL_START, ID_LBL_END, ID_START, ID_END, ID_LBL_DAYS, ID_DAY_BASE, ID_DAY_BASE + 1,
     ID_DAY_BASE + 2, ID_DAY_BASE + 3, ID_DAY_BASE + 4, ID_DAY_BASE + 5, ID_DAY_BASE + 6,
-    ID_AUTOSTART, ID_KEEPALIVE, ID_STORE_TITLES, ID_ADVANCED,
+    ID_AUTOSTART, ID_KEEPALIVE, ID_ADVANCED,
 ];
 const PROJECT_IDS: &[i32] = &[
     ID_RULES_HELP,
@@ -117,9 +119,12 @@ struct Ctx {
     main_hwnd: isize,
     saved_msg: u32,
     font: HFONT,
-    /// Whether the Advanced (Worker URL) row is currently revealed. Tracked so a
-    /// tab switch back to General can restore it correctly.
+    /// Whether the Advanced (Worker URL / track projects) row is currently
+    /// revealed. Tracked so a tab switch back to General can restore it correctly.
     advanced: Cell<bool>,
+    /// Whether this window was opened with project tracking UI (tabs + buckets).
+    /// Snapshot of config at open; toggled flag applies after Save + reopen.
+    projects_ui: bool,
     /// Live project rules edited on the Projects tab (committed on Save).
     rules: RefCell<crate::rules::Rules>,
     /// Known app executables (pool + assigned), lowercased.
@@ -170,7 +175,9 @@ pub fn open(main_hwnd_raw: isize, saved_msg: u32) {
             }
         }
 
-        let (w, h) = (520, 700);
+        let projects_ui = Config::load().track_projects;
+        // Compact layout when projects are off (no tabs / bucket board).
+        let (w, h) = if projects_ui { (520, 700) } else { (520, 540) };
         let x = (GetSystemMetrics(SM_CXSCREEN) - w) / 2;
         let y = (GetSystemMetrics(SM_CYSCREEN) - h) / 2;
         let ctx = Box::into_raw(Box::new(Ctx {
@@ -178,6 +185,7 @@ pub fn open(main_hwnd_raw: isize, saved_msg: u32) {
             saved_msg,
             font: ui_font(),
             advanced: Cell::new(false),
+            projects_ui,
             rules: RefCell::new(crate::rules::Rules::load()),
             apps: RefCell::new(Vec::new()),
             member_keys: RefCell::new(Vec::new()),
@@ -312,11 +320,14 @@ unsafe fn build_controls(hwnd: HWND) {
     };
     let hinst = HINSTANCE(module.0);
     let ctx = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const Ctx;
-    let font = WPARAM(if ctx.is_null() {
-        GetStockObject(windows::Win32::Graphics::Gdi::DEFAULT_GUI_FONT).0 as usize
+    let (font, projects_ui) = if ctx.is_null() {
+        (
+            WPARAM(GetStockObject(windows::Win32::Graphics::Gdi::DEFAULT_GUI_FONT).0 as usize),
+            false,
+        )
     } else {
-        (*ctx).font.0 as usize
-    });
+        (WPARAM((*ctx).font.0 as usize), (*ctx).projects_ui)
+    };
 
     let m = 24; // outer margin
     let fw = 456; // full field width (wider for bucket layout)
@@ -326,19 +337,21 @@ unsafe fn build_controls(hwnd: HWND) {
     let eh = 26; // edit height
     let lh = 18; // label height
 
-    // Tab strip across the top; each page's controls are siblings shown/hidden
-    // together (they stay children of the window so their labels paint on the
-    // white background). Content starts just below the strip.
-    tabs(hwnd, m - 12, 10, fw + 24, 28, hinst, font);
+    // Tab strip only when project tracking is enabled (General + Projects).
+    // Without it, general controls sit higher for a shorter dialog.
+    if projects_ui {
+        tabs(hwnd, m - 12, 10, fw + 24, 28, hinst, font);
+    }
+    let y0 = if projects_ui { 44 } else { 20 };
 
-    // --- General page ---
+    // --- General page (y positions relative to y0 so layout works with/without tabs) ---
     // Token is password-masked; leave blank to keep the saved token (never shown).
-    label_id(hwnd, ID_LBL_TOKEN, "Sync token", m, 44, fw, lh, hinst, font);
+    label_id(hwnd, ID_LBL_TOKEN, "Sync token", m, y0, fw, lh, hinst, font);
     edit(
         hwnd,
         ID_TOKEN,
         m,
-        66,
+        y0 + 22,
         fw,
         eh,
         WINDOW_STYLE(ES_PASSWORD as u32),
@@ -350,147 +363,130 @@ unsafe fn build_controls(hwnd: HWND) {
         ID_TOKEN_HINT,
         "Leave blank to keep. Same token for sync + Chrome extension bridge.",
         m,
-        96,
+        y0 + 52,
         fw,
         lh,
         hinst,
         font,
     );
 
-    label_id(hwnd, ID_LBL_IDLE, "Idle timeout   ?   minutes, 0 = off", m, 122, half, lh, hinst, font);
-    label_id(hwnd, ID_LBL_TARGET, "Daily goal   ?   hours, 0 = hide", right, 122, half, lh, hinst, font);
-    edit(hwnd, ID_IDLE, m, 144, half, eh, WINDOW_STYLE(ES_NUMBER as u32), hinst, font);
-    edit(hwnd, ID_TARGET, right, 144, half, eh, WINDOW_STYLE(0), hinst, font);
+    label_id(
+        hwnd,
+        ID_LBL_IDLE,
+        "Idle timeout   ?   minutes, 0 = off",
+        m,
+        y0 + 78,
+        half,
+        lh,
+        hinst,
+        font,
+    );
+    label_id(
+        hwnd,
+        ID_LBL_TARGET,
+        "Daily goal   ?   hours, 0 = hide",
+        right,
+        y0 + 78,
+        half,
+        lh,
+        hinst,
+        font,
+    );
+    edit(
+        hwnd,
+        ID_IDLE,
+        m,
+        y0 + 100,
+        half,
+        eh,
+        WINDOW_STYLE(ES_NUMBER as u32),
+        hinst,
+        font,
+    );
+    edit(hwnd, ID_TARGET, right, y0 + 100, half, eh, WINDOW_STYLE(0), hinst, font);
 
-    label_id(hwnd, ID_LBL_START, "Work start", m, 184, half, lh, hinst, font);
-    label_id(hwnd, ID_LBL_END, "Work end", right, 184, half, lh, hinst, font);
-    time_picker(hwnd, ID_START, m, 206, half, eh, hinst, font);
-    time_picker(hwnd, ID_END, right, 206, half, eh, hinst, font);
+    label_id(hwnd, ID_LBL_START, "Work start", m, y0 + 140, half, lh, hinst, font);
+    label_id(hwnd, ID_LBL_END, "Work end", right, y0 + 140, half, lh, hinst, font);
+    time_picker(hwnd, ID_START, m, y0 + 162, half, eh, hinst, font);
+    time_picker(hwnd, ID_END, right, y0 + 162, half, eh, hinst, font);
 
-    label_id(hwnd, ID_LBL_DAYS, "Work days   ?   none = after-hours prompt off", m, 246, fw, lh, hinst, font);
+    label_id(
+        hwnd,
+        ID_LBL_DAYS,
+        "Work days   ?   none = after-hours prompt off",
+        m,
+        y0 + 202,
+        fw,
+        lh,
+        hinst,
+        font,
+    );
     let dw = (fw + 6) / 7; // even column width across the row
     for (i, d) in DAYS.iter().enumerate() {
-        check(hwnd, ID_DAY_BASE + i as i32, d, m + i as i32 * dw, 270, dw - 6, hinst, font);
+        check(
+            hwnd,
+            ID_DAY_BASE + i as i32,
+            d,
+            m + i as i32 * dw,
+            y0 + 226,
+            dw - 6,
+            hinst,
+            font,
+        );
     }
 
-    check(hwnd, ID_AUTOSTART, "Start clocked automatically at login", m, 304, fw, hinst, font);
-    check(hwnd, ID_KEEPALIVE, "Keep clocked running (relaunch on unlock too)", m, 328, fw, hinst, font);
     check(
         hwnd,
-        ID_STORE_TITLES,
-        "Also store full window titles (opt-in; sanitized; local only)",
+        ID_AUTOSTART,
+        "Start clocked automatically at login",
         m,
-        352,
+        y0 + 260,
         fw,
         hinst,
         font,
     );
-    // Hint under privacy: extension uses the same token (no extra control needed).
+    check(
+        hwnd,
+        ID_KEEPALIVE,
+        "Keep clocked running (relaunch on unlock too)",
+        m,
+        y0 + 284,
+        fw,
+        hinst,
+        font,
+    );
+    // Window-title storage only applies when app/project tracking is on.
+    if projects_ui {
+        check(
+            hwnd,
+            ID_STORE_TITLES,
+            "Also store full window titles (opt-in; sanitized; local only)",
+            m,
+            y0 + 308,
+            fw,
+            hinst,
+            font,
+        );
+    }
 
-    button(hwnd, ID_ADVANCED, "Advanced settings...", m, 384, 154, hinst, font, false);
+    let advanced_y = if projects_ui { y0 + 340 } else { y0 + 316 };
+    button(
+        hwnd,
+        ID_ADVANCED,
+        "Advanced settings...",
+        m,
+        advanced_y,
+        154,
+        hinst,
+        font,
+        false,
+    );
     label_id(
         hwnd,
         ID_WORKER_URL_LABEL,
         "Worker URL   ?   defaults to clocked.daviddusi.com",
         m,
-        420,
-        fw,
-        lh,
-        hinst,
-        font,
-    );
-    edit(hwnd, ID_WORKER_URL, m, 442, fw, eh, WINDOW_STYLE(0), hinst, font);
-
-    // --- Projects page: bucket board (apps + site tags → named projects) ---
-    label_id(
-        hwnd,
-        ID_RULES_HELP,
-        "Project buckets — drop apps and site tags into a bucket.",
-        m,
-        44,
-        fw,
-        lh,
-        hinst,
-        font,
-    );
-    label_id(
-        hwnd,
-        ID_BUCKET_HINT,
-        "Select a bucket, then add from Unassigned (or double-click). Sites use domains like acme.com.",
-        m,
-        64,
-        fw,
-        lh,
-        hinst,
-        font,
-    );
-
-    let bucket_w = 150;
-    let mid = 36; // gap + transfer buttons
-    let member_x = m + bucket_w + mid;
-    let member_w = fw - bucket_w - mid;
-    let board_top = 90;
-    let board_h = 200;
-
-    label_id(hwnd, ID_LBL_BUCKETS, "Buckets", m, board_top - 20, bucket_w, lh, hinst, font);
-    label_id(
-        hwnd,
-        ID_LBL_MEMBERS,
-        "In this bucket",
-        member_x,
-        board_top - 20,
-        member_w,
-        lh,
-        hinst,
-        font,
-    );
-    listbox(hwnd, ID_BUCKET_LIST, m, board_top, bucket_w, board_h, hinst, font);
-    listbox(hwnd, ID_MEMBER_LIST, member_x, board_top, member_w, board_h, hinst, font);
-
-    // Transfer buttons between pool actions and board.
-    let btn_y = board_top + board_h + 8;
-    edit(hwnd, ID_NEW_BUCKET, m, btn_y, 110, eh, WINDOW_STYLE(0), hinst, font);
-    button(hwnd, ID_ADD_BUCKET, "+ New", m + 116, btn_y, 56, hinst, font, false);
-    button(hwnd, ID_DEL_BUCKET, "Delete", m + 176, btn_y, 64, hinst, font, false);
-    button(hwnd, ID_ADD_TO, "Add →", member_x, btn_y, 72, hinst, font, false);
-    button(hwnd, ID_REMOVE_FROM, "← Remove", member_x + 80, btn_y, 88, hinst, font, false);
-
-    let pool_top = btn_y + 40;
-    label_id(
-        hwnd,
-        ID_LBL_POOL,
-        "Unassigned apps — pick a bucket above, then Add (or double-click)",
-        m,
-        pool_top,
-        fw,
-        lh,
-        hinst,
-        font,
-    );
-    listbox(hwnd, ID_POOL_LIST, m, pool_top + 20, fw, 110, hinst, font);
-
-    let site_y = pool_top + 140;
-    label_id(
-        hwnd,
-        ID_LBL_SITE,
-        "Tag a site or doc into the selected bucket (e.g. github.com or Invoice)",
-        m,
-        site_y,
-        fw,
-        lh,
-        hinst,
-        font,
-    );
-    edit(hwnd, ID_SITE_EDIT, m, site_y + 20, fw - 120, eh, WINDOW_STYLE(0), hinst, font);
-    button(hwnd, ID_ADD_SITE, "Add tag", m + fw - 112, site_y + 20, 112, hinst, font, false);
-
-    let default_y = site_y + 56;
-    label_id(
-        hwnd,
-        ID_LBL_DEFAULT,
-        "Everything else   ·   leave blank to group by app name",
-        m,
-        default_y,
+        advanced_y + 36,
         fw,
         lh,
         hinst,
@@ -498,19 +494,209 @@ unsafe fn build_controls(hwnd: HWND) {
     );
     edit(
         hwnd,
-        ID_DEFAULT_BUCKET,
+        ID_WORKER_URL,
         m,
-        default_y + 20,
-        half,
+        advanced_y + 58,
+        fw,
         eh,
         WINDOW_STYLE(0),
         hinst,
         font,
     );
+    // Feature flag: presence-only by default; enable for app/project breakdown.
+    check(
+        hwnd,
+        ID_TRACK_PROJECTS,
+        "Track apps & projects (optional; re-open Settings after enabling)",
+        m,
+        advanced_y + 92,
+        fw,
+        hinst,
+        font,
+    );
+
+    // --- Projects page: bucket board (apps + site tags → named projects) ---
+    if projects_ui {
+        label_id(
+            hwnd,
+            ID_RULES_HELP,
+            "Project buckets — drop apps and site tags into a bucket.",
+            m,
+            44,
+            fw,
+            lh,
+            hinst,
+            font,
+        );
+        label_id(
+            hwnd,
+            ID_BUCKET_HINT,
+            "Select a bucket, then add from Unassigned (or double-click). Sites use domains like acme.com.",
+            m,
+            64,
+            fw,
+            lh,
+            hinst,
+            font,
+        );
+
+        let bucket_w = 150;
+        let mid = 36; // gap + transfer buttons
+        let member_x = m + bucket_w + mid;
+        let member_w = fw - bucket_w - mid;
+        let board_top = 90;
+        let board_h = 200;
+
+        label_id(
+            hwnd,
+            ID_LBL_BUCKETS,
+            "Buckets",
+            m,
+            board_top - 20,
+            bucket_w,
+            lh,
+            hinst,
+            font,
+        );
+        label_id(
+            hwnd,
+            ID_LBL_MEMBERS,
+            "In this bucket",
+            member_x,
+            board_top - 20,
+            member_w,
+            lh,
+            hinst,
+            font,
+        );
+        listbox(hwnd, ID_BUCKET_LIST, m, board_top, bucket_w, board_h, hinst, font);
+        listbox(
+            hwnd,
+            ID_MEMBER_LIST,
+            member_x,
+            board_top,
+            member_w,
+            board_h,
+            hinst,
+            font,
+        );
+
+        // Transfer buttons between pool actions and board.
+        let btn_y = board_top + board_h + 8;
+        edit(hwnd, ID_NEW_BUCKET, m, btn_y, 110, eh, WINDOW_STYLE(0), hinst, font);
+        button(hwnd, ID_ADD_BUCKET, "+ New", m + 116, btn_y, 56, hinst, font, false);
+        button(hwnd, ID_DEL_BUCKET, "Delete", m + 176, btn_y, 64, hinst, font, false);
+        button(hwnd, ID_ADD_TO, "Add →", member_x, btn_y, 72, hinst, font, false);
+        button(
+            hwnd,
+            ID_REMOVE_FROM,
+            "← Remove",
+            member_x + 80,
+            btn_y,
+            88,
+            hinst,
+            font,
+            false,
+        );
+
+        let pool_top = btn_y + 40;
+        label_id(
+            hwnd,
+            ID_LBL_POOL,
+            "Unassigned apps — pick a bucket above, then Add (or double-click)",
+            m,
+            pool_top,
+            fw,
+            lh,
+            hinst,
+            font,
+        );
+        listbox(hwnd, ID_POOL_LIST, m, pool_top + 20, fw, 110, hinst, font);
+
+        let site_y = pool_top + 140;
+        label_id(
+            hwnd,
+            ID_LBL_SITE,
+            "Tag a site or doc into the selected bucket (e.g. github.com or Invoice)",
+            m,
+            site_y,
+            fw,
+            lh,
+            hinst,
+            font,
+        );
+        edit(
+            hwnd,
+            ID_SITE_EDIT,
+            m,
+            site_y + 20,
+            fw - 120,
+            eh,
+            WINDOW_STYLE(0),
+            hinst,
+            font,
+        );
+        button(
+            hwnd,
+            ID_ADD_SITE,
+            "Add tag",
+            m + fw - 112,
+            site_y + 20,
+            112,
+            hinst,
+            font,
+            false,
+        );
+
+        let default_y = site_y + 56;
+        label_id(
+            hwnd,
+            ID_LBL_DEFAULT,
+            "Everything else   ·   leave blank to group by app name",
+            m,
+            default_y,
+            fw,
+            lh,
+            hinst,
+            font,
+        );
+        edit(
+            hwnd,
+            ID_DEFAULT_BUCKET,
+            m,
+            default_y + 20,
+            half,
+            eh,
+            WINDOW_STYLE(0),
+            hinst,
+            font,
+        );
+    }
 
     // --- Shared footer buttons ---
-    button(hwnd, ID_CANCEL, "Cancel", m + fw - 104, 620, 104, hinst, font, false);
-    button(hwnd, ID_SAVE, "Save", m + fw - 104 - 116, 620, 104, hinst, font, true);
+    let footer_y = if projects_ui { 620 } else { 460 };
+    button(
+        hwnd,
+        ID_CANCEL,
+        "Cancel",
+        m + fw - 104,
+        footer_y,
+        104,
+        hinst,
+        font,
+        false,
+    );
+    button(
+        hwnd,
+        ID_SAVE,
+        "Save",
+        m + fw - 104 - 116,
+        footer_y,
+        104,
+        hinst,
+        font,
+        true,
+    );
 
     populate(hwnd);
     apply_visibility(hwnd);
@@ -988,22 +1174,27 @@ unsafe fn current_tab(hwnd: HWND) -> i32 {
     }
 }
 
-/// Show the controls for the active tab and hide the rest. The Advanced-gated
-/// worker URL row is only shown on General *and* when Advanced is revealed.
+/// Show the controls for the active tab and hide the rest. Advanced-gated
+/// rows (worker URL, track projects) only when Advanced is revealed.
 unsafe fn apply_visibility(hwnd: HWND) {
-    let general = current_tab(hwnd) == 0;
-    let advanced = match GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const Ctx {
-        p if !p.is_null() => (*p).advanced.get(),
-        _ => false,
+    let (advanced, projects_ui) = match GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const Ctx {
+        p if !p.is_null() => ((*p).advanced.get(), (*p).projects_ui),
+        _ => (false, false),
     };
+    // No Projects tab → always "general". With tabs, hide general when on Projects.
+    let general = !projects_ui || current_tab(hwnd) == 0;
     for &id in GENERAL_CORE_IDS {
         show_ctrl(hwnd, id, general);
     }
-    for &id in PROJECT_IDS {
-        show_ctrl(hwnd, id, !general);
+    if projects_ui {
+        for &id in PROJECT_IDS {
+            show_ctrl(hwnd, id, !general);
+        }
+        show_ctrl(hwnd, ID_STORE_TITLES, general);
     }
     show_ctrl(hwnd, ID_WORKER_URL_LABEL, general && advanced);
     show_ctrl(hwnd, ID_WORKER_URL, general && advanced);
+    show_ctrl(hwnd, ID_TRACK_PROJECTS, general && advanced);
     if let Ok(h) = GetDlgItem(Some(hwnd), ID_ADVANCED) {
         let text = if advanced {
             wide("Hide advanced")
@@ -1303,15 +1494,23 @@ unsafe fn populate(hwnd: HWND) {
             SendMessageW(h, BM_SETCHECK, Some(WPARAM(1)), None);
         }
     }
+    if c.track_projects {
+        if let Ok(h) = GetDlgItem(Some(hwnd), ID_TRACK_PROJECTS) {
+            SendMessageW(h, BM_SETCHECK, Some(WPARAM(1)), None);
+        }
+    }
 
     // Projects tab: seed draft rules + app pool, paint the bucket board.
-    if let Some(ctx) = ctx_ref(hwnd) {
-        let rules = crate::rules::Rules::load();
-        set_text(hwnd, ID_DEFAULT_BUCKET, &rules.default_project);
-        *ctx.apps.borrow_mut() = apps_to_show(&rules);
-        *ctx.rules.borrow_mut() = rules;
+    let projects_ui = ctx_ref(hwnd).map(|c| c.projects_ui).unwrap_or(false);
+    if projects_ui {
+        if let Some(ctx) = ctx_ref(hwnd) {
+            let rules = crate::rules::Rules::load();
+            set_text(hwnd, ID_DEFAULT_BUCKET, &rules.default_project);
+            *ctx.apps.borrow_mut() = apps_to_show(&rules);
+            *ctx.rules.borrow_mut() = rules;
+        }
+        refresh_bucket_list(hwnd, Some(BUCKET_NON_WORK));
     }
-    refresh_bucket_list(hwnd, Some(BUCKET_NON_WORK));
 }
 
 fn fmt_hours(h: f64) -> String {
@@ -1346,6 +1545,7 @@ unsafe fn save_and_close(hwnd: HWND) {
     } else {
         token_field
     };
+    let track_projects = is_checked(hwnd, ID_TRACK_PROJECTS);
     let cfg = Config {
         worker_url: get_text(hwnd, ID_WORKER_URL).trim().to_string(),
         bearer_token,
@@ -1355,7 +1555,9 @@ unsafe fn save_and_close(hwnd: HWND) {
         work_start: get_time(hwnd, ID_START),
         work_end: get_time(hwnd, ID_END),
         work_days,
-        store_titles: is_checked(hwnd, ID_STORE_TITLES),
+        track_projects,
+        // Title storage only meaningful with project tracking; clear when off.
+        store_titles: track_projects && is_checked(hwnd, ID_STORE_TITLES),
         activity_retention_days: existing.activity_retention_days.max(7),
     };
 
@@ -1386,14 +1588,17 @@ unsafe fn save_and_close(hwnd: HWND) {
     }
 
     // Projects tab: commit the in-memory bucket board (strip empty-bucket markers).
-    let mut rules = ctx.rules.borrow().clone();
-    rules.default_project = get_text(hwnd, ID_DEFAULT_BUCKET).trim().to_string();
-    rules.assignments.retain(|app, _| !is_bucket_marker(app));
-    rules
-        .title_rules
-        .retain(|r| !r.contains.trim().is_empty() && !r.project.trim().is_empty());
-    if let Err(e) = rules.save() {
-        crate::logln!("rules save error: {e}");
+    // Only when this window was opened with project UI (rules controls exist).
+    if ctx.projects_ui {
+        let mut rules = ctx.rules.borrow().clone();
+        rules.default_project = get_text(hwnd, ID_DEFAULT_BUCKET).trim().to_string();
+        rules.assignments.retain(|app, _| !is_bucket_marker(app));
+        rules
+            .title_rules
+            .retain(|r| !r.contains.trim().is_empty() && !r.project.trim().is_empty());
+        if let Err(e) = rules.save() {
+            crate::logln!("rules save error: {e}");
+        }
     }
 
     match cfg.save() {

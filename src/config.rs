@@ -30,8 +30,14 @@ pub struct Config {
     /// after-hours.
     #[serde(default = "default_work_days")]
     pub work_days: Vec<String>,
+    /// When true, attribute clocked-in time to apps/projects (foreground
+    /// sampling, Settings → Projects, optional cloud project rollups).
+    /// Default false — presence sessions only ("just track my work").
+    #[serde(default)]
+    pub track_projects: bool,
     /// When true, store a *sanitized* window title with each activity sample.
     /// Default false — only the app name is recorded (recommended).
+    /// Only used when `track_projects` is enabled.
     #[serde(default)]
     pub store_titles: bool,
     /// Delete local activity samples older than this many days. Floor of 7.
@@ -76,6 +82,7 @@ impl Default for Config {
             work_start: default_work_start(),
             work_end: default_work_end(),
             work_days: default_work_days(),
+            track_projects: false,
             store_titles: false,
             activity_retention_days: default_activity_retention_days(),
         }
@@ -159,7 +166,12 @@ impl Config {
              work_end   = \"{work_end}\"\n\
              work_days  = [{days}]\n\
              \n\
-             # App tracking privacy. Default: record which app was focused, never the window title.\n\
+             # Optional app/project breakdown while clocked in. Off by default — sessions only.\n\
+             # Enable in Settings → Advanced, or set true here. Projects tab + tray breakdown appear when on.\n\
+             track_projects = {track_projects}\n\
+             \n\
+             # App tracking privacy (only used when track_projects is true).\n\
+             # Default: record which app was focused, never the window title.\n\
              # store_titles = true keeps a sanitized title (emails/numbers redacted) locally only.\n\
              store_titles = {store_titles}\n\
              # Delete local activity samples older than this many days (minimum 7).\n\
@@ -170,6 +182,7 @@ impl Config {
             work_start = escape_toml(&self.work_start),
             work_end = escape_toml(&self.work_end),
             days = days,
+            track_projects = self.track_projects,
             store_titles = self.store_titles,
             retention = self.activity_retention_days.max(7),
         )
@@ -281,6 +294,7 @@ mod tests {
             work_start: "08:30".to_string(),
             work_end: "16:30".to_string(),
             work_days: vec!["Mon".into(), "Wed".into(), "Fri".into()],
+            track_projects: true,
             store_titles: true,
             activity_retention_days: 60,
         };
@@ -291,11 +305,20 @@ mod tests {
         assert_eq!(reloaded.work_start, c.work_start);
         assert_eq!(reloaded.work_end, c.work_end);
         assert_eq!(reloaded.work_days, c.work_days);
+        assert_eq!(reloaded.track_projects, true);
         assert_eq!(reloaded.store_titles, true);
         assert_eq!(reloaded.activity_retention_days, 60);
         assert!(reloaded.bearer_token.is_empty());
         assert!(!c.to_toml().contains("s3cr3t"));
         assert!(!c.to_toml().contains("bearer_token"));
+    }
+
+    #[test]
+    fn track_projects_defaults_off() {
+        let c = Config::default();
+        assert!(!c.track_projects);
+        let parsed: Config = toml::from_str("worker_url = \"https://x.example\"").unwrap();
+        assert!(!parsed.track_projects);
     }
 
     #[test]
