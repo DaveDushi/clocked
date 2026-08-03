@@ -27,7 +27,7 @@ import {
 import { buildAndSendReport, sendContactSales, sendMonthlyReports, SEND_DAY_LAST } from "./email";
 import { handleActivityIngest, projectTotalsForPeriod } from "./activity";
 import { handleIngest } from "./ingest";
-import { buildHoursReport, buildReportCsv } from "./report";
+import { buildHoursReport, buildReportCsv, listSessionsForPeriod } from "./report";
 import {
   getEffectiveRecipients,
   getEffectiveSendDay,
@@ -42,7 +42,7 @@ import {
   setSendDay,
 } from "./settings";
 import { getOrCreateToken, rotateToken, userIdForToken } from "./tokens";
-import { formatHM, localYMD, monthBoundsUtc, previousMonthPeriod, wallToUtc } from "./time";
+import { localYMD, previousMonthPeriod, wallToUtc } from "./time";
 import {
   effectiveMemberCap,
   effectiveOrgPlan,
@@ -60,7 +60,13 @@ import {
   userHasPaidAccess,
 } from "./billing";
 import { clientIp, rateLimitAllowDurable } from "./rate-limit";
-import { parsePeriodParam, withSecurityHeaders } from "./security";
+import {
+  isSameOriginRequest,
+  isValidCalendarDate,
+  parsePeriodParam,
+  timingSafeEqual,
+  withSecurityHeaders,
+} from "./security";
 import type { Env } from "./types";
 
 export default {
@@ -94,6 +100,22 @@ export default {
 async function handleFetch(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const ip = clientIp(req);
+
+  // CSRF: cookie-authenticated mutating /api/* must be same-origin.
+  // Exempt: better-auth (own origin checks), Stripe webhook (signature),
+  // desktop bearer ingest (/sessions, /activity — no cookies).
+  if (
+    url.pathname.startsWith("/api/") &&
+    req.method !== "GET" &&
+    req.method !== "HEAD" &&
+    req.method !== "OPTIONS" &&
+    !url.pathname.startsWith("/api/auth/") &&
+    url.pathname !== "/api/stripe/webhook" &&
+    url.pathname !== "/api/marketing/run" &&
+    !isSameOriginRequest(req)
+  ) {
+    return json({ error: "forbidden" }, 403);
+  }
 
   // Landing page + dashboard (single self-contained app) and health check.
   if (req.method === "GET" && url.pathname === "/") return dashboardResponse();
@@ -208,7 +230,8 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     if (!period) return json({ error: "invalid period" }, 400);
     const report = await buildHoursReport(env, period, user.id);
     const projects = await projectTotalsForPeriod(env, user.id, period);
-    return json({ ...report, projects });
+    const sessions = await listSessionsForPeriod(env, period, user.id);
+    return json({ ...report, projects, sessions });
   }
 
   // ---- Team (manager) API.
@@ -270,7 +293,9 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
       const csv = await buildReportCsv(env, period, targetId);
       return new Response(csv, { status: 200, headers: { "content-type": "text/csv" } });
     }
-    return json(await buildHoursReport(env, period, targetId));
+    const report = await buildHoursReport(env, period, targetId);
+    const sessions = await listSessionsForPeriod(env, period, targetId);
+    return json({ ...report, sessions });
   }
 
   if (url.pathname === "/api/team/settings") {
@@ -702,42 +727,16 @@ async function handleManualSession(
   if (req.method === "GET") {
     const period = resolvePeriod(url, env);
     if (!period) return json({ error: "invalid period" }, 400);
-    const { start, end } = monthBoundsUtc(period, env.REPORT_TZ);
-    const res = await env.DB.prepare(
-      `SELECT id, start_utc, end_utc, start_reason, end_reason FROM sessions
-        WHERE user_id = ? AND end_utc IS NOT NULL AND end_utc > ? AND start_utc < ?
-        ORDER BY start_utc`,
-    )
-      .bind(userId, start.toISOString(), end.toISOString())
-      .all<{
-        id: string;
-        start_utc: string;
-        end_utc: string;
-        start_reason: string | null;
-        end_reason: string | null;
-      }>();
-    const tz = env.REPORT_TZ;
-    const entries = (res.results ?? []).map((r) => {
-      const s = new Date(r.start_utc);
-      const { y, m, d } = localYMD(s, tz);
-      const reason = r.start_reason || "app";
-      return {
-        id: r.id,
-        date: `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`,
-        start: formatHM(s, tz),
-        end: formatHM(new Date(r.end_utc), tz),
-        source: reason === "manual" ? "manual" : "app",
-        start_reason: r.start_reason,
-        end_reason: r.end_reason,
-      };
-    });
+    const entries = await listSessionsForPeriod(env, period, userId);
     return json({ entries });
   }
 
   if (req.method === "DELETE") {
     const body = (await req.json().catch(() => ({}))) as { id?: unknown };
     const id = typeof body.id === "string" ? body.id : "";
-    if (!id || id.length > 128) return json({ error: "id required" }, 400);
+    if (!id || id.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/.test(id)) {
+      return json({ error: "id required" }, 400);
+    }
     // Any owned closed session — managers use this to drop bad desktop clockings.
     const res = await env.DB.prepare(
       `DELETE FROM sessions WHERE id = ? AND user_id = ? AND end_utc IS NOT NULL`,
@@ -777,14 +776,31 @@ async function handleManualSession(
     const [y, m, d] = date.split("-").map(Number);
     const [sh, smi] = start.split(":").map(Number);
     const [eh, emi] = end.split(":").map(Number);
-    if (m < 1 || m > 12 || d < 1 || d > 31 || sh > 23 || smi > 59 || eh > 23 || emi > 59) {
+    if (
+      !isValidCalendarDate(y, m, d) ||
+      sh > 23 ||
+      smi > 59 ||
+      eh > 23 ||
+      emi > 59 ||
+      sh < 0 ||
+      smi < 0 ||
+      eh < 0 ||
+      emi < 0
+    ) {
       return json({ error: "invalid date or time" }, 400);
     }
     if (eh * 60 + emi <= sh * 60 + smi) {
       return json({ error: "clock-out must be after clock-in" }, 400);
     }
+    // Same-day only; cap is 24h by construction — still guard absurd ranges.
+    if (eh * 60 + emi - (sh * 60 + smi) > 24 * 60) {
+      return json({ error: "session too long" }, 400);
+    }
     const startUtc = wallToUtc(y, m, d, sh, smi, 0, env.REPORT_TZ);
     const endUtc = wallToUtc(y, m, d, eh, emi, 0, env.REPORT_TZ);
+    if (!(endUtc.getTime() > startUtc.getTime())) {
+      return json({ error: "clock-out must be after clock-in" }, 400);
+    }
     await env.DB.prepare(
       `INSERT INTO sessions (id, start_utc, end_utc, start_reason, end_reason, user_id)
        VALUES (?, ?, ?, 'manual', 'manual', ?)`,
@@ -862,21 +878,6 @@ async function deleteUserClockedData(env: Env, userId: string): Promise<void> {
 
 function isEmail(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
-}
-
-/**
- * Constant-time string compare for shared secrets. Avoids leaking how many
- * leading characters matched via response timing. Unequal lengths short-circuit
- * (length is not itself the secret).
- */
-function timingSafeEqual(a: string, b: string): boolean {
-  const enc = new TextEncoder();
-  const ab = enc.encode(a);
-  const bb = enc.encode(b);
-  if (ab.length !== bb.length) return false;
-  let diff = 0;
-  for (let i = 0; i < ab.length; i++) diff |= ab[i]! ^ bb[i]!;
-  return diff === 0;
 }
 
 function json(obj: unknown, status = 200): Response {

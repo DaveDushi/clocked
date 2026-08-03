@@ -579,11 +579,39 @@ impl AppState {
     }
 
     fn do_sync(&mut self) {
-        if self.syncing || !self.config.is_configured() {
+        self.start_sync(false);
+    }
+
+    /// Tray **Sync now** — same as background sync, but always surfaces a balloon
+    /// (success with 0 pending, already-in-progress, or not configured).
+    fn do_sync_manual(&mut self) {
+        self.start_sync(true);
+    }
+
+    fn start_sync(&mut self, manual: bool) {
+        if !self.config.is_configured() {
+            if manual {
+                crate::tray::notify(
+                    &self.nid,
+                    "clocked",
+                    "Add your sync token in Settings first.",
+                );
+            }
+            return;
+        }
+        if self.syncing {
+            if manual {
+                crate::tray::notify(&self.nid, "clocked", "Sync already in progress…");
+            }
             return;
         }
         self.syncing = true;
-        crate::sync::spawn(self.hwnd.0 as isize, WM_SYNC_DONE, self.config.clone());
+        crate::sync::spawn(
+            self.hwnd.0 as isize,
+            WM_SYNC_DONE,
+            self.config.clone(),
+            manual,
+        );
     }
 
     fn check_for_updates(&mut self, manual: bool) {
@@ -856,7 +884,7 @@ unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
                 open_url(&url);
             });
         }
-        IDM_SYNC_NOW => (*ptr).do_sync(),
+        IDM_SYNC_NOW => (*ptr).do_sync_manual(),
         IDM_DOWNLOAD_UPDATE => {
             let app = &mut *ptr;
             if let Some(url) = app.update_status.download_url() {
@@ -968,6 +996,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_SYNC_DONE => {
             let app = &mut *ptr;
             app.syncing = false;
+            let raw = wparam.0 as *mut crate::sync::SyncResult;
+            if !raw.is_null() {
+                let result = *Box::from_raw(raw);
+                if result.manual {
+                    crate::tray::notify(&app.nid, "clocked", &result.notify_body());
+                }
+            }
             app.update_tooltip();
             LRESULT(0)
         }

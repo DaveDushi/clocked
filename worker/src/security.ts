@@ -84,3 +84,95 @@ export function publicError(message: string, status: number): Response {
     headers: { "content-type": "application/json" },
   });
 }
+
+/**
+ * CSRF guard for cookie-authenticated mutating API calls.
+ * Browsers send Origin on cross-site form/fetch POSTs; we require same origin.
+ * Sec-Fetch-Site / Referer are fallbacks for older clients.
+ */
+export function isSameOriginRequest(req: Request): boolean {
+  let url: URL;
+  try {
+    url = new URL(req.url);
+  } catch {
+    return false;
+  }
+
+  const origin = req.headers.get("origin");
+  if (origin) {
+    try {
+      return new URL(origin).origin === url.origin;
+    } catch {
+      return false;
+    }
+  }
+
+  const site = (req.headers.get("sec-fetch-site") ?? "").toLowerCase();
+  if (site === "same-origin" || site === "none") return true;
+
+  const referer = req.headers.get("referer");
+  if (referer) {
+    try {
+      return new URL(referer).origin === url.origin;
+    } catch {
+      return false;
+    }
+  }
+
+  // No Origin/Referer on a mutating request → fail closed (blocks classic CSRF).
+  return false;
+}
+
+/** True for real Gregorian calendar dates (rejects 2026-02-31). */
+export function isValidCalendarDate(y: number, m: number, d: number): boolean {
+  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return false;
+  if (y < 2000 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return false;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+/** Known desktop clock reasons (+ manual). Unknown values are dropped. */
+const KNOWN_REASONS = new Set([
+  "start",
+  "resume",
+  "unlock",
+  "active",
+  "call",
+  "manual",
+  "idle",
+  "lock",
+  "suspend",
+  "shutdown",
+  "quit",
+  "crash",
+  "app",
+]);
+
+/**
+ * Normalize a session reason from the desktop client.
+ * Keeps only short, known tokens so free-form junk cannot pollute reports.
+ */
+export function sanitizeSessionReason(raw: unknown): string | null {
+  if (raw == null) return null;
+  if (typeof raw !== "string") return null;
+  const s = raw.trim().toLowerCase().slice(0, 32);
+  if (!s) return null;
+  if (KNOWN_REASONS.has(s)) return s;
+  // Allow simple future tokens: lowercase letters/digits/underscore only, short.
+  if (/^[a-z][a-z0-9_]{0,31}$/.test(s)) return s;
+  return null;
+}
+
+/**
+ * Constant-time string compare for shared secrets.
+ * Unequal lengths short-circuit (length is not itself the secret).
+ */
+export function timingSafeEqual(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const ab = enc.encode(a);
+  const bb = enc.encode(b);
+  if (ab.length !== bb.length) return false;
+  let diff = 0;
+  for (let i = 0; i < ab.length; i++) diff |= ab[i]! ^ bb[i]!;
+  return diff === 0;
+}

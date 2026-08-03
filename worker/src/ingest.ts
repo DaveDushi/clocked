@@ -2,6 +2,36 @@ import type { Env, SessionIn } from "./types";
 
 /** Max sessions accepted in a single POST /sessions (DoS / cost guard). */
 export const MAX_SESSIONS_PER_REQUEST = 500;
+/** Reject sessions that claim to start more than this far in the future. */
+const MAX_FUTURE_MS = 24 * 60 * 60 * 1000;
+/** Reject sessions older than this (bad client clocks / junk). */
+const MAX_AGE_MS = 3 * 365 * 24 * 60 * 60 * 1000;
+
+const KNOWN_REASONS = new Set([
+  "start",
+  "resume",
+  "unlock",
+  "active",
+  "call",
+  "manual",
+  "idle",
+  "lock",
+  "suspend",
+  "shutdown",
+  "quit",
+  "crash",
+  "app",
+]);
+
+/** Keep report reasons short and token-like (mirrors security.sanitizeSessionReason). */
+function sanitizeSessionReason(raw: unknown): string | null {
+  if (raw == null || typeof raw !== "string") return null;
+  const s = raw.trim().toLowerCase().slice(0, 32);
+  if (!s) return null;
+  if (KNOWN_REASONS.has(s)) return s;
+  if (/^[a-z][a-z0-9_]{0,31}$/.test(s)) return s;
+  return null;
+}
 
 /**
  * POST /sessions — validate and upsert synced sessions (idempotent by id).
@@ -100,8 +130,8 @@ export async function handleIngest(
         s.id,
         s.start_utc,
         s.end_utc,
-        s.start_reason ?? null,
-        s.end_reason ?? null,
+        sanitizeSessionReason(s.start_reason),
+        sanitizeSessionReason(s.end_reason),
         userId,
       ),
     );
@@ -143,6 +173,9 @@ function isValid(s: unknown): s is SessionIn {
   const end = Date.parse(o.end_utc);
   if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return false;
   if (end - start > MAX_DURATION_MS) return false;
+  const now = Date.now();
+  if (start > now + MAX_FUTURE_MS) return false;
+  if (end < now - MAX_AGE_MS) return false;
   if (
     o.start_reason != null &&
     (typeof o.start_reason !== "string" || o.start_reason.length > MAX_REASON_LEN)

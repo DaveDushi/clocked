@@ -19,38 +19,126 @@ use crate::config::Config;
 #[cfg(windows)]
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Outcome of a sync run, posted back to the UI thread on Windows (and used for
+/// tray balloons when the user clicked **Sync now**).
+#[derive(Debug, Clone)]
+pub struct SyncResult {
+    pub manual: bool,
+    pub ok: bool,
+    pub items: usize,
+    pub error: Option<String>,
+}
+
+impl SyncResult {
+    /// Short user-facing line for a tray balloon / notification.
+    pub fn notify_body(&self) -> String {
+        if self.ok {
+            if self.items > 0 {
+                format!(
+                    "Synced {} item{}.",
+                    self.items,
+                    if self.items == 1 { "" } else { "s" }
+                )
+            } else {
+                "Already up to date.".to_string()
+            }
+        } else {
+            let detail = self
+                .error
+                .as_deref()
+                .map(|e| truncate(e, 120))
+                .unwrap_or_else(|| "see clocked.log".to_string());
+            format!("Sync failed: {detail}")
+        }
+    }
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
+        out.push('…');
+        out
+    }
+}
+
 /// Spawn a background sync. `hwnd_raw` is the window handle as `isize` (raw
 /// pointers aren't `Send`; we rebuild the `HWND` inside the thread). Windows-only:
 /// it signals the message loop on completion. macOS uses `run_blocking` on a
 /// worker thread with an `AtomicBool` guard instead.
+///
+/// `manual` is true when the user clicked **Sync now** — the UI shows a balloon
+/// even when nothing was pending (otherwise the menu item looks broken).
 #[cfg(windows)]
-pub fn spawn(hwnd_raw: isize, done_msg: u32, config: Config) {
-    // Posts `done_msg` back to the window on drop — including if `run` panics —
-    // so the UI's `syncing` overlap guard is always released. Otherwise a single
-    // panic in the sync path would strand the guard and silently disable every
+pub fn spawn(hwnd_raw: isize, done_msg: u32, config: Config, manual: bool) {
+    // Posts `done_msg` with a `Box<SyncResult>` in WPARAM on drop — including if
+    // `run` panics — so the UI's `syncing` overlap guard is always released.
+    // Otherwise a single panic would strand the guard and silently disable every
     // future background sync until the app restarts.
-    struct SignalDone(isize, u32);
+    struct SignalDone {
+        hwnd_raw: isize,
+        done_msg: u32,
+        manual: bool,
+        result: Option<SyncResult>,
+    }
     impl Drop for SignalDone {
         fn drop(&mut self) {
+            let result = self.result.take().unwrap_or(SyncResult {
+                manual: self.manual,
+                ok: false,
+                items: 0,
+                error: Some("sync interrupted".into()),
+            });
             unsafe {
-                let hwnd = HWND(self.0 as *mut c_void);
-                let _ = PostMessageW(Some(hwnd), self.1, WPARAM(0), LPARAM(0));
+                let hwnd = HWND(self.hwnd_raw as *mut c_void);
+                let ptr = Box::into_raw(Box::new(result));
+                let _ = PostMessageW(
+                    Some(hwnd),
+                    self.done_msg,
+                    WPARAM(ptr as usize),
+                    LPARAM(0),
+                );
             }
         }
     }
 
     std::thread::spawn(move || {
-        let _done = SignalDone(hwnd_raw, done_msg);
-        match run(&config, DEFAULT_TIMEOUT) {
-            Ok(n) if n > 0 => crate::logln!("synced {n} item(s)"),
-            Ok(_) => {}
-            Err(e) => crate::logln!("sync error: {e}"),
-        }
+        let mut done = SignalDone {
+            hwnd_raw,
+            done_msg,
+            manual,
+            result: None,
+        };
+        done.result = Some(match run(&config, DEFAULT_TIMEOUT) {
+            Ok(n) => {
+                if n > 0 {
+                    crate::logln!("synced {n} item(s)");
+                } else if manual {
+                    crate::logln!("sync complete (nothing pending)");
+                }
+                SyncResult {
+                    manual,
+                    ok: true,
+                    items: n,
+                    error: None,
+                }
+            }
+            Err(e) => {
+                crate::logln!("sync error: {e}");
+                SyncResult {
+                    manual,
+                    ok: false,
+                    items: 0,
+                    error: Some(e.to_string()),
+                }
+            }
+        });
     });
 }
 
 /// Sync on the calling thread, blocking until it finishes or `timeout` elapses.
-/// Returns the number of items pushed (sessions + activity day rows).
+/// Returns the number of items pushed (sessions + activity day rows + pref updates).
 pub fn run_blocking(cfg: &Config, timeout: Duration) -> Result<usize, Box<dyn std::error::Error>> {
     run(cfg, timeout)
 }
@@ -102,6 +190,8 @@ fn run(cfg: &Config, timeout: Duration) -> Result<usize, Box<dyn std::error::Err
     if crate::db::meta_get(&conn, "synced_endpoint")?.as_deref() != Some(endpoint) {
         let n = crate::db::reset_synced(&conn)?;
         let a = crate::db::reset_activity_synced(&conn)?;
+        // Re-push track_projects to the new Worker (cloud has no prior pref).
+        let _ = crate::db::meta_set(&conn, "synced_track_projects", "");
         crate::db::meta_set(&conn, "synced_endpoint", endpoint)?;
         if n + a > 0 {
             crate::logln!(
@@ -116,10 +206,9 @@ fn run(cfg: &Config, timeout: Duration) -> Result<usize, Box<dyn std::error::Err
 
     let mut total = 0usize;
     total += push_sessions(&client, &conn, cfg, endpoint)?;
-    // Project/app day aggregates only when the optional feature is on.
-    if cfg.track_projects {
-        total += push_activity(&client, &conn, cfg, endpoint)?;
-    }
+    // Always consider track_projects so the Worker can hide dashboard/CSV project
+    // rollups when the feature is off (even with no pending activity rows).
+    total += push_activity(&client, &conn, cfg, endpoint)?;
     Ok(total)
 }
 
@@ -170,7 +259,8 @@ fn push_sessions(
     Ok(ids.len())
 }
 
-/// Push daily app/project aggregates (never window titles). Soft-fails if the
+/// Push the track_projects preference (when it changed) and, when the feature
+/// is on, daily app/project aggregates (never window titles). Soft-fails if the
 /// Worker is older and doesn't know `/activity` yet.
 fn push_activity(
     client: &reqwest::blocking::Client,
@@ -178,8 +268,21 @@ fn push_activity(
     cfg: &Config,
     endpoint: &str,
 ) -> Result<usize, Box<dyn std::error::Error>> {
-    let pending = crate::db::unsynced_activity(conn)?;
-    if pending.is_empty() {
+    // Only send day rows when the feature is on.
+    let pending = if cfg.track_projects {
+        crate::db::unsynced_activity(conn)?
+    } else {
+        Vec::new()
+    };
+
+    // Also POST when the local flag differs from what we last told the Worker,
+    // so turning the feature off hides dashboard/CSV projects without waiting
+    // for new activity rows.
+    let flag_s = if cfg.track_projects { "1" } else { "0" };
+    let flag_dirty =
+        crate::db::meta_get(conn, "synced_track_projects")?.as_deref() != Some(flag_s);
+
+    if pending.is_empty() && !flag_dirty {
         return Ok(0);
     }
 
@@ -187,7 +290,10 @@ fn push_activity(
     let resp = client
         .post(url)
         .bearer_auth(&cfg.bearer_token)
-        .json(&serde_json::json!({ "days": pending }))
+        .json(&serde_json::json!({
+            "days": pending,
+            "track_projects": cfg.track_projects,
+        }))
         .send()?;
 
     // Older Workers return 404 — leave rows unsynced; next release will catch up.
@@ -195,8 +301,29 @@ fn push_activity(
         crate::logln!("activity sync skipped (Worker has no /activity yet)");
         return Ok(0);
     }
+    // Older Workers that require non-empty days return 400 for pref-only pushes.
+    // Leave the flag dirty so a future Worker upgrade (or pending rows) retries.
     if !resp.status().is_success() {
+        if pending.is_empty() {
+            crate::logln!(
+                "activity pref sync skipped (Worker HTTP {}); project flag may be stale on cloud",
+                resp.status()
+            );
+            return Ok(0);
+        }
         return Err(format!("worker returned HTTP {} on /activity", resp.status()).into());
+    }
+
+    let mut count = 0usize;
+    if flag_dirty {
+        let _ = crate::db::meta_set(conn, "synced_track_projects", flag_s);
+        // Count a successful preference push so manual Sync now isn't a no-op
+        // after toggling track_projects with no pending day rows.
+        count += 1;
+    }
+
+    if pending.is_empty() {
+        return Ok(count);
     }
 
     #[derive(serde::Deserialize)]
@@ -210,7 +337,7 @@ fn push_activity(
     });
     let n = body.accepted.or(body.upserted).unwrap_or(pending.len());
     if n == 0 {
-        return Ok(0);
+        return Ok(count);
     }
     // Mark everything we sent; the Worker replaces aggregates by primary key.
     let keys: Vec<(String, String, String)> = pending
@@ -218,5 +345,5 @@ fn push_activity(
         .map(|r| (r.day.clone(), r.app.clone(), r.project.clone()))
         .collect();
     crate::db::mark_activity_synced(conn, &keys)?;
-    Ok(keys.len())
+    Ok(count + keys.len())
 }

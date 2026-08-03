@@ -32,6 +32,19 @@
 - [x] macOS starts localhost bridge; tray unassigned-app suggestions
 - [x] Dashboard Privacy: export / delete cloud data
 
+## Landing + timeline + hardening (2026-08-03)
+
+- [x] Landing features match product (projects, local SQLite, teams, extension)
+- [x] Hosted vs self-hosted comparison table
+- [x] FAQ accuracy (optional project tracking, local-only mode)
+- [x] Day timeline in dashboard (and team member view)
+- [x] `/api/hours` returns `sessions` segments (midnight-split)
+- [x] CSRF same-origin guard on cookie mutating `/api/*`
+- [x] Ingest reason sanitize + future/age bounds
+- [x] Manual session calendar-date validation
+- [x] Activity label safety + reject title/url fields
+- [x] Gate dashboard/CSV projects on desktop `track_projects` (sync pref; hide when off)
+
 ## Testing
 
 - `cargo test` / `cargo build` on Windows

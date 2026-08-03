@@ -69,7 +69,9 @@ pub(super) fn defer_reclaim_prompt() {
 }
 
 /// Run a sync on a worker thread; it clears the overlap guard when done.
-pub(super) fn spawn_sync(config: Config, flag: Arc<AtomicBool>) {
+/// When `manual` is true (tray **Sync now**), surface a notification even if
+/// nothing was pending — otherwise the menu item looks like a no-op.
+pub(super) fn spawn_sync(config: Config, flag: Arc<AtomicBool>, manual: bool) {
     // Clears the overlap guard on drop — including if `run_blocking` panics — so a
     // single panic in the sync path can't strand the guard and silently disable
     // every future background sync until the app restarts.
@@ -82,10 +84,32 @@ pub(super) fn spawn_sync(config: Config, flag: Arc<AtomicBool>) {
 
     std::thread::spawn(move || {
         let _guard = ClearOnDrop(flag);
-        match crate::sync::run_blocking(&config, Duration::from_secs(30)) {
-            Ok(n) if n > 0 => crate::logln!("synced {n} session(s)"),
-            Ok(_) => {}
-            Err(e) => crate::logln!("sync error: {e}"),
+        let result = match crate::sync::run_blocking(&config, Duration::from_secs(30)) {
+            Ok(n) => {
+                if n > 0 {
+                    crate::logln!("synced {n} item(s)");
+                } else if manual {
+                    crate::logln!("sync complete (nothing pending)");
+                }
+                crate::sync::SyncResult {
+                    manual,
+                    ok: true,
+                    items: n,
+                    error: None,
+                }
+            }
+            Err(e) => {
+                crate::logln!("sync error: {e}");
+                crate::sync::SyncResult {
+                    manual,
+                    ok: false,
+                    items: 0,
+                    error: Some(e.to_string()),
+                }
+            }
+        };
+        if result.manual {
+            notify("clocked", &result.notify_body());
         }
     });
 }

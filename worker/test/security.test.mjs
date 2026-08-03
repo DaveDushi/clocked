@@ -81,3 +81,36 @@ test("ingest batch cap is finite", () => {
   assert.ok(MAX_SESSIONS_PER_REQUEST > 0);
   assert.ok(MAX_SESSIONS_PER_REQUEST <= 1000);
 });
+
+test("calendar date validation rejects impossible days", async () => {
+  const { isValidCalendarDate, sanitizeSessionReason, isSameOriginRequest, timingSafeEqual } =
+    await import("../.tmp-test/security.js");
+  assert.equal(isValidCalendarDate(2026, 2, 28), true);
+  assert.equal(isValidCalendarDate(2026, 2, 29), false); // not a leap year
+  assert.equal(isValidCalendarDate(2024, 2, 29), true);
+  assert.equal(isValidCalendarDate(2026, 13, 1), false);
+  assert.equal(isValidCalendarDate(1999, 6, 1), false);
+
+  assert.equal(sanitizeSessionReason("unlock"), "unlock");
+  assert.equal(sanitizeSessionReason("IDLE"), "idle");
+  assert.equal(sanitizeSessionReason("  manual  "), "manual");
+  assert.equal(sanitizeSessionReason("<script>"), null);
+  assert.equal(sanitizeSessionReason(null), null);
+
+  assert.equal(timingSafeEqual("abc", "abc"), true);
+  assert.equal(timingSafeEqual("abc", "abd"), false);
+  assert.equal(timingSafeEqual("ab", "abc"), false);
+
+  const same = new Request("https://clocked.example/api/hours", {
+    method: "POST",
+    headers: { origin: "https://clocked.example" },
+  });
+  const cross = new Request("https://clocked.example/api/hours", {
+    method: "POST",
+    headers: { origin: "https://evil.example" },
+  });
+  const noOrigin = new Request("https://clocked.example/api/hours", { method: "POST" });
+  assert.equal(isSameOriginRequest(same), true);
+  assert.equal(isSameOriginRequest(cross), false);
+  assert.equal(isSameOriginRequest(noOrigin), false);
+});

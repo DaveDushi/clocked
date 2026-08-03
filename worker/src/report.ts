@@ -33,6 +33,30 @@ export interface HoursReport {
   totalMinutes: number;
 }
 
+/** One local-day slice of a closed session for the dashboard timeline. */
+export interface SessionSegment {
+  /** Session row id (same for every midnight-split slice of one session). */
+  id: string;
+  date: string; // local "YYYY-MM-DD" of this slice
+  start: string; // "HH:MM" local
+  end: string;
+  minutes: number;
+  /** Minutes from local midnight (for bar layout). */
+  startMin: number;
+  endMin: number;
+  start_reason: string | null;
+  end_reason: string | null;
+  source: "manual" | "app";
+}
+
+interface SessionRow {
+  id: string;
+  start_utc: string;
+  end_utc: string;
+  start_reason: string | null;
+  end_reason: string | null;
+}
+
 /**
  * Structured per-local-day totals for `period` ("YYYY-MM"), reusing the same
  * query and split-at-local-midnight logic as `buildReportCsv`. Dashboard rows
@@ -77,6 +101,76 @@ export async function buildHoursReport(
   const totalMinutes = days.reduce((sum, d) => sum + d.minutes, 0);
   const expanded = expandCalendarDays(days, period, localYMD(new Date(), tz));
   return { period, tz, days: expanded.days, activeDays: expanded.activeDays, totalMinutes };
+}
+
+/**
+ * Closed sessions for `period`, split at local midnight so each segment stays
+ * within one day (matches CSV / hours accounting). Used by the dashboard
+ * timeline and the manual-session list.
+ */
+export async function listSessionsForPeriod(
+  env: Env,
+  period: string,
+  userId: string,
+): Promise<SessionSegment[]> {
+  const tz = env.REPORT_TZ;
+  const { start, end } = monthBoundsUtc(period, tz);
+
+  const res = await env.DB.prepare(
+    `SELECT id, start_utc, end_utc, start_reason, end_reason FROM sessions
+      WHERE user_id = ? AND end_utc IS NOT NULL AND end_utc > ? AND start_utc < ?
+      ORDER BY start_utc`,
+  )
+    .bind(userId, start.toISOString(), end.toISOString())
+    .all<SessionRow>();
+
+  const out: SessionSegment[] = [];
+  for (const r of res.results ?? []) {
+    const sessStart = Date.parse(r.start_utc);
+    const sessEnd = Date.parse(r.end_utc);
+    if (Number.isNaN(sessStart) || Number.isNaN(sessEnd) || sessEnd <= sessStart) continue;
+
+    let segStart = new Date(Math.max(sessStart, start.getTime()));
+    const hardEnd = new Date(Math.min(sessEnd, end.getTime()));
+    while (segStart < hardEnd) {
+      const midnight = nextLocalMidnightUtc(segStart, tz);
+      const segEnd = midnight < hardEnd ? midnight : hardEnd;
+      const { y, m, d } = localYMD(segStart, tz);
+      const date = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      const startMin = localMinutesFromMidnight(segStart, tz);
+      const endMinRaw = localMinutesFromMidnight(segEnd, tz);
+      // Midnight end of a day is 1440, not 0 of the next day.
+      const endMin = endMinRaw === 0 && segEnd.getTime() > segStart.getTime() ? 1440 : endMinRaw;
+      const minutes = Math.max(0, Math.round((segEnd.getTime() - segStart.getTime()) / 60000));
+      const reason = r.start_reason || "app";
+      out.push({
+        id: r.id,
+        date,
+        start: formatHM(segStart, tz),
+        end: formatHM(segEnd, tz),
+        minutes,
+        startMin,
+        endMin: Math.max(endMin, startMin + 1),
+        start_reason: r.start_reason,
+        end_reason: r.end_reason,
+        source: reason === "manual" ? "manual" : "app",
+      });
+      segStart = segEnd;
+    }
+  }
+  return out;
+}
+
+/** Local wall-clock minutes since midnight in `tz` (0–1439). */
+function localMinutesFromMidnight(date: Date, tz: string): number {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hourCycle: "h23",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const p = Object.fromEntries(dtf.formatToParts(date).map((x) => [x.type, x.value]));
+  return Number(p.hour) * 60 + Number(p.minute);
 }
 
 /** Quote a CSV field when it contains a comma, quote, or newline (the date

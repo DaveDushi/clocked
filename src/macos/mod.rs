@@ -403,15 +403,25 @@ impl AppState {
     }
 
     fn do_sync(&mut self) {
+        self.start_sync(false);
+    }
+
+    fn start_sync(&mut self, manual: bool) {
         if !self.config.is_configured() {
+            if manual {
+                runloop::notify("clocked", "Add your sync token in Settings first.");
+            }
             return;
         }
         // Claim the guard; bail if a sync is already in flight. The worker clears
         // it when done — no window message / main-thread hop required.
         if self.syncing.swap(true, Ordering::SeqCst) {
+            if manual {
+                runloop::notify("clocked", "Sync already in progress…");
+            }
             return;
         }
-        runloop::spawn_sync(self.config.clone(), self.syncing.clone());
+        runloop::spawn_sync(self.config.clone(), self.syncing.clone(), manual);
     }
 
     fn reload_config(&mut self) {
@@ -461,7 +471,7 @@ impl AppState {
         self.close_event(reason);
     }
     pub(crate) fn sync_now(&mut self) {
-        self.do_sync();
+        self.start_sync(true);
     }
     pub(crate) fn toggle_pause_cmd(&mut self) {
         self.toggle_pause();

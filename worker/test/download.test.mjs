@@ -46,3 +46,13 @@ test("dashboard advertises the Windows installer and Chrome extension", async ()
   assert.match(html, /href="\/download\/extension"/);
   assert.match(html, /Chrome extension/);
 });
+
+test("landing page shows hosted vs self-hosted compare table and timeline UI", async () => {
+  const html = await dashboardResponse().text();
+  assert.match(html, /Hosted vs self-hosted/);
+  assert.match(html, /compare-table/);
+  assert.match(html, /Self-hosted Worker/);
+  assert.match(html, /timelinePanel/);
+  assert.match(html, /Local first/);
+  assert.match(html, /Optional projects/);
+});

@@ -14,7 +14,7 @@ const HTML = /* html */ `<!doctype html>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>clocked — automatic Windows time tracking</title>
-<meta name="description" content="Automatic Windows time tracker. Clock in from unlock and activity, clock out from lock and idle. Sync to the cloud and get a monthly timesheet by email — even if your laptop was asleep." />
+<meta name="description" content="Automatic time tracking for Windows and macOS. Clock in from unlock and activity, clock out from lock and idle. Optional project labels, cloud sync, teams, and monthly timesheet email." />
 <meta name="theme-color" content="#0a0b10" />
 <meta name="robots" content="index,follow" />
 <link rel="canonical" href="https://clocked.daviddusi.com/" />
@@ -30,7 +30,7 @@ const HTML = /* html */ `<!doctype html>
 <meta name="twitter:description" content="Automatic time tracking for Windows. No timers. No spyware. Monthly timesheet by email." />
 <meta name="twitter:image" content="https://clocked.daviddusi.com/og.jpg" />
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareApplication","name":"clocked","applicationCategory":"BusinessApplication","operatingSystem":"Windows","offers":{"@type":"Offer","price":"0","priceCurrency":"USD","description":"Open-source desktop; hosted cloud plans available"},"description":"Automatic Windows time tracking from power and session events. Cloud sync and monthly timesheet email.","url":"https://clocked.daviddusi.com/","downloadUrl":"https://clocked.daviddusi.com/download","softwareVersion":"0.1.6","license":"https://opensource.org/licenses/MIT","codeRepository":"https://github.com/DaveDushi/clocked"}
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"clocked","applicationCategory":"BusinessApplication","operatingSystem":"Windows, macOS","offers":{"@type":"Offer","price":"0","priceCurrency":"USD","description":"Open-source desktop; hosted cloud plans available"},"description":"Automatic time tracking from power and session events. Local SQLite, optional project attribution, cloud sync, teams, and monthly timesheet email.","url":"https://clocked.daviddusi.com/","downloadUrl":"https://clocked.daviddusi.com/download","softwareVersion":"0.1.14","license":"https://opensource.org/licenses/MIT","codeRepository":"https://github.com/DaveDushi/clocked"}
 </script>
 <link rel="icon" type="image/png" href="/favicon.ico" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -287,6 +287,126 @@ const HTML = /* html */ `<!doctype html>
   }
   @keyframes grow { from { width:0; } }
   tr.empty td { color:var(--muted); padding:22px 6px; text-align:center; }
+  tbody tr.day-row { cursor:pointer; }
+  tbody tr.day-row:hover { background:rgba(242,169,80,.06); }
+  tbody tr.day-row.selected { background:rgba(242,169,80,.1); }
+  tbody tr.day-row.selected td { border-bottom-color:rgba(242,169,80,.25); }
+
+  /* ---------- day timeline ---------- */
+  .timeline-panel {
+    margin-top:16px; border:1px solid var(--border); border-radius:12px;
+    background:#0b0d13; overflow:hidden;
+  }
+  .timeline-panel.hidden { display:none; }
+  .timeline-head {
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:12px 14px; border-bottom:1px solid var(--border);
+  }
+  .timeline-head b { font-size:13.5px; letter-spacing:.02em; }
+  .timeline-head .sub { font-size:12.5px; color:var(--muted); font-weight:400; margin-left:8px; }
+  /* 24h clock face: one full turn = midnight→midnight */
+  .timeline-body {
+    display:grid; grid-template-columns:minmax(200px, 240px) 1fr; gap:0; align-items:stretch;
+  }
+  @media (max-width:560px) {
+    .timeline-body { grid-template-columns:1fr; }
+  }
+  .timeline-clock-wrap {
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:18px 14px 16px; border-right:1px solid var(--border); gap:10px;
+  }
+  @media (max-width:560px) {
+    .timeline-clock-wrap { border-right:0; border-bottom:1px solid var(--border); padding-bottom:14px; }
+  }
+  .timeline-clock {
+    width:200px; height:200px; display:block;
+    filter:drop-shadow(0 0 18px rgba(242,169,80,.12));
+  }
+  .timeline-clock .face-ring { fill:none; stroke:rgba(255,255,255,.06); stroke-width:14; }
+  .timeline-clock .face-rim { fill:none; stroke:var(--border); stroke-width:1.5; }
+  .timeline-clock .face-hub {
+    fill:var(--bg); stroke:var(--amber); stroke-width:2;
+  }
+  .timeline-clock .tick { stroke:rgba(233,234,240,.22); stroke-width:1.5; stroke-linecap:round; }
+  .timeline-clock .tick.major { stroke:rgba(233,234,240,.45); stroke-width:2; }
+  .timeline-clock .hour-label {
+    fill:var(--faint); font-family:var(--mono); font-size:9px; text-anchor:middle; dominant-baseline:central;
+    letter-spacing:.04em;
+  }
+  .timeline-clock .arc {
+    fill:none; stroke:url(#clockArcGrad); stroke-width:14; stroke-linecap:butt;
+  }
+  .timeline-clock .arc.manual { stroke:#5aa8e8; }
+  .timeline-clock .center-total {
+    fill:var(--amber); font-family:var(--mono); font-size:18px; font-weight:600;
+    text-anchor:middle; dominant-baseline:central;
+  }
+  .timeline-clock .center-label {
+    fill:var(--faint); font-family:var(--mono); font-size:8px; letter-spacing:.14em;
+    text-anchor:middle; dominant-baseline:central; text-transform:uppercase;
+  }
+  .timeline-clock-legend {
+    display:flex; gap:12px; font-size:11px; color:var(--muted); font-family:var(--mono);
+  }
+  .timeline-clock-legend span { display:inline-flex; align-items:center; gap:5px; }
+  .timeline-clock-legend i {
+    display:inline-block; width:10px; height:10px; border-radius:50%;
+    background:linear-gradient(180deg, var(--amber), var(--amber2));
+  }
+  .timeline-clock-legend i.manual { background:#5aa8e8; }
+  .timeline-list {
+    display:flex; flex-direction:column; gap:0; max-height:280px; overflow-y:auto;
+    min-height:0;
+  }
+  .timeline-item {
+    display:grid; grid-template-columns:88px 1fr auto; gap:10px; align-items:center;
+    padding:10px 14px; border-top:1px solid var(--border); font-size:13px;
+  }
+  .timeline-item:first-child { border-top:0; }
+  .timeline-item .t {
+    font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--fg); font-size:12.5px;
+  }
+  .timeline-item .reasons { display:flex; flex-wrap:wrap; gap:6px; align-items:center; min-width:0; }
+  .reason-pill {
+    font-family:var(--mono); font-size:11px; letter-spacing:.04em;
+    padding:2px 8px; border-radius:999px; border:1px solid var(--border);
+    color:var(--muted); background:rgba(255,255,255,.02); white-space:nowrap;
+  }
+  .reason-pill.in { color:var(--ok); border-color:rgba(91,214,162,.35); background:rgba(91,214,162,.08); }
+  .reason-pill.out { color:var(--amber); border-color:rgba(242,169,80,.35); background:rgba(242,169,80,.08); }
+  .timeline-item .dur {
+    font-family:var(--mono); font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums;
+  }
+  .timeline-empty { padding:18px 14px; color:var(--muted); font-size:13.5px; text-align:center; }
+  .timeline-hint { margin:10px 0 0; font-size:12.5px; color:var(--faint); }
+
+  /* ---------- compare (hosted vs self-host) ---------- */
+  .compare { max-width:720px; margin:0 auto 36px; }
+  .compare h2 { text-align:center; font-size:22px; margin:0 0 6px; letter-spacing:.02em; }
+  .compare > p { text-align:center; color:var(--muted); font-size:14.5px; margin:0 0 16px; line-height:1.5; }
+  .compare-wrap {
+    overflow-x:auto; border:1px solid var(--border); border-radius:14px;
+    background:linear-gradient(180deg, var(--panel), var(--panel2));
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+  }
+  table.compare-table { width:100%; border-collapse:collapse; min-width:520px; }
+  table.compare-table th, table.compare-table td {
+    text-align:left; padding:12px 14px; border-bottom:1px solid var(--border);
+    font-size:13.5px; vertical-align:top;
+  }
+  table.compare-table tr:last-child th, table.compare-table tr:last-child td { border-bottom:0; }
+  table.compare-table thead th {
+    font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint);
+    background:rgba(0,0,0,.2); position:sticky; top:0;
+  }
+  table.compare-table tbody th {
+    font-weight:600; color:var(--fg); width:34%;
+  }
+  table.compare-table td { color:var(--muted); line-height:1.45; }
+  table.compare-table .yes { color:var(--ok); }
+  table.compare-table .no { color:var(--faint); }
+  table.compare-table .hosted-col { color:var(--fg); }
+  .compare-note { text-align:center; font-size:12.5px; color:var(--faint); margin:12px 0 0; line-height:1.5; }
 
   .total { display:flex; justify-content:space-between; align-items:baseline; margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
   .total b { font-family:var(--mono); font-size:26px; font-weight:600; color:var(--amber); text-shadow:0 0 12px rgba(242,169,80,.2); font-variant-numeric:tabular-nums; }
@@ -310,6 +430,7 @@ const HTML = /* html */ `<!doctype html>
   .feature { background:linear-gradient(180deg, var(--panel), var(--panel2)); border:1px solid var(--border); border-radius:14px; padding:16px 15px; box-shadow:inset 0 1px 0 rgba(255,255,255,.04); text-align:left; }
   .feature .k { font-family:var(--mono); font-size:12px; color:var(--amber); letter-spacing:.08em; text-transform:uppercase; margin-bottom:6px; }
   .feature .v { font-size:13.5px; color:var(--muted); line-height:1.5; }
+  @media (max-width:720px) { .features { grid-template-columns:repeat(2,1fr); } }
   @media (max-width:560px) { .features { grid-template-columns:1fr; } .hero h1 { font-size:30px; } }
 
   .how { max-width:720px; margin:0 auto 32px; }
@@ -548,25 +669,28 @@ const HTML = /* html */ `<!doctype html>
   <div id="landingView" class="hidden">
     <div class="hero">
       <div class="logo" aria-hidden="true"></div>
-      <div class="eyebrow">Windows · automatic · open source desktop</div>
+      <div class="eyebrow">Windows &amp; macOS · automatic · open source desktop</div>
       <h1>Stop babysitting<br /><small>a timer.</small></h1>
-      <p>clocked is a tiny tray app that clocks you in and out from real PC activity —
-        unlock, work, lock, idle. It syncs to the cloud and emails a clean monthly
-        timesheet, even if your laptop was asleep at month-end.</p>
+      <p>clocked is a tray / menu-bar app that clocks you in and out from real machine
+        activity — unlock, work, lock, idle. Hours stay on your PC (SQLite) first.
+        Optional cloud sync emails a monthly timesheet even if the laptop was asleep.</p>
       <div class="downloadCta row">
-        <button type="button" class="btn" id="heroSignup">Start free account</button>
+        <button type="button" class="btn" id="heroSignup">Create account</button>
         <a class="btn ghost" href="/download/mac">Download for macOS</a>
         <a class="btn ghost" href="/download/win">Download for Windows</a>
         <a class="btn ghost" href="/download/extension">Chrome extension</a>
-        <div class="hintline">Optional extension sends site hostnames to the tray app only — no screenshots, no keylogging.</div>
+        <div class="hintline">Optional extension sends site hostnames to the local app only — no screenshots, no keylogging, no full URLs.</div>
       </div>
-      <p class="trust">Open-source desktop app · paid cloud sync &amp; email · self-host the Worker if you want</p>
+      <p class="trust">MIT desktop app · local SQLite source of truth · paid hosted cloud · self-host the Worker anytime</p>
     </div>
 
     <div class="features">
-      <div class="feature"><div class="k">Automatic</div><div class="v">Wake, unlock, and activity clock you in. Sleep, lock, idle, and quit clock you out — backdated so idle time doesn&rsquo;t inflate the day.</div></div>
-      <div class="feature"><div class="k">Yours</div><div class="v">Your machine, your account, your token. Teams share manager views — not a surveillance product.</div></div>
-      <div class="feature"><div class="k">Monthly report</div><div class="v">A tidy timesheet (CSV attached) emailed on your schedule. Late-arriving sessions still land in the next sync.</div></div>
+      <div class="feature"><div class="k">Automatic presence</div><div class="v">Wake, unlock, and activity clock you in. Sleep, lock, idle, quit, and shutdown clock you out — idle is backdated to last input so empty time doesn&rsquo;t inflate the day.</div></div>
+      <div class="feature"><div class="k">Local first</div><div class="v">Sessions live in SQLite on your machine. Pause from the tray, tune idle timeout, set working hours with an after-hours prompt, and keep tracking offline.</div></div>
+      <div class="feature"><div class="k">Optional projects</div><div class="v">Opt in to attribute time to the focused app and privacy-safe context (document name or browser hostname). Window titles stay off by default.</div></div>
+      <div class="feature"><div class="k">Monthly timesheet</div><div class="v">Hosted cloud emails a day-by-day CSV on your send day. Preview anytime, add manual spans, and export or delete your cloud data.</div></div>
+      <div class="feature"><div class="k">Teams</div><div class="v">Invite workers, review their hours, adjust entries as a manager, and centralize report delivery — not live surveillance.</div></div>
+      <div class="feature"><div class="k">Yours to run</div><div class="v">Point the desktop app at your own Cloudflare Worker, or use hosted clocked for accounts, dashboard, billing, and email without ops work.</div></div>
     </div>
 
     <div class="how">
@@ -576,19 +700,83 @@ const HTML = /* html */ `<!doctype html>
         <div class="how-step">
           <div class="n">01</div>
           <h3>Install the tray app</h3>
-          <p>Download for macOS or Windows. It runs in the background and starts with login if you want.</p>
+          <p>Download for Windows or macOS. It runs in the background, can start at login, and keeps a local SQLite timesheet with no account required.</p>
         </div>
         <div class="how-step">
           <div class="n">02</div>
-          <h3>Create an account</h3>
-          <p>Sign up here, verify email, pick a plan, copy your sync token into the app Settings.</p>
+          <h3>Connect cloud (optional)</h3>
+          <p>Create an account here, verify email, pick a plan, paste your sync token into Settings — or point the app at your self-hosted Worker.</p>
         </div>
         <div class="how-step">
           <div class="n">03</div>
           <h3>Forget about it</h3>
-          <p>Hours accumulate locally and sync over HTTPS. Get the monthly report by email — or preview anytime.</p>
+          <p>Hours accumulate automatically. Open the dashboard for a day timeline, projects, and email settings — or wait for the monthly CSV.</p>
         </div>
       </div>
+    </div>
+
+    <div class="compare">
+      <h2>Hosted vs self-hosted</h2>
+      <p>The open-source desktop and a minimal Worker stay useful on their own. Hosted clocked sells convenience, accounts, teams, and managed delivery.</p>
+      <div class="compare-wrap">
+        <table class="compare-table">
+          <thead>
+            <tr>
+              <th scope="col">Capability</th>
+              <th scope="col">Self-hosted Worker</th>
+              <th scope="col" class="hosted-col">Hosted clocked</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Desktop tray app</th>
+              <td class="yes">Yes — MIT, local SQLite</td>
+              <td class="hosted-col yes">Yes — same app</td>
+            </tr>
+            <tr>
+              <th scope="row">Session sync</th>
+              <td>You deploy Worker + D1 + secrets</td>
+              <td class="hosted-col yes">Managed — paste token &amp; go</td>
+            </tr>
+            <tr>
+              <th scope="row">Web dashboard</th>
+              <td class="no">Basic / DIY (your fork)</td>
+              <td class="hosted-col yes">Hours, day timeline, projects, export</td>
+            </tr>
+            <tr>
+              <th scope="row">Accounts &amp; isolation</th>
+              <td class="no">Typically one shared token</td>
+              <td class="hosted-col yes">Per-user auth, tokens, email verify</td>
+            </tr>
+            <tr>
+              <th scope="row">Monthly email report</th>
+              <td>You wire Resend / Email Routing</td>
+              <td class="hosted-col yes">Scheduled send day, multi-recipient</td>
+            </tr>
+            <tr>
+              <th scope="row">Manual time edits</th>
+              <td class="no">Your own tooling</td>
+              <td class="hosted-col yes">Add / remove sessions in dashboard</td>
+            </tr>
+            <tr>
+              <th scope="row">Teams &amp; manager views</th>
+              <td class="no">Not in the minimal path</td>
+              <td class="hosted-col yes">Invite, roster, shared timesheets</td>
+            </tr>
+            <tr>
+              <th scope="row">Billing &amp; support</th>
+              <td class="no">You operate everything</td>
+              <td class="hosted-col yes">Stripe plans, hosted updates, support path</td>
+            </tr>
+            <tr>
+              <th scope="row">Best for</th>
+              <td>Developers &amp; privacy-first solo ops</td>
+              <td class="hosted-col">Freelancers &amp; small teams who want it to just work</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="compare-note">Self-host stays intentionally simple. Hosted charges for workflow, reliability, and collaboration — not for the right to track hours on your own PC.</p>
     </div>
 
     <div class="audience">
@@ -605,17 +793,18 @@ const HTML = /* html */ `<!doctype html>
 
     <div class="price-head">
       <h2>Simple pricing</h2>
-      <p>Open-source desktop is free. Cloud sync, dashboard, and email reports are paid — solo or team.</p>
+      <p>Open-source desktop is free forever. Hosted sync, dashboard, teams, and email reports are paid.</p>
     </div>
     <div class="pricing">
       <div class="price-card">
         <div class="plan-name">Solo</div>
         <div class="price-tag"><span class="price-num">25&cent;</span><span class="price-per">/ day</span></div>
-        <div class="plan-meta">Just you</div>
+        <div class="plan-meta">Just you &middot; ~$7.50/mo</div>
         <ul class="price-list">
-          <li>Automatic clock in &amp; clock out</li>
-          <li>Private account &amp; sync token</li>
-          <li>Monthly timesheet by email</li>
+          <li>Desktop sync token</li>
+          <li>Hours dashboard + day timeline</li>
+          <li>Manual adjustments &amp; data export</li>
+          <li>Monthly timesheet email</li>
         </ul>
         <button class="planCta" style="width:100%">Get started</button>
       </div>
@@ -625,8 +814,9 @@ const HTML = /* html */ `<!doctype html>
         <div class="plan-meta">Up to 5 members</div>
         <ul class="price-list">
           <li>Everything in Solo</li>
-          <li>Up to 5 members</li>
-          <li>Shared timesheets</li>
+          <li>Invite workers</li>
+          <li>Manager timesheet view</li>
+          <li>Shared report delivery</li>
         </ul>
         <button class="planCta" style="width:100%">Get started</button>
       </div>
@@ -636,7 +826,7 @@ const HTML = /* html */ `<!doctype html>
         <div class="plan-meta">Up to 30 members</div>
         <ul class="price-list">
           <li>Everything in Team</li>
-          <li>Up to 30 members</li>
+          <li>Larger roster (30 seats)</li>
           <li>Priority support</li>
         </ul>
         <button class="planCta" style="width:100%">Get started</button>
@@ -647,7 +837,7 @@ const HTML = /* html */ `<!doctype html>
         <div class="plan-meta">30+ members</div>
         <ul class="price-list">
           <li>Everything in Team+</li>
-          <li>Unlimited members</li>
+          <li>Unlimited seats</li>
           <li>Custom invoicing &amp; SLA</li>
         </ul>
         <button id="salesCta" style="width:100%">Contact sales</button>
@@ -658,7 +848,7 @@ const HTML = /* html */ `<!doctype html>
       <h2>FAQ</h2>
       <details>
         <summary>Is this employee surveillance software?</summary>
-        <p>No. clocked tracks presence from OS power and input events on the machine you install it on. There are no screenshots, keylogging, or website lists. Team managers see hours for people who joined their org — not live monitoring.</p>
+        <p>No. By default clocked tracks presence from OS power and input events on the machine you install it on — no screenshots, no keylogging. Optional project tracking can record focused apps and privacy-safe site hostnames (not full URLs). Team managers see hours for people who joined their org — not live monitoring.</p>
       </details>
       <details>
         <summary>What if my laptop is closed at month-end?</summary>
@@ -666,11 +856,15 @@ const HTML = /* html */ `<!doctype html>
       </details>
       <details>
         <summary>Can I self-host?</summary>
-        <p>Yes. The desktop app is open source and can point at your own Worker URL. The hosted service at clocked.daviddusi.com is the paid convenience path for sync, dashboard, teams, and email.</p>
+        <p>Yes. The desktop app is open source and can point at your own Worker URL. You run Cloudflare, D1, secrets, and email yourself. Hosted clocked is the managed path for accounts, dashboard, teams, and email without ops.</p>
+      </details>
+      <details>
+        <summary>Do I need an account to track time?</summary>
+        <p>No. Local-only mode works with an empty config — hours stay in SQLite on your machine. An account is only needed for cloud sync, the web dashboard, teams, and monthly email.</p>
       </details>
       <details>
         <summary>Which platforms?</summary>
-        <p>Native menu-bar and tray apps for macOS and Windows. The web dashboard works in any modern browser once you have an account.</p>
+        <p>Native tray and menu-bar apps for Windows and macOS. Optional Chrome/Edge extension for accurate browser hostnames. The web dashboard works in any modern browser once you have a hosted plan.</p>
       </details>
     </div>
 
@@ -752,7 +946,8 @@ const HTML = /* html */ `<!doctype html>
             <div class="plan-meta">Just you &middot; ~$7.50/mo</div>
             <ul class="price-list">
               <li>Desktop sync token</li>
-              <li>Private hours dashboard</li>
+              <li>Hours dashboard + day timeline</li>
+              <li>Manual edits &amp; data export</li>
               <li>Monthly timesheet email</li>
             </ul>
             <button type="button" class="gatePlanCta" data-plan="single" style="width:100%">Continue with Solo</button>
@@ -764,7 +959,8 @@ const HTML = /* html */ `<!doctype html>
             <ul class="price-list">
               <li>Everything in Solo</li>
               <li>Invite workers</li>
-              <li>Shared manager timesheets</li>
+              <li>Manager timesheet view</li>
+              <li>Shared report delivery</li>
             </ul>
             <button type="button" class="gatePlanCta" data-plan="team" style="width:100%">Continue with Team</button>
           </div>
@@ -774,7 +970,7 @@ const HTML = /* html */ `<!doctype html>
             <div class="plan-meta">Up to 30 members</div>
             <ul class="price-list">
               <li>Everything in Team</li>
-              <li>Larger roster</li>
+              <li>Larger roster (30 seats)</li>
               <li>Priority support</li>
             </ul>
             <button type="button" class="gatePlanCta" data-plan="teamplus" style="width:100%">Continue with Team+</button>
@@ -827,6 +1023,14 @@ const HTML = /* html */ `<!doctype html>
             <tbody id="rows"></tbody>
           </table>
         </div>
+        <p class="timeline-hint">Click a day to open its 24-hour clock — arcs are time you were clocked in.</p>
+        <div id="timelinePanel" class="timeline-panel hidden" aria-live="polite">
+          <div class="timeline-head">
+            <div><b id="timelineTitle">Day timeline</b><span class="sub" id="timelineSub"></span></div>
+            <button id="timelineClose" class="ghost" type="button">Close</button>
+          </div>
+          <div id="timelineBody"></div>
+        </div>
         <div class="total"><span class="muted">Total</span><b id="totalRow">0:00</b></div>
         <div id="projectSection" style="display:none;margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
           <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">By project</div>
@@ -867,7 +1071,7 @@ const HTML = /* html */ `<!doctype html>
       <div class="card">
         <div class="section-head">
           <h3>Desktop app</h3>
-          <p class="hint">Connect the Windows tray app</p>
+          <p class="hint">Connect the tray / menu-bar app</p>
         </div>
         <div id="verifyBanner" class="msg err hidden" role="status" style="margin-bottom:12px">
           Verify your email to create a sync token.
@@ -1750,12 +1954,36 @@ function renderTeamMember(d, period) {
   const head = "<div class='pv-head'><b>" + pvEsc(openMemberName) + " — " + pvEsc(period) + "</b><button id='tmClose' class='ghost'>Close</button></div>";
   const max = d.days.reduce((a,x) => Math.max(a, x.minutes), 0) || 1;
   const rows = d.days.length
-    ? d.days.map((x,i) => rowHtml(x, max, i)).join("")
+    ? d.days.map((x,i) => rowHtml(x, max, i, false)).join("")
     : "<tr class='empty'><td colspan='3'>No days to show for this month.</td></tr>";
   const activeDays = d.activeDays ?? d.days.filter((x) => x.minutes > 0).length;
-  const summary = "<div class='muted' style='padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px'>Total <b style='color:var(--amber)'>" + fmt(d.totalMinutes) + "</b> &middot; " + activeDays + " day(s)</div>";
-  panel.innerHTML = head + summary + "<div class='tablewrap'><table><thead><tr><th>Day</th><th></th><th class='num'>Hours</th></tr></thead><tbody>" + rows + "</tbody></table></div>" + tmEditHtml();
+  const summary = "<div class='muted' style='padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px'>Total <b style='color:var(--amber)'>" + fmt(d.totalMinutes) + "</b> &middot; " + activeDays + " day(s) · click a day for timeline</div>";
+  panel.innerHTML = head + summary +
+    "<div class='tablewrap'><table><thead><tr><th>Day</th><th></th><th class='num'>Hours</th></tr></thead><tbody id='tmRows'>" + rows + "</tbody></table></div>" +
+    "<div id='tmTimeline' class='timeline-panel hidden' style='margin:12px;border-radius:10px'><div class='timeline-head'><div><b id='tmTlTitle'>Day</b><span class='sub' id='tmTlSub'></span></div><button id='tmTlClose' class='ghost' type='button'>Close</button></div><div id='tmTlBody'></div></div>" +
+    tmEditHtml();
   $("tmClose").onclick = closeMember;
+  const tmSessions = d.sessions || [];
+  const tmRows = $("tmRows");
+  if (tmRows) {
+    tmRows.addEventListener("click", (ev) => {
+      let el = ev.target;
+      while (el && el !== tmRows && !(el.tagName === "TR" && el.getAttribute("data-date"))) el = el.parentNode;
+      if (!el || el === tmRows) return;
+      const date = el.getAttribute("data-date");
+      const all = tmRows.querySelectorAll("tr.day-row");
+      for (let i = 0; i < all.length; i++) all[i].classList.remove("selected");
+      el.classList.add("selected");
+      renderTimelineInto(date, tmSessions, $("tmTimeline"), $("tmTlTitle"), $("tmTlSub"), $("tmTlBody"));
+    });
+  }
+  if ($("tmTlClose")) $("tmTlClose").onclick = () => {
+    if ($("tmTimeline")) $("tmTimeline").classList.add("hidden");
+    if (tmRows) {
+      const all = tmRows.querySelectorAll("tr.selected");
+      for (let i = 0; i < all.length; i++) all[i].classList.remove("selected");
+    }
+  };
   wireTeamEdit(period);
   loadTeamManual(period);
 }
@@ -1817,18 +2045,28 @@ function renderSessionList(box, list, onDelete) {
     box.appendChild(empty);
     return;
   }
+  // Collapse midnight-split slices of the same session id for the delete list.
+  const seen = {};
+  const unique = [];
+  list.forEach((e) => {
+    if (seen[e.id]) return;
+    seen[e.id] = true;
+    unique.push(e);
+  });
   const head = document.createElement("div");
   head.className = "mentries-head";
-  head.textContent = "Sessions this month (" + list.length + ")";
+  head.textContent = "Sessions this month (" + unique.length + ")";
   box.appendChild(head);
   const scroll = document.createElement("div");
   scroll.className = "mentries-scroll";
-  list.forEach((e) => {
+  unique.forEach((e) => {
     const row = document.createElement("div");
     row.className = "mentry";
     const label = document.createElement("span");
     const src = sessionSourceLabel(e);
-    label.textContent = e.date + "  ·  " + e.start + "–" + e.end + "  ·  " + src;
+    const why = reasonLabel(e.start_reason) + " → " + reasonLabel(e.end_reason);
+    label.textContent = e.date + "  ·  " + e.start + "–" + e.end + "  ·  " + why;
+    label.title = src;
     const del = document.createElement("button");
     del.type = "button";
     del.className = "ghost del";
@@ -2022,13 +2260,17 @@ if (deleteBtn) deleteBtn.onclick = async () => {
 };
 
 // ---- hours ----
-function rowHtml(x, max, i) {
+let hoursSessions = [];
+let selectedDay = "";
+
+function rowHtml(x, max, i, selected) {
   const dt = new Date(x.date + "T00:00:00");
   const wk = dt.getDay() === 0 || dt.getDay() === 6;
   const dow = dt.toLocaleDateString(undefined, { weekday:"short" });
   const pct = x.minutes > 0 ? Math.max(2, Math.round((x.minutes / max) * 100)) : 0;
   const bar = x.minutes > 0 ? "<div class='bar' style='width:" + pct + "%; animation-delay:" + (i*30) + "ms'></div>" : "";
-  return "<tr title='" + pvEsc(String(x.label || "")).replace(/'/g, "&#39;") + "'>" +
+  const sel = selected ? " selected" : "";
+  return "<tr class='day-row" + sel + "' data-date='" + pvEsc(x.date) + "' title='" + pvEsc(String(x.label || "")).replace(/'/g, "&#39;") + " — click for timeline'>" +
     "<td class='day'><span class='dow" + (wk ? " wk" : "") + "'>" + dow + "</span><b>" + Number(x.date.slice(8,10)) + "</b></td>" +
     "<td class='barcell'><div class='track'>" + bar + "</div></td>" +
     "<td class='num'>" + fmt(x.minutes) + "</td></tr>";
@@ -2039,21 +2281,174 @@ function currentPeriod() {
   return now.getFullYear() + "-" + pad(now.getMonth()+1);
 }
 
+function reasonLabel(r) {
+  const k = String(r || "").toLowerCase();
+  const map = {
+    start: "app start", resume: "wake", unlock: "unlock", active: "activity",
+    call: "call", manual: "manual", idle: "idle", lock: "lock",
+    suspend: "sleep", shutdown: "shutdown", quit: "quit", crash: "crash", app: "app"
+  };
+  return map[k] || (k || "—");
+}
+
+/** Minutes from midnight → SVG degrees (0° = 3 o'clock). Midnight sits at top. */
+function clockDeg(min) {
+  return (Math.max(0, Math.min(1440, min)) / 1440) * 360 - 90;
+}
+function clockPoint(cx, cy, r, min) {
+  const rad = clockDeg(min) * Math.PI / 180;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+/** Stroke arc path for a session on the 24h face (full turn = one day). */
+function clockArcPath(cx, cy, r, startMin, endMin) {
+  let a = Math.max(0, Math.min(1440, Number(startMin) || 0));
+  let b = Math.max(0, Math.min(1440, Number(endMin) || 0));
+  if (b <= a) b = Math.min(1440, a + 1);
+  // Full-day ring: SVG arc cannot span 360° as one open path — close via circle.
+  if (b - a >= 1439) {
+    return "M " + (cx) + " " + (cy - r) +
+      " A " + r + " " + r + " 0 1 1 " + (cx - 0.01) + " " + (cy - r) +
+      " A " + r + " " + r + " 0 1 1 " + cx + " " + (cy - r);
+  }
+  const p0 = clockPoint(cx, cy, r, a);
+  const p1 = clockPoint(cx, cy, r, b);
+  const large = (b - a) > 720 ? 1 : 0;
+  return "M " + p0.x.toFixed(2) + " " + p0.y.toFixed(2) +
+    " A " + r + " " + r + " 0 " + large + " 1 " + p1.x.toFixed(2) + " " + p1.y.toFixed(2);
+}
+
+function buildDayClockSvg(segs, totalMin) {
+  const cx = 100, cy = 100, rTrack = 72, rTickOut = 88, rTickIn = 80, rLabel = 94;
+  // Unique gradient id so personal + team clocks on the same page do not clash.
+  const gid = "cag" + String(totalMin) + "n" + segs.length + "r" + Math.floor(Math.random() * 1e6);
+  let svg = "<svg class='timeline-clock' viewBox='0 0 200 200' role='img' aria-label='24-hour session clock'>";
+  svg += "<defs><linearGradient id='" + gid + "' x1='0%' y1='0%' x2='100%' y2='100%'>";
+  svg += "<stop offset='0%' stop-color='#f2a950'/><stop offset='100%' stop-color='#ff8a3d'/>";
+  svg += "</linearGradient></defs>";
+  // Face plates
+  svg += "<circle cx='" + cx + "' cy='" + cy + "' r='96' fill='rgba(255,255,255,0.02)' stroke='rgba(36,41,56,1)' stroke-width='1'/>";
+  svg += "<circle class='face-ring' cx='" + cx + "' cy='" + cy + "' r='" + rTrack + "'/>";
+  // Hour ticks (24h): major at 00 / 06 / 12 / 18
+  for (let h = 0; h < 24; h++) {
+    const min = h * 60;
+    const major = h % 6 === 0;
+    const o = clockPoint(cx, cy, major ? rTickOut + 2 : rTickOut, min);
+    const inn = clockPoint(cx, cy, major ? rTickIn - 2 : rTickIn, min);
+    svg += "<line class='tick" + (major ? " major" : "") + "' x1='" + o.x.toFixed(2) + "' y1='" + o.y.toFixed(2) +
+      "' x2='" + inn.x.toFixed(2) + "' y2='" + inn.y.toFixed(2) + "'/>";
+  }
+  // Cardinal labels — midnight at top, clockwise through the day
+  const labels = [[0, "00"], [360, "06"], [720, "12"], [1080, "18"]];
+  for (let i = 0; i < labels.length; i++) {
+    const p = clockPoint(cx, cy, rLabel, labels[i][0]);
+    svg += "<text class='hour-label' x='" + p.x.toFixed(2) + "' y='" + p.y.toFixed(2) + "'>" + labels[i][1] + "</text>";
+  }
+  // Session arcs (worked time on the dial)
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i];
+    const isManual = s.source === "manual";
+    const stroke = isManual ? "#5aa8e8" : ("url(#" + gid + ")");
+    const title = pvEsc(s.start + "–" + s.end + " · " + fmt(Number(s.minutes) || 0));
+    svg += "<path class='arc" + (isManual ? " manual" : "") + "' stroke='" + stroke +
+      "' d='" + clockArcPath(cx, cy, rTrack, s.startMin, s.endMin) +
+      "'><title>" + title + "</title></path>";
+  }
+  // Hub + total
+  svg += "<circle class='face-hub' cx='" + cx + "' cy='" + cy + "' r='34'/>";
+  svg += "<text class='center-total' x='" + cx + "' y='" + (cy - 4) + "'>" + pvEsc(fmt(totalMin)) + "</text>";
+  svg += "<text class='center-label' x='" + cx + "' y='" + (cy + 14) + "'>HOURS</text>";
+  svg += "<circle class='face-rim' cx='" + cx + "' cy='" + cy + "' r='96'/>";
+  svg += "</svg>";
+  return svg;
+}
+
+function renderTimelineInto(date, sessions, panel, titleEl, subEl, body) {
+  if (!panel || !body) return;
+  if (!date) {
+    panel.classList.add("hidden");
+    body.innerHTML = "";
+    return;
+  }
+  const segs = (sessions || []).filter((s) => s.date === date);
+  let dayLabel = date;
+  try {
+    dayLabel = new Date(date + "T12:00:00").toLocaleDateString(undefined, {
+      weekday: "long", month: "long", day: "numeric"
+    });
+  } catch (e) { /* keep date */ }
+  if (titleEl) titleEl.textContent = dayLabel;
+  const totalMin = segs.reduce((a, s) => a + (Number(s.minutes) || 0), 0);
+  if (subEl) {
+    subEl.textContent = segs.length
+      ? (segs.length + " session" + (segs.length === 1 ? "" : "s") + " · " + fmt(totalMin))
+      : "no sessions";
+  }
+  if (!segs.length) {
+    body.innerHTML = "<div class='timeline-empty'>No sessions on this day.</div>";
+    panel.classList.remove("hidden");
+    return;
+  }
+  let html = "<div class='timeline-body'>";
+  html += "<div class='timeline-clock-wrap'>";
+  html += buildDayClockSvg(segs, totalMin);
+  html += "<div class='timeline-clock-legend'><span><i></i> tracked</span><span><i class='manual'></i> manual</span></div>";
+  html += "<div class='muted' style='font-size:11px;text-align:center;max-width:200px;line-height:1.4'>Full turn = 24 hours · midnight at top</div>";
+  html += "</div>";
+  html += "<div class='timeline-list'>";
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i];
+    html += "<div class='timeline-item'>" +
+      "<div class='t'>" + pvEsc(s.start) + "–" + pvEsc(s.end) + "</div>" +
+      "<div class='reasons'>" +
+        "<span class='reason-pill in' title='Clock in'>" + pvEsc(reasonLabel(s.start_reason)) + "</span>" +
+        "<span class='reason-pill out' title='Clock out'>" + pvEsc(reasonLabel(s.end_reason)) + "</span>" +
+        (s.source === "manual" ? "<span class='reason-pill'>manual</span>" : "") +
+      "</div>" +
+      "<div class='dur'>" + fmt(Number(s.minutes) || 0) + "</div>" +
+    "</div>";
+  }
+  html += "</div></div>";
+  body.innerHTML = html;
+  panel.classList.remove("hidden");
+}
+
+function renderTimeline(date) {
+  if (!date) {
+    selectedDay = "";
+    renderTimelineInto("", hoursSessions, $("timelinePanel"), $("timelineTitle"), $("timelineSub"), $("timelineBody"));
+    return;
+  }
+  selectedDay = date;
+  renderTimelineInto(date, hoursSessions, $("timelinePanel"), $("timelineTitle"), $("timelineSub"), $("timelineBody"));
+}
+
+function closeTimeline() {
+  renderTimeline("");
+  const rows = $("rows");
+  if (rows) {
+    const sel = rows.querySelectorAll("tr.selected");
+    for (let i = 0; i < sel.length; i++) sel[i].classList.remove("selected");
+  }
+}
+
 async function loadHours() {
   const period = $("month").value;
   if (!period) return;
   $("hoursMsg").textContent = ""; $("hoursMsg").className = "msg";
   $("rows").innerHTML = "<tr class='empty'><td colspan='3'>Loading&hellip;</td></tr>";
+  closeTimeline();
   const r = await api("/api/hours?period=" + period);
   if (!r.ok) {
     $("rows").innerHTML = "";
+    hoursSessions = [];
     $("hoursMsg").textContent = "Failed to load hours."; $("hoursMsg").className = "msg err";
     return;
   }
   const d = await r.json();
+  hoursSessions = d.sessions || [];
   const max = d.days.reduce((a,x) => Math.max(a, x.minutes), 0) || 1;
   $("rows").innerHTML = d.days.length
-    ? d.days.map((x,i) => rowHtml(x, max, i)).join("")
+    ? d.days.map((x,i) => rowHtml(x, max, i, false)).join("")
     : "<tr class='empty'><td colspan='3'>No days to show for this month.</td></tr>";
   const tablewrap = $("tablewrap");
   tablewrap.scrollTop = period === currentPeriod() ? tablewrap.scrollHeight : 0;
@@ -2071,7 +2466,7 @@ function renderProjects(list) {
   const section = $("projectSection");
   const box = $("projectList");
   if (!box) return;
-  // Hidden unless the desktop app has project tracking enabled and synced data.
+  // Hidden when desktop track_projects is off (API returns []) or no synced data.
   if (!list || !list.length) {
     box.innerHTML = "";
     if (section) section.style.display = "none";
@@ -2130,6 +2525,11 @@ function renderManualEntries(list) {
 async function loadManualEntries() {
   if (!canEditTimes) {
     if ($("manualList")) $("manualList").innerHTML = "";
+    return;
+  }
+  // Prefer sessions already loaded with /api/hours (same shape as manual-session GET).
+  if (hoursSessions && hoursSessions.length) {
+    renderManualEntries(hoursSessions);
     return;
   }
   const period = $("month").value;
@@ -2243,6 +2643,25 @@ $("signout").onclick = async () => {
 $("month").addEventListener("change", loadHours);
 $("prev").onclick = () => shiftMonth(-1);
 $("next").onclick = () => shiftMonth(1);
+
+if ($("timelineClose")) $("timelineClose").onclick = closeTimeline;
+if ($("rows")) {
+  $("rows").addEventListener("click", (ev) => {
+    let el = ev.target;
+    while (el && el !== $("rows") && !(el.tagName === "TR" && el.getAttribute("data-date"))) {
+      el = el.parentNode;
+    }
+    if (!el || el === $("rows")) return;
+    const date = el.getAttribute("data-date");
+    if (!date) return;
+    const was = el.classList.contains("selected");
+    const all = $("rows").querySelectorAll("tr.day-row");
+    for (let i = 0; i < all.length; i++) all[i].classList.remove("selected");
+    if (was) { closeTimeline(); return; }
+    el.classList.add("selected");
+    renderTimeline(date);
+  });
+}
 
 $("addRecipient").onclick = () => addRecipientRow("");
 
