@@ -63,6 +63,12 @@ pub(super) fn defer_after_hours_prompt() {
     imp::defer(imp::Deferred::AfterHours);
 }
 
+/// If the after-hours NSAlert is on screen, end it as Yes so work-start can
+/// auto-clock-in without a click. No-op when the alert is not showing.
+pub(super) fn dismiss_after_hours_alert_if_showing() {
+    imp::dismiss_after_hours_alert_if_showing();
+}
+
 /// Queue the idle-reclaim modal on the main thread.
 pub(super) fn defer_reclaim_prompt() {
     imp::defer(imp::Deferred::Reclaim);
@@ -235,6 +241,7 @@ fn start_at_login_state() -> bool {
 
 mod imp {
     use std::cell::RefCell;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     use objc2::rc::Retained;
     use objc2::runtime::AnyObject;
@@ -254,6 +261,9 @@ mod imp {
     const VARIABLE_STATUS_ITEM_LENGTH: f64 = -1.0;
     // NSAlertFirstButtonReturn — the first (Yes) button.
     const ALERT_FIRST_BUTTON: isize = 1000;
+
+    /// True while the after-hours NSAlert modal is on screen (not reclaim).
+    static AFTER_HOURS_ALERT_UP: AtomicBool = AtomicBool::new(false);
 
     // Long-lived objects kept alive for the process lifetime. The status item
     // vanishes if dropped; NSNotificationCenter does not retain observers, so the
@@ -330,10 +340,7 @@ mod imp {
                     super::resolve_after_hours(true);
                     return;
                 }
-                let working = run_yes_no(
-                    "It's outside your working hours.",
-                    "Are you working?",
-                );
+                let working = run_after_hours_yes_no();
                 super::resolve_after_hours(working);
             }
             #[unsafe(method(reclaimPrompt:))]
@@ -531,6 +538,31 @@ mod imp {
         alert.addButtonWithTitle(&NSString::from_str("Yes"));
         alert.addButtonWithTitle(&NSString::from_str("No"));
         alert.runModal() == ALERT_FIRST_BUTTON
+    }
+
+    /// After-hours Yes/No only — marks the alert so a work-hours timer can
+    /// `stopModalWithCode` without closing an idle-reclaim dialog.
+    fn run_after_hours_yes_no() -> bool {
+        AFTER_HOURS_ALERT_UP.store(true, Ordering::SeqCst);
+        let working = run_yes_no(
+            "It's outside your working hours.",
+            "Are you working?",
+        );
+        AFTER_HOURS_ALERT_UP.store(false, Ordering::SeqCst);
+        working
+    }
+
+    pub(super) fn dismiss_after_hours_alert_if_showing() {
+        if !AFTER_HOURS_ALERT_UP.load(Ordering::SeqCst) {
+            return;
+        }
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let app = NSApplication::sharedApplication(mtm);
+        // NSAlertFirstButtonReturn — treat as Yes / working.
+        app.stopModalWithCode(ALERT_FIRST_BUTTON);
+        crate::logln!("after-hours: auto-dismissed prompt (now within working hours)");
     }
 
     /// Prompt for a single line of text via `osascript`; `None` on cancel/empty.

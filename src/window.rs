@@ -12,14 +12,15 @@ use chrono::{DateTime, Local, NaiveDate, Utc};
 use rusqlite::Connection;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{
-    GetLastError, ERROR_ALREADY_EXISTS, HANDLE, HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM,
+    GetLastError, ERROR_ALREADY_EXISTS, FALSE, HANDLE, HINSTANCE, HWND, LPARAM, LRESULT, POINT,
+    TRUE, WPARAM,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Power::RegisterSuspendResumeNotification;
 use windows::Win32::System::RemoteDesktop::{
     WTSRegisterSessionNotification, WTSUnRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION,
 };
-use windows::Win32::System::Threading::CreateMutexW;
+use windows::Win32::System::Threading::{CreateMutexW, GetCurrentThreadId};
 use windows::Win32::UI::Shell::{ShellExecuteW, NOTIFYICONDATAW};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -112,6 +113,10 @@ struct AppState {
     /// resume+unlock pair (or any event during the modal) can't stack a second
     /// prompt.
     pending_open: Option<&'static str>,
+    /// True while the after-hours Yes/No `MessageBoxW` is on screen. Lets the
+    /// heartbeat EndDialog it when work hours start without touching an idle-
+    /// reclaim box (same title, different text).
+    after_hours_dialog_up: bool,
     update_status: crate::update::UpdateStatus,
     /// When the last update check completed. Lets a stale "up to date" revert to
     /// a checkable "check for updates" after `UP_TO_DATE_TTL`.
@@ -209,9 +214,10 @@ impl AppState {
     }
 
     /// Ask, via a modal Yes/No box, whether the user is working right now.
-    fn prompt_are_you_working(&self) -> bool {
+    fn prompt_are_you_working(&mut self) -> bool {
         let text = to_wide("It's outside your working hours. Are you working?");
         let title = to_wide("clocked");
+        self.after_hours_dialog_up = true;
         let r = unsafe {
             MessageBoxW(
                 Some(self.hwnd),
@@ -220,7 +226,19 @@ impl AppState {
                 MB_YESNO | MB_ICONQUESTION | MB_SETFOREGROUND | MB_TOPMOST,
             )
         };
+        self.after_hours_dialog_up = false;
         r == IDYES
+    }
+
+    /// Close the after-hours MessageBox if it is currently up (work hours started
+    /// while the dialog was waiting). Nested message pumps allow this from a timer.
+    fn dismiss_after_hours_dialog_if_showing(&mut self) {
+        if !self.after_hours_dialog_up {
+            return;
+        }
+        dismiss_owned_message_box(self.hwnd);
+        // Flag clears when MessageBoxW returns into `prompt_are_you_working`.
+        crate::logln!("after-hours: auto-dismissed prompt (now within working hours)");
     }
 
     /// Clock in after auto-dismissing a stale after-hours prompt / "not working"
@@ -229,6 +247,7 @@ impl AppState {
         self.pending_open = None;
         self.after_hours_answer = None;
         self.after_hours_date = None;
+        self.dismiss_after_hours_dialog_if_showing();
         crate::logln!("after-hours: auto clock-in ({reason}; now within working hours)");
         self.clock_in(reason);
         self.do_sync();
@@ -239,6 +258,13 @@ impl AppState {
     /// Safe to call from the heartbeat (including nested while a MessageBox is up).
     fn maybe_enter_working_hours(&mut self) {
         if self.paused || self.is_clocked_in() {
+            // Still dismiss a leftover dialog if hours started after we already
+            // clocked in by another path (e.g. open_event while the box was up).
+            if engine::should_auto_accept_after_hours(
+                self.config.within_working_hours(Local::now()),
+            ) {
+                self.dismiss_after_hours_dialog_if_showing();
+            }
             return;
         }
         let within = self.config.within_working_hours(Local::now());
@@ -250,7 +276,11 @@ impl AppState {
         let reason = match self.pending_open.take() {
             Some(r) => r,
             None if self.after_hours_answer == Some(false) => "schedule",
-            None => return,
+            None => {
+                // Dialog may still be up with pending already cleared by ClockIn.
+                self.dismiss_after_hours_dialog_if_showing();
+                return;
+            }
         };
         self.auto_accept_after_hours(reason);
     }
@@ -674,6 +704,41 @@ fn to_wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
+/// End a `MessageBoxW` owned by `owner` (dialog class `#32770`) by simulating
+/// Yes. Called from the nested pump while the after-hours box is up so work
+/// start can clear it without a click. No-op when no matching dialog exists.
+fn dismiss_owned_message_box(owner: HWND) {
+    unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> windows::core::BOOL {
+        let owner = HWND(lparam.0 as *mut core::ffi::c_void);
+        let dlg_owner = match GetWindow(hwnd, GW_OWNER) {
+            Ok(h) => h,
+            Err(_) => return TRUE,
+        };
+        if dlg_owner.0 != owner.0 {
+            return TRUE;
+        }
+        let mut class = [0u16; 32];
+        let n = GetClassNameW(hwnd, &mut class);
+        if n <= 0 {
+            return TRUE;
+        }
+        let class_name = String::from_utf16_lossy(&class[..n as usize]);
+        if class_name != "#32770" {
+            return TRUE;
+        }
+        // Prefer EndDialog (MessageBox is a dialog). IDYES matches a Yes click.
+        let _ = EndDialog(hwnd, IDYES.0 as isize);
+        FALSE
+    }
+    unsafe {
+        let _ = EnumThreadWindows(
+            GetCurrentThreadId(),
+            Some(enum_proc),
+            LPARAM(owner.0 as isize),
+        );
+    }
+}
+
 /// Format a duration in seconds as `2h 05m`, or `45m` under an hour, for the
 /// tray breakdown lines.
 fn fmt_dur(secs: i64) -> String {
@@ -976,6 +1041,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     app.update_tooltip();
                 }
                 TIMER_ACTIVITY => {
+                    // ~5s: auto-dismiss after-hours dialog soon after work start
+                    // (heartbeat alone is 60s and can leave the box up too long).
+                    (*ptr).maybe_enter_working_hours();
                     if (*ptr).config.track_projects {
                         (*ptr).record_activity_tick();
                     }
@@ -1088,6 +1156,7 @@ pub fn run() -> windows::core::Result<()> {
             after_hours_answer: None,
             after_hours_date: None,
             pending_open: None,
+            after_hours_dialog_up: false,
             update_status: crate::update::UpdateStatus::Unknown,
             update_checked_at: None,
             activity: ActivityTracker::new(),

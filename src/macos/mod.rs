@@ -244,6 +244,7 @@ impl AppState {
         self.pending_open = None;
         self.after_hours_answer = None;
         self.after_hours_date = None;
+        runloop::dismiss_after_hours_alert_if_showing();
         crate::logln!("after-hours: auto clock-in ({reason}; now within working hours)");
         self.clock_in(reason);
         self.do_sync();
@@ -253,6 +254,11 @@ impl AppState {
     /// clock rolls into working hours, start tracking without another click.
     fn maybe_enter_working_hours(&mut self) {
         if self.paused || self.is_clocked_in() {
+            if engine::should_auto_accept_after_hours(
+                self.config.within_working_hours(Local::now()),
+            ) {
+                runloop::dismiss_after_hours_alert_if_showing();
+            }
             return;
         }
         let within = self.config.within_working_hours(Local::now());
@@ -262,7 +268,10 @@ impl AppState {
         let reason = match self.pending_open.take() {
             Some(r) => r,
             None if self.after_hours_answer == Some(false) => "schedule",
-            None => return,
+            None => {
+                runloop::dismiss_after_hours_alert_if_showing();
+                return;
+            }
         };
         self.auto_accept_after_hours(reason);
     }
