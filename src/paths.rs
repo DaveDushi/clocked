@@ -1,12 +1,14 @@
 //! Filesystem locations for clocked's data, config, and log files.
-//! Everything lives under `%APPDATA%\clocked\`.
+//! Uses the platform data directory (`%APPDATA%\clocked\` on Windows,
+//! `~/Library/Application Support/clocked` on macOS, and
+//! `$XDG_DATA_HOME/clocked` on Linux).
 
 use std::fs;
 use std::path::PathBuf;
 
 use directories::ProjectDirs;
 
-/// `%APPDATA%\clocked\`, creating it if needed.
+/// Platform data directory, creating it if needed.
 pub fn data_dir() -> Option<PathBuf> {
     let pd = ProjectDirs::from("", "", "clocked")?;
     let dir = pd.data_dir().to_path_buf();

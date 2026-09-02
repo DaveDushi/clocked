@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=clocked
+GenericName=Automatic Time Tracker
+Comment=Track work automatically from desktop activity
+Exec=@EXEC@
+Icon=clocked
+Terminal=false
+Categories=Office;Utility;
+StartupNotify=false

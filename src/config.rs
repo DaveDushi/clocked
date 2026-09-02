@@ -109,7 +109,7 @@ fn escape_toml(s: &str) -> String {
 
 impl Config {
     /// Load config, writing a commented default on first run if none exists.
-    /// The bearer token is loaded from DPAPI storage (`token.dpapi`), with a
+    /// The bearer token is loaded from the platform credential store, with a
     /// one-time migration from legacy plaintext `bearer_token` in config.toml.
     pub fn load() -> Config {
         let Some(path) = crate::paths::config_file() else {
@@ -124,11 +124,11 @@ impl Config {
             }
         };
 
-        let dpapi = crate::secret::load_token();
-        if !dpapi.is_empty() {
-            cfg.bearer_token = dpapi;
+        let stored_token = crate::secret::load_token();
+        if !stored_token.is_empty() {
+            cfg.bearer_token = stored_token;
         } else if !cfg.bearer_token.trim().is_empty() {
-            // Migrate legacy plaintext token out of config.toml into DPAPI.
+            // Migrate legacy plaintext token out of config.toml.
             if crate::secret::save_token(&cfg.bearer_token).is_ok() {
                 let _ = cfg.save(); // rewrites toml without the secret
             }
@@ -138,7 +138,7 @@ impl Config {
 
     /// Render the config as a commented `config.toml` (the on-disk format the
     /// Settings page writes; still hand-editable). Bearer token is NOT written
-    /// here — it is stored via DPAPI (`token.dpapi`).
+    /// here — it is stored in the platform credential store.
     pub fn to_toml(&self) -> String {
         let days = self
             .work_days
@@ -150,7 +150,7 @@ impl Config {
             "# clocked configuration\n\
              # Managed by the tray Settings page, but safe to edit by hand.\n\
              # Worker URL defaults to https://clocked.daviddusi.com and is usually hidden in Advanced settings.\n\
-             # The bearer token is stored separately (DPAPI-protected token.dpapi), not in this file.\n\
+             # The bearer token is stored separately in the OS credential store, not in this file.\n\
              \n\
              worker_url   = \"{worker_url}\"\n\
              \n\
@@ -188,7 +188,8 @@ impl Config {
         )
     }
 
-    /// Write non-secret config to `config.toml` and the bearer token to DPAPI.
+    /// Write non-secret config to `config.toml` and the bearer token to the OS
+    /// credential store.
     pub fn save(&self) -> std::io::Result<()> {
         let path = crate::paths::config_file().ok_or_else(|| {
             std::io::Error::new(std::io::ErrorKind::NotFound, "no data dir")

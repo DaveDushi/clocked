@@ -1,8 +1,8 @@
 # clocked
 
-**Automatic Windows time tracking — no timers.**
+**Automatic desktop time tracking — no timers.**
 
-[Live site](https://clocked.daviddusi.com) · [Download for Windows](https://clocked.daviddusi.com/download) · [Press kit](https://clocked.daviddusi.com/press)
+[Live site](https://clocked.daviddusi.com) · [Download](https://clocked.daviddusi.com/download) · [Press kit](https://clocked.daviddusi.com/press)
 
 A background tray app clocks you in/out from machine **power** and **session**
 events, stores sessions locally in SQLite, and syncs them to a Cloudflare Worker
@@ -10,12 +10,12 @@ that emails a monthly report — whether or not your laptop is awake at month-en
 
 | | |
 |--|--|
-| **Desktop** | Open source (MIT), Windows tray, local SQLite source of truth |
+| **Desktop** | Open source (MIT), Windows/macOS/Linux tray, local SQLite source of truth |
 | **Cloud** | Optional paid host for sync, dashboard, teams, email timesheets |
 | **Self-host** | Point the app at your own Worker |
 
 ```
-Windows tray app (Rust)                     Cloudflare Worker (TypeScript)
+Desktop tray app (Rust)                     Cloudflare Worker (TypeScript)
   wake / unlock  -> clock in                  POST /sessions -> D1 (upsert by id)
   sleep / lock   -> clock out                 cron (daily; per-user send day)
   local SQLite (source of truth)   --HTTPS--> Resend: monthly timesheet email
@@ -23,7 +23,7 @@ Windows tray app (Rust)                     Cloudflare Worker (TypeScript)
 
 ### Why it exists
 
-Most trackers make you babysit a timer. clocked uses what Windows already knows
+Most trackers make you babysit a timer. clocked uses what the operating system knows
 (unlock, lock, idle, sleep) so freelancers and small teams get honest hours
 without screenshots or keylogging. By default it only tracks **presence**
 (when you were working) — no app or project breakdown. Optional **project
@@ -74,8 +74,29 @@ Sessions crossing local midnight are split so each row stays within one day.
 
 ```sh
 cargo build --release
-# binary: target/release/clocked.exe  (no console window)
+# Windows: target/release/clocked.exe (no console window)
+# Linux/macOS: target/release/clocked
 ```
+
+#### Linux (Wayland)
+
+The Linux app uses GTK 3 + Ayatana AppIndicator for its tray, the standard
+Wayland `ext-idle-notify-v1` protocol for exact idle time, Secret Service for
+the sync token, and logind/desktop integration for lock and suspend handling.
+Hyprland on Omarchy is fully supported; other Wayland desktops work when they
+provide the idle-notify protocol and update logind's `LockedHint`.
+
+On Arch/Omarchy, install build dependencies if needed and install for the
+current user:
+
+```sh
+omarchy pkg add base-devel rust gtk3 libayatana-appindicator libsecret wayland wayland-protocols
+./packaging/linux/install.sh
+~/.local/bin/clocked
+```
+
+The installer adds a launcher and enables start-at-login through the standard
+XDG autostart directory. No root access is required.
 
 ### Deploy a desktop release
 

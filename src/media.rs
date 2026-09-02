@@ -12,6 +12,9 @@ pub use windows_impl::in_use;
 #[cfg(target_os = "macos")]
 pub use macos_impl::in_use;
 
+#[cfg(target_os = "linux")]
+pub use linux_impl::in_use;
+
 #[cfg(windows)]
 mod windows_impl {
     //! Windows records which apps are actively using the microphone and camera
@@ -95,5 +98,23 @@ mod macos_impl {
 
     pub fn in_use() -> bool {
         false
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod linux_impl {
+    //! PipeWire/PulseAudio exposes one source-output per application actively
+    //! recording from a microphone. This covers the common meeting-app case.
+
+    use std::process::{Command, Stdio};
+
+    pub fn in_use() -> bool {
+        Command::new("pactl")
+            .args(["list", "short", "source-outputs"])
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .map(|o| o.status.success() && !o.stdout.iter().all(u8::is_ascii_whitespace))
+            .unwrap_or(false)
     }
 }

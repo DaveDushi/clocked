@@ -23,7 +23,10 @@ pub use windows_impl::foreground;
 #[cfg(target_os = "macos")]
 pub use macos_impl::foreground;
 
-#[cfg(not(any(windows, target_os = "macos")))]
+#[cfg(target_os = "linux")]
+pub use linux_impl::foreground;
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 pub use stub::foreground;
 
 #[cfg(windows)]
@@ -128,7 +131,44 @@ mod macos_impl {
     }
 }
 
-#[cfg(not(any(windows, target_os = "macos")))]
+#[cfg(target_os = "linux")]
+mod linux_impl {
+    //! Hyprland exposes the focused toplevel without requiring privileged
+    //! accessibility APIs. Other compositors simply return no sample.
+
+    use std::process::Command;
+
+    use super::Foreground;
+
+    pub fn foreground() -> Option<Foreground> {
+        let output = Command::new("hyprctl")
+            .args(["activewindow", "-j"])
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let value: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+        let app = value
+            .get("class")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase();
+        let title = value
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        if app.is_empty() && title.is_empty() {
+            None
+        } else {
+            Some(Foreground { app, title })
+        }
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 mod stub {
     use super::Foreground;
 

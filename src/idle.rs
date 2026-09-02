@@ -9,6 +9,9 @@ pub use windows_impl::idle_duration;
 #[cfg(target_os = "macos")]
 pub use macos_impl::idle_duration;
 
+#[cfg(target_os = "linux")]
+pub use linux_impl::idle_duration;
+
 #[cfg(windows)]
 mod windows_impl {
     //! `GetLastInputInfo` reports the tick (ms since boot) of the most recent
@@ -64,5 +67,32 @@ mod macos_impl {
         } else {
             Duration::ZERO
         }
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod linux_impl {
+    //! Uses the standard Wayland ext-idle-notify-v1 protocol. The small C shim
+    //! is generated/compiled by build.rs so this remains independent of a
+    //! particular compositor; Hyprland, wlroots compositors, and KDE support it.
+
+    use std::sync::Once;
+    use std::time::Duration;
+
+    static START: Once = Once::new();
+
+    unsafe extern "C" {
+        fn clocked_idle_start() -> i32;
+        fn clocked_idle_millis() -> u64;
+    }
+
+    pub fn idle_duration() -> Duration {
+        START.call_once(|| {
+            let rc = unsafe { clocked_idle_start() };
+            if rc != 0 {
+                crate::logln!("Wayland idle monitor unavailable (error {rc}); idle timeout disabled");
+            }
+        });
+        Duration::from_millis(unsafe { clocked_idle_millis() })
     }
 }

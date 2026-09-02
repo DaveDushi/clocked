@@ -14,6 +14,9 @@ pub use windows_impl::{load_token, save_token};
 #[cfg(target_os = "macos")]
 pub use macos_impl::{load_token, save_token};
 
+#[cfg(target_os = "linux")]
+pub use linux_impl::{load_token, save_token};
+
 #[cfg(windows)]
 mod windows_impl {
     use std::fs;
@@ -143,5 +146,62 @@ mod macos_impl {
         }
         set_generic_password(SERVICE, ACCOUNT, token.as_bytes())
             .map_err(|e| std::io::Error::other(format!("keychain store failed: {e}")))
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod linux_impl {
+    //! Store the token in the desktop Secret Service (GNOME Keyring/KWallet)
+    //! through `secret-tool`, which is available on the supported desktops.
+
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    const ATTRS: [&str; 4] = ["application", "clocked", "account", "sync-bearer-token"];
+
+    pub fn load_token() -> String {
+        Command::new("secret-tool")
+            .arg("lookup")
+            .args(ATTRS)
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_default()
+    }
+
+    pub fn save_token(token: &str) -> std::io::Result<()> {
+        let token = token.trim();
+        if token.is_empty() {
+            let status = Command::new("secret-tool")
+                .arg("clear")
+                .args(ATTRS)
+                .status()?;
+            return if status.success() {
+                Ok(())
+            } else {
+                Err(std::io::Error::other("secret-tool clear failed"))
+            };
+        }
+
+        let mut child = Command::new("secret-tool")
+            .args(["store", "--label=clocked sync token"])
+            .args(ATTRS)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .spawn()?;
+        child
+            .stdin
+            .take()
+            .ok_or_else(|| std::io::Error::other("secret-tool stdin unavailable"))?
+            .write_all(token.as_bytes())?;
+        let status = child.wait()?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(std::io::Error::other("secret-tool store failed"))
+        }
     }
 }

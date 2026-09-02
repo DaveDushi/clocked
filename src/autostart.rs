@@ -8,6 +8,9 @@ pub use windows_impl::{disable, enable, is_enabled};
 #[cfg(target_os = "macos")]
 pub use macos_impl::{disable, enable, is_enabled};
 
+#[cfg(target_os = "linux")]
+pub use linux_impl::{disable, enable, is_enabled};
+
 /// The LaunchAgent label / Keychain-style bundle id, shared by autostart and
 /// keepalive on macOS (they govern the same agent).
 #[cfg(target_os = "macos")]
@@ -138,5 +141,50 @@ mod macos_impl {
 </plist>
 "#
         )
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod linux_impl {
+    //! XDG autostart works across Hyprland, GNOME, KDE, and other desktops.
+
+    use std::path::PathBuf;
+
+    fn desktop_file() -> Option<PathBuf> {
+        let base = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
+        Some(base.join("autostart/clocked.desktop"))
+    }
+
+    pub fn is_enabled() -> bool {
+        desktop_file().is_some_and(|p| p.exists())
+    }
+
+    pub fn enable() -> std::io::Result<()> {
+        let exe = std::env::current_exe()?;
+        let path = desktop_file()
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no config dir"))?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let escaped = exe.to_string_lossy().replace('\\', "\\\\").replace(' ', "\\ ");
+        std::fs::write(
+            path,
+            format!(
+                "[Desktop Entry]\nType=Application\nName=clocked\nComment=Automatic time tracking\nExec={escaped}\nIcon=clocked\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
+            ),
+        )
+    }
+
+    pub fn disable() -> std::io::Result<()> {
+        let Some(path) = desktop_file() else {
+            return Ok(());
+        };
+        match std::fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 }

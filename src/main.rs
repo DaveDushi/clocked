@@ -42,6 +42,10 @@ mod window;
 #[cfg(target_os = "macos")]
 mod macos;
 
+// Linux UI layer: GTK/AppIndicator tray + Wayland/logind session integration.
+#[cfg(target_os = "linux")]
+mod linux;
+
 fn main() {
     logln!("clocked starting");
     if let Err(e) = run() {
@@ -60,7 +64,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     macos::run()
 }
 
-#[cfg(not(any(windows, target_os = "macos")))]
+#[cfg(target_os = "linux")]
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    Err("clocked supports Windows and macOS only".into())
+    linux::run()
+}
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+fn run() -> Result<(), Box<dyn std::error::Error>> {
+    Err("clocked supports Windows, macOS, and Linux only".into())
 }
