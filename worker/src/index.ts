@@ -41,7 +41,16 @@ import {
   setOrgSendDay,
   setSendDay,
 } from "./settings";
-import { getOrCreateToken, rotateToken, userIdForToken } from "./tokens";
+import {
+  getOrCreateToken,
+  listTokens,
+  MAX_DEVICE_TOKENS,
+  mintToken,
+  normalizeDeviceName,
+  revokeToken,
+  rotateToken,
+  userIdForToken,
+} from "./tokens";
 import { localYMD, previousMonthPeriod, wallToUtc } from "./time";
 import {
   effectiveMemberCap,
@@ -221,6 +230,32 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
       return json({ error: "too many requests" }, 429);
     }
     return json(await rotateToken(env, user.id));
+  }
+  if (url.pathname === "/api/tokens" && req.method === "GET") {
+    const user = await requirePaidUser(req, env);
+    if (user instanceof Response) return user;
+    return json({ tokens: await listTokens(env, user.id) });
+  }
+  if (url.pathname === "/api/tokens" && req.method === "POST") {
+    const user = await requirePaidUser(req, env);
+    if (user instanceof Response) return user;
+    if (!(await rateLimitAllowDurable(env.DB, `token-mint:${user.id}`, 10, 60 * 60_000))) {
+      return json({ error: "too many requests" }, 429);
+    }
+    const body = (await req.json().catch(() => ({}))) as { name?: unknown };
+    const name = normalizeDeviceName(body.name);
+    if (!name) return json({ error: "device name is required (max 64 characters)" }, 400);
+    if ((await listTokens(env, user.id)).length >= MAX_DEVICE_TOKENS) {
+      return json({ error: `device token limit reached (${MAX_DEVICE_TOKENS})` }, 409);
+    }
+    return json(await mintToken(env, user.id, name), 201);
+  }
+  const tokenIdMatch = /^\/api\/tokens\/([0-9a-f-]+)$/.exec(url.pathname);
+  if (tokenIdMatch && req.method === "DELETE") {
+    const user = await requirePaidUser(req, env);
+    if (user instanceof Response) return user;
+    const revoked = await revokeToken(env, user.id, tokenIdMatch[1]);
+    return revoked ? json({ ok: true }) : json({ error: "device token not found" }, 404);
   }
 
   if (url.pathname === "/api/hours" && req.method === "GET") {

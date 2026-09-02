@@ -485,6 +485,13 @@ const HTML = /* html */ `<!doctype html>
     font-variant-ligatures:none;
   }
   .token.reveal { color:var(--amber); }
+  .token-create { display:flex; gap:10px; margin-top:12px; }
+  .token-create input { flex:1; min-width:0; }
+  .token-list { margin-top:14px; border-top:1px solid var(--border); }
+  .token-row { display:flex; align-items:center; gap:10px; padding:11px 0; border-bottom:1px solid var(--border); }
+  .token-row-main { flex:1; min-width:0; }
+  .token-row-name { font-size:13.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .token-row-meta { margin-top:3px; color:var(--muted); font:12px var(--mono); }
   .banner {
     border:1px solid rgba(91,214,162,.4); background:rgba(91,214,162,.08);
     border-radius:12px; padding:12px 14px; margin-bottom:16px; font-size:14px; color:var(--fg);
@@ -1081,15 +1088,19 @@ const HTML = /* html */ `<!doctype html>
           <a class="btn" href="/download/mac">Download for macOS</a>
           <a class="btn" href="/download/win">Download for Windows</a>
           <a class="btn ghost" href="/download/extension">Chrome extension</a>
-          <span class="muted">Install the tray app, paste the token into Settings. Optional: unzip the extension → Chrome → Load unpacked → same token in Options.</span>
+          <span class="muted">Install the tray app, add a token for this device, and paste it into Settings. The browser extension on that computer uses the same device token.</span>
         </div>
-        <label style="margin-top:14px">Sync token</label>
+        <label style="margin-top:14px">Newly created token</label>
         <div class="tokenbox">
           <div id="token" class="token" title="Your Bearer token">&middot;&middot;&middot;&middot;&middot;&middot;&middot;&middot;</div>
-          <button id="copyToken" class="ghost" type="button">Copy</button>
-          <button id="regenToken" class="ghost" type="button" title="Revoke and issue a new token">Regenerate</button>
+          <button id="copyToken" class="ghost" type="button" disabled>Copy</button>
         </div>
-        <p class="token-help">Treat this like a password. It can sync sessions and open your dashboard from the tray app. Shown in full only when created or regenerated.</p>
+        <p class="token-help">Shown in full only once. Treat it like a password: it can sync sessions and open your dashboard from the tray app.</p>
+        <div class="token-create">
+          <input id="tokenName" type="text" maxlength="64" placeholder="Device name, e.g. Personal laptop" autocomplete="off" />
+          <button id="mintToken" type="button">Add device</button>
+        </div>
+        <div id="tokenList" class="token-list" aria-label="Connected devices"></div>
         <div id="tokenMsg" class="msg" role="status"></div>
         <div style="margin-top:22px;padding-top:16px;border-top:1px solid var(--border)">
           <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Privacy</div>
@@ -2128,21 +2139,59 @@ $("copyInvite").onclick = async () => {
   }
 };
 
-// ---- token (full secret only on create/rotate; otherwise prefix only) ----
+// ---- per-device tokens (full secret is returned only when minted) ----
 let fullToken = "";
 function setTokenView(d) {
   fullToken = d.token || "";
+  $("copyToken").disabled = !fullToken;
   if (fullToken) {
     $("token").textContent = fullToken;
     $("token").classList.add("reveal");
     $("tokenMsg").textContent = "Copy this token now - it will not be shown again.";
     $("tokenMsg").className = "msg ok";
-  } else if (d.prefix) {
-    $("token").textContent = d.prefix + " (hidden)";
-    $("token").classList.add("reveal");
   } else {
-    $("token").textContent = "........";
+    $("token").textContent = "Add a device to mint a token";
     $("token").classList.remove("reveal");
+  }
+}
+function renderTokenList(tokens) {
+  const list = $("tokenList");
+  list.replaceChildren();
+  if (!tokens || !tokens.length) {
+    const empty = document.createElement("div");
+    empty.className = "muted";
+    empty.style.padding = "12px 0";
+    empty.style.fontSize = "13px";
+    empty.textContent = "No connected devices.";
+    list.appendChild(empty);
+    return;
+  }
+  for (const item of tokens) {
+    const row = document.createElement("div");
+    row.className = "token-row";
+    const main = document.createElement("div");
+    main.className = "token-row-main";
+    const name = document.createElement("div");
+    name.className = "token-row-name";
+    name.textContent = item.name || "Device";
+    const meta = document.createElement("div");
+    meta.className = "token-row-meta";
+    meta.textContent = (item.prefix || "hidden") + " · added " + new Date(item.createdAt).toLocaleDateString();
+    const revoke = document.createElement("button");
+    revoke.className = "ghost del revoke-token";
+    revoke.type = "button";
+    revoke.dataset.tokenId = item.id;
+    revoke.textContent = "Revoke";
+    main.append(name, meta);
+    row.append(main, revoke);
+    list.appendChild(row);
+  }
+}
+async function loadTokenList() {
+  const r = await api("/api/tokens");
+  if (r.ok) {
+    const d = await r.json();
+    renderTokenList(d.tokens || []);
   }
 }
 async function loadToken() {
@@ -2157,7 +2206,11 @@ async function loadToken() {
     return;
   }
   $("verifyBanner").classList.add("hidden");
-  if (r.ok) { const d = await r.json(); setTokenView(d); }
+  if (r.ok) {
+    const d = await r.json();
+    setTokenView(d);
+    await loadTokenList();
+  }
 }
 const resendBtn = $("resendVerify");
 if (resendBtn) resendBtn.onclick = async () => {
@@ -2179,27 +2232,66 @@ if (resendBtn) resendBtn.onclick = async () => {
 };
 $("copyToken").onclick = async () => {
   if (!fullToken) {
-    $("tokenMsg").textContent = "Full token is hidden. Click Regenerate to mint a new one you can copy.";
+    $("tokenMsg").textContent = "Existing secrets are hidden. Add a device to mint a token you can copy.";
     $("tokenMsg").className = "msg";
     return;
   }
   try { await navigator.clipboard.writeText(fullToken); $("tokenMsg").textContent = "Copied to clipboard."; $("tokenMsg").className = "msg ok"; }
   catch { $("tokenMsg").textContent = "Select the token and copy manually."; $("tokenMsg").className = "msg err"; }
 };
-let regenArmed = false;
-$("regenToken").onclick = async () => {
-  if (!regenArmed) {
-    regenArmed = true;
-    $("regenToken").textContent = "Confirm?";
-    $("tokenMsg").textContent = "This revokes your current token - the app will need the new one."; $("tokenMsg").className = "msg";
-    setTimeout(() => { regenArmed = false; $("regenToken").textContent = "Regenerate"; }, 4000);
+$("mintToken").onclick = async () => {
+  const name = $("tokenName").value.trim();
+  if (!name) {
+    $("tokenMsg").textContent = "Enter a name for this laptop or device.";
+    $("tokenMsg").className = "msg err";
     return;
   }
-  regenArmed = false; $("regenToken").textContent = "Regenerate"; $("regenToken").disabled = true;
-  const r = await api("/api/token/regenerate", { method:"POST" });
-  $("regenToken").disabled = false;
-  if (r.ok) { const d = await r.json(); setTokenView(d); $("tokenMsg").textContent = "New token issued - paste it into the app's Settings now."; $("tokenMsg").className = "msg ok"; }
-  else { const e = await r.json().catch(()=>({})); $("tokenMsg").textContent = e.error || "Could not regenerate."; $("tokenMsg").className = "msg err"; }
+  $("mintToken").disabled = true;
+  const r = await api("/api/tokens", { method:"POST", body:JSON.stringify({ name }) });
+  $("mintToken").disabled = false;
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    $("tokenMsg").textContent = d.error || "Could not add device.";
+    $("tokenMsg").className = "msg err";
+    return;
+  }
+  $("tokenName").value = "";
+  setTokenView(d);
+  $("tokenMsg").textContent = "Device added. Copy this token now and paste it into that device's Settings.";
+  $("tokenMsg").className = "msg ok";
+  await loadTokenList();
+};
+let revokeArmedId = "";
+$("tokenList").onclick = async (event) => {
+  const button = event.target.closest("button.revoke-token");
+  if (!button) return;
+  const id = button.dataset.tokenId || "";
+  if (!id) return;
+  if (revokeArmedId !== id) {
+    revokeArmedId = id;
+    button.textContent = "Confirm?";
+    $("tokenMsg").textContent = "Only this device token will be revoked.";
+    $("tokenMsg").className = "msg";
+    setTimeout(() => {
+      if (revokeArmedId === id) revokeArmedId = "";
+      if (button.isConnected) button.textContent = "Revoke";
+    }, 4000);
+    return;
+  }
+  revokeArmedId = "";
+  button.disabled = true;
+  const r = await api("/api/tokens/" + encodeURIComponent(id), { method:"DELETE" });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    button.disabled = false;
+    button.textContent = "Revoke";
+    $("tokenMsg").textContent = d.error || "Could not revoke device.";
+    $("tokenMsg").className = "msg err";
+    return;
+  }
+  $("tokenMsg").textContent = "Device token revoked. Other devices are still connected.";
+  $("tokenMsg").className = "msg ok";
+  await loadTokenList();
 };
 
 const exportBtn = $("exportData");
@@ -2252,6 +2344,7 @@ if (deleteBtn) deleteBtn.onclick = async () => {
       msg.className = "msg ok";
     }
     setTokenView({ token: null, prefix: null, exists: false, created: false });
+    renderTokenList([]);
     fullToken = "";
   } else {
     const d = await r.json().catch(() => ({}));
@@ -2362,6 +2455,23 @@ function buildDayClockSvg(segs, totalMin) {
   return svg;
 }
 
+function uniqueTimelineMinutes(segs) {
+  const intervals = (segs || []).map((s) => ({
+    start: Number.isFinite(Number(s.startMs)) ? Number(s.startMs) : Number(s.startMin) * 60000,
+    end: Number.isFinite(Number(s.endMs)) ? Number(s.endMs) : Number(s.endMin) * 60000
+  })).filter((x) => Number.isFinite(x.start) && Number.isFinite(x.end) && x.end > x.start)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+  let totalMs = 0, start = 0, end = 0, open = false;
+  for (const x of intervals) {
+    if (!open) { start = x.start; end = x.end; open = true; continue; }
+    if (x.start <= end) { end = Math.max(end, x.end); continue; }
+    totalMs += end - start;
+    start = x.start; end = x.end;
+  }
+  if (open) totalMs += end - start;
+  return Math.round(totalMs / 60000);
+}
+
 function renderTimelineInto(date, sessions, panel, titleEl, subEl, body) {
   if (!panel || !body) return;
   if (!date) {
@@ -2377,7 +2487,7 @@ function renderTimelineInto(date, sessions, panel, titleEl, subEl, body) {
     });
   } catch (e) { /* keep date */ }
   if (titleEl) titleEl.textContent = dayLabel;
-  const totalMin = segs.reduce((a, s) => a + (Number(s.minutes) || 0), 0);
+  const totalMin = uniqueTimelineMinutes(segs);
   if (subEl) {
     subEl.textContent = segs.length
       ? (segs.length + " session" + (segs.length === 1 ? "" : "s") + " · " + fmt(totalMin))

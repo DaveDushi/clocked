@@ -136,7 +136,7 @@ working hours) plus:
 For accurate browser sites (not just window-title guesses), download the
 extension zip from [clocked.daviddusi.com/download/extension](https://clocked.daviddusi.com/download/extension)
 (or use `extension/chrome` from the repo). Unzip, load unpacked in Chrome/Edge
-Developer mode, and paste the **same** `clk_…` token in Options. The tray app
+Developer mode, and paste that computer's **same** `clk_…` device token in Options. The tray app
 listens on `http://127.0.0.1:19532` and only accepts that token; only hostnames
 are sent, never full URLs.
 
@@ -144,8 +144,10 @@ Local-only mode works with no config — it just won't sync or email.
 
 ### Enable syncing
 
-Open the Worker's URL in a browser, **Create account**, and copy the
-per-account **sync token** it shows you (starts with `clk_`). Then right-click
+Open the Worker's URL in a browser, **Create account**, add a named device, and
+copy the **sync token** it shows you (starts with `clk_`). Each computer can have
+its own token, so adding or revoking one device does not disconnect the others.
+Then right-click
 the tray icon ? **Settings?**, paste the token into **Bearer token**, and click
 **Save** ? syncing starts automatically (no restart needed). The app defaults to
 `https://clocked.daviddusi.com`; changing the Worker URL is tucked under
@@ -213,15 +215,18 @@ npx wrangler deploy
 | GET    | `/health`                   | –       | health check                                     |
 | POST   | `/api/auth/sign-up/email`   | –       | create an account (better-auth)                  |
 | POST   | `/api/auth/sign-in/email`   | –       | sign in (better-auth)                            |
-| GET    | `/api/token`                | Cookie  | this account's `clk_` sync token (created on first read) |
-| POST   | `/api/token/regenerate`     | Cookie  | revoke + reissue this account's token            |
+| GET    | `/api/token`                | Cookie  | legacy first-token view (created on first read)   |
+| GET    | `/api/tokens`               | Cookie  | list this account's named device tokens           |
+| POST   | `/api/tokens`               | Cookie  | mint an additional named device token             |
+| DELETE | `/api/tokens/:id`           | Cookie  | revoke one device token without affecting others  |
+| POST   | `/api/token/regenerate`     | Cookie  | legacy revoke-all + reissue endpoint               |
 | GET    | `/api/hours?period=YYYY-MM` | Cookie  | this account's per-day hours (dashboard)         |
 | POST   | `/sessions`                 | Bearer  | ingest synced sessions for the token's account (upsert by id) |
 | POST   | `/activity`                 | Bearer  | daily app/project aggregates (no titles; paid account only) |
 | GET    | `/preview?period=YYYY-MM`   | Cookie  | this account's report body (no email)            |
 | POST   | `/send-test?period=YYYY-MM` | Cookie  | build **and email** this account's report now (bypasses gate) |
 
-Sign-up is public: each new account gets its own `clk_` Bearer token and only
+Sign-up is public: each account can mint named `clk_` Bearer tokens and only
 ever sees its own sessions. The desktop app authenticates its sync with that
 token; a global `BEARER_TOKEN` secret, if set, still works as a legacy fallback
 (those sessions land unattributed to any account).

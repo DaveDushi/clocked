@@ -2,6 +2,11 @@ import type { Env } from "./types";
 import { projectTotalsForPeriod } from "./activity";
 import { expandCalendarDays } from "./calendar-days";
 import {
+  mergeTimeIntervals,
+  unionMinutes,
+  type TimeInterval,
+} from "./session-intervals";
+import {
   formatDateLabel,
   formatHM,
   localYMD,
@@ -14,9 +19,15 @@ interface Row {
   end_utc: string;
 }
 
+interface LocalDayIntervals {
+  date: string;
+  label: string;
+  intervals: TimeInterval[];
+}
+
 /** Gaps shorter than this are lock/unlock, suspend/resume, or app-relaunch
  * blips — not real breaks — so they're omitted from the Breaks column. Worked
- * minutes are summed from session durations and are unaffected either way. */
+ * minutes are the union of session intervals and are unaffected either way. */
 const MIN_BREAK_MS = 2 * 60 * 1000;
 
 export interface DayHours {
@@ -33,6 +44,42 @@ export interface HoursReport {
   totalMinutes: number;
 }
 
+/** Clamp sessions to a month, split them at local midnight, and group by day. */
+function intervalsByLocalDay(
+  rows: readonly Row[],
+  start: Date,
+  end: Date,
+  tz: string,
+): Map<string, LocalDayIntervals> {
+  const byDay = new Map<string, LocalDayIntervals>();
+  for (const row of rows) {
+    const rawStart = Date.parse(row.start_utc);
+    const rawEnd = Date.parse(row.end_utc);
+    if (Number.isNaN(rawStart) || Number.isNaN(rawEnd) || rawEnd <= rawStart) continue;
+
+    let segStart = new Date(Math.max(rawStart, start.getTime()));
+    const sessionEnd = new Date(Math.min(rawEnd, end.getTime()));
+    while (segStart < sessionEnd) {
+      const midnight = nextLocalMidnightUtc(segStart, tz);
+      const segEnd = midnight < sessionEnd ? midnight : sessionEnd;
+      const { y, m, d } = localYMD(segStart, tz);
+      const date = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      const existing = byDay.get(date);
+      const interval = { start: segStart.getTime(), end: segEnd.getTime() };
+      if (existing) existing.intervals.push(interval);
+      else {
+        byDay.set(date, {
+          date,
+          label: formatDateLabel(segStart, tz),
+          intervals: [interval],
+        });
+      }
+      segStart = segEnd;
+    }
+  }
+  return byDay;
+}
+
 /** One local-day slice of a closed session for the dashboard timeline. */
 export interface SessionSegment {
   /** Session row id (same for every midnight-split slice of one session). */
@@ -41,6 +88,9 @@ export interface SessionSegment {
   start: string; // "HH:MM" local
   end: string;
   minutes: number;
+  /** Absolute bounds for overlap-safe totals in the dashboard timeline. */
+  startMs: number;
+  endMs: number;
   /** Minutes from local midnight (for bar layout). */
   startMin: number;
   endMin: number;
@@ -79,25 +129,14 @@ export async function buildHoursReport(
     .bind(userId, start.toISOString(), end.toISOString())
     .all<Row>();
 
-  const byDay = new Map<string, DayHours>();
-  for (const r of res.results ?? []) {
-    let segStart = new Date(Math.max(Date.parse(r.start_utc), start.getTime()));
-    const sessEnd = new Date(Math.min(Date.parse(r.end_utc), end.getTime()));
-
-    while (segStart < sessEnd) {
-      const midnight = nextLocalMidnightUtc(segStart, tz);
-      const segEnd = midnight < sessEnd ? midnight : sessEnd;
-      const { y, m, d } = localYMD(segStart, tz);
-      const date = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-      const minutes = Math.round((segEnd.getTime() - segStart.getTime()) / 60000);
-      const existing = byDay.get(date);
-      if (existing) existing.minutes += minutes;
-      else byDay.set(date, { date, label: formatDateLabel(segStart, tz), minutes });
-      segStart = segEnd;
-    }
-  }
-
-  const days = [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
+  const grouped = intervalsByLocalDay(res.results ?? [], start, end, tz);
+  const days = [...grouped.values()]
+    .map(({ date, label, intervals }) => ({
+      date,
+      label,
+      minutes: unionMinutes(intervals),
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
   const totalMinutes = days.reduce((sum, d) => sum + d.minutes, 0);
   const expanded = expandCalendarDays(days, period, localYMD(new Date(), tz));
   return { period, tz, days: expanded.days, activeDays: expanded.activeDays, totalMinutes };
@@ -149,6 +188,8 @@ export async function listSessionsForPeriod(
         start: formatHM(segStart, tz),
         end: formatHM(segEnd, tz),
         minutes,
+        startMs: segStart.getTime(),
+        endMs: segEnd.getTime(),
         startMin,
         endMin: Math.max(endMin, startMin + 1),
         start_reason: r.start_reason,
@@ -204,8 +245,9 @@ interface DaySpan {
  * `Date,Clock In,Clock Out,Breaks,Hours Worked` header leads; then one row per
  * worked day: earliest clock-in, latest clock-out, the gaps between sessions
  * (breaks), and total time actually worked (clock-out minus clock-in, minus the
- * breaks). Sessions are clamped to the month and split at every local midnight
- * so each day is summed in its own local day. A work day (Mon–Fri) with no
+ * breaks). Sessions are clamped to the month, split at every local midnight,
+ * and merged so simultaneous devices never double-count time. A work day
+ * (Mon–Fri) with no
  * sessions shows `Vacation`, and a trailing row puts the month's total under the
  * Hours Worked column. Empty months (no sessions at all) still produce no output.
  */
@@ -221,33 +263,31 @@ export async function buildReportCsv(env: Env, period: string, userId: string): 
     .bind(userId, start.toISOString(), end.toISOString())
     .all<Row>();
 
-  // Collapse each local day to first clock-in / last clock-out / worked minutes,
-  // recording the gap before each later session as a break. Sessions arrive
-  // ordered by start, so the first segment seen is the earliest.
+  // Collapse each local day to the union of its sessions. This preserves real
+  // gaps while ensuring overlapping sessions from multiple devices count once.
   const spanByDate = new Map<string, DaySpan>();
   const labelByDate = new Map<string, string>();
-  for (const r of res.results ?? []) {
-    let segStart = new Date(Math.max(Date.parse(r.start_utc), start.getTime()));
-    const sessEnd = new Date(Math.min(Date.parse(r.end_utc), end.getTime()));
-
-    while (segStart < sessEnd) {
-      const midnight = nextLocalMidnightUtc(segStart, tz);
-      const segEnd = midnight < sessEnd ? midnight : sessEnd;
-      const { y, m, d } = localYMD(segStart, tz);
-      const date = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-      const minutes = Math.round((segEnd.getTime() - segStart.getTime()) / 60000);
-      const span = spanByDate.get(date);
-      if (span) {
-        if (segStart.getTime() - span.out.getTime() >= MIN_BREAK_MS)
-          span.breaks.push(`${formatHM(span.out, tz)}-${formatHM(segStart, tz)}`);
-        span.out = segEnd; // later segment → newer clock-out
-        span.minutes += minutes;
-      } else {
-        spanByDate.set(date, { in: segStart, out: segEnd, minutes, breaks: [] });
-        labelByDate.set(date, formatDateLabel(segStart, tz));
+  const grouped = intervalsByLocalDay(res.results ?? [], start, end, tz);
+  for (const { date, label, intervals } of grouped.values()) {
+    const merged = mergeTimeIntervals(intervals);
+    if (merged.length === 0) continue;
+    const breaks: string[] = [];
+    for (let i = 1; i < merged.length; i++) {
+      const previous = merged[i - 1];
+      const current = merged[i];
+      if (current.start - previous.end >= MIN_BREAK_MS) {
+        breaks.push(
+          `${formatHM(new Date(previous.end), tz)}-${formatHM(new Date(current.start), tz)}`,
+        );
       }
-      segStart = segEnd;
     }
+    spanByDate.set(date, {
+      in: new Date(merged[0].start),
+      out: new Date(merged[merged.length - 1].end),
+      minutes: unionMinutes(merged),
+      breaks,
+    });
+    labelByDate.set(date, label);
   }
 
   // No work logged this month → keep the historical empty-report behavior.

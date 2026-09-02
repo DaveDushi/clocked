@@ -56,3 +56,11 @@ test("landing page shows hosted vs self-hosted compare table and timeline UI", a
   assert.match(html, /Local first/);
   assert.match(html, /Optional projects/);
 });
+
+test("dashboard exposes additive device tokens instead of a revoke-all control", async () => {
+  const html = await dashboardResponse().text();
+  assert.match(html, /id="mintToken"/);
+  assert.match(html, /id="tokenList"/);
+  assert.match(html, /Add device/);
+  assert.doesNotMatch(html, /id="regenToken"/);
+});
