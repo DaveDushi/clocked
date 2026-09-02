@@ -10,7 +10,6 @@
 //! Both Windows (`window.rs`) and macOS (`macos/mod.rs`) drive this module so
 //! idle / after-hours policy cannot drift between platforms.
 
-
 // Warn this many seconds before an idle auto-clock-out.
 pub const IDLE_WARN_LEAD_SECS: u64 = 120;
 
@@ -102,7 +101,7 @@ pub fn decide_idle(p: &IdleParams) -> IdleDecision {
     // mic/camera means we're on a call and won't clock out.
     let warn_at = p.timeout_secs.saturating_sub(IDLE_WARN_LEAD_SECS);
     if p.idle_secs >= warn_at && warn_at > 0 && !p.idle_warned && !p.in_call && p.clocked_in {
-        let minutes_left = ((p.timeout_secs - p.idle_secs + 59) / 60) as i64;
+        let minutes_left = (p.timeout_secs - p.idle_secs).div_ceil(60) as i64;
         return IdleDecision::Warn { minutes_left };
     }
     IdleDecision::Nothing
@@ -187,7 +186,9 @@ mod tests {
         p.idle_secs = 1000;
         assert_eq!(
             decide_idle(&p),
-            IdleDecision::ClockOutIdle { backdate_secs: 1000 }
+            IdleDecision::ClockOutIdle {
+                backdate_secs: 1000
+            }
         );
     }
 

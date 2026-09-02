@@ -46,7 +46,10 @@ impl UpdateStatus {
             UpdateStatus::Checking => "Checking for updates…".to_string(),
             // Still clickable so the user can re-check; label notes current status.
             UpdateStatus::UpToDate { version } => {
-                format!("Check for updates  {} · up to date", display_version(version))
+                format!(
+                    "Check for updates  {} · up to date",
+                    display_version(version)
+                )
             }
             UpdateStatus::Available { version, .. } => {
                 format!("Update available  v{}", version.trim_start_matches('v'))
@@ -65,7 +68,7 @@ impl UpdateStatus {
     /// re-check. `since_check` is `None` if no check has completed yet.
     pub fn for_menu(&self, since_check: Option<Duration>, ttl: Duration) -> UpdateStatus {
         match self {
-            UpdateStatus::UpToDate { .. } if since_check.map_or(true, |e| e >= ttl) => {
+            UpdateStatus::UpToDate { .. } if since_check.is_none_or(|e| e >= ttl) => {
                 UpdateStatus::Unknown
             }
             other => other.clone(),

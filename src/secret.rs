@@ -26,7 +26,7 @@ mod windows_impl {
     use windows::core::PWSTR;
     use windows::Win32::Foundation::{LocalFree, HLOCAL};
     use windows::Win32::Security::Cryptography::{
-        CryptProtectData, CryptUnprotectData, CRYPT_INTEGER_BLOB, CRYPTPROTECT_UI_FORBIDDEN,
+        CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
     };
 
     fn token_path() -> Option<PathBuf> {

@@ -168,7 +168,10 @@ mod linux_impl {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let escaped = exe.to_string_lossy().replace('\\', "\\\\").replace(' ', "\\ ");
+        let escaped = exe
+            .to_string_lossy()
+            .replace('\\', "\\\\")
+            .replace(' ', "\\ ");
         std::fs::write(
             path,
             format!(

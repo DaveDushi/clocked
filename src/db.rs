@@ -90,7 +90,14 @@ pub fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
 fn local_day_start(now: DateTime<Utc>) -> DateTime<Utc> {
     let local_now = now.with_timezone(&Local);
     let day_start_local = Local
-        .with_ymd_and_hms(local_now.year(), local_now.month(), local_now.day(), 0, 0, 0)
+        .with_ymd_and_hms(
+            local_now.year(),
+            local_now.month(),
+            local_now.day(),
+            0,
+            0,
+            0,
+        )
         .single()
         .unwrap_or(local_now);
     day_start_local.with_timezone(&Utc)
@@ -146,7 +153,11 @@ pub enum ClockOut {
 /// Close the open session. Returns `None` if none is open. A session whose end
 /// wouldn't advance past its start (no time elapsed) is deleted rather than
 /// recorded, so unattended wake/lock blips never reach the timesheet.
-pub fn clock_out(conn: &Connection, reason: &str, now: DateTime<Utc>) -> rusqlite::Result<ClockOut> {
+pub fn clock_out(
+    conn: &Connection,
+    reason: &str,
+    now: DateTime<Utc>,
+) -> rusqlite::Result<ClockOut> {
     let Some(start) = open_session_start(conn)? else {
         return Ok(ClockOut::None);
     };
@@ -279,7 +290,11 @@ pub fn record_activity_full(
 }
 
 /// Delete activity samples older than `retention_days`. Returns rows removed.
-pub fn prune_activity(conn: &Connection, now: DateTime<Utc>, retention_days: i64) -> rusqlite::Result<usize> {
+pub fn prune_activity(
+    conn: &Connection,
+    now: DateTime<Utc>,
+    retention_days: i64,
+) -> rusqlite::Result<usize> {
     let days = retention_days.max(7); // never prune more aggressively than a week
     let cutoff = now - chrono::Duration::days(days);
     let n = conn.execute(
@@ -327,7 +342,10 @@ pub fn unsynced_activity(conn: &Connection) -> rusqlite::Result<Vec<ActivityDayR
 }
 
 /// Mark day aggregates as synced after the Worker accepts them.
-pub fn mark_activity_synced(conn: &Connection, rows: &[(String, String, String)]) -> rusqlite::Result<()> {
+pub fn mark_activity_synced(
+    conn: &Connection,
+    rows: &[(String, String, String)],
+) -> rusqlite::Result<()> {
     let tx = conn.unchecked_transaction()?;
     for (day, app, project) in rows {
         tx.execute(
@@ -341,7 +359,7 @@ pub fn mark_activity_synced(conn: &Connection, rows: &[(String, String, String)]
 
 /// Re-queue all day aggregates (endpoint change).
 pub fn reset_activity_synced(conn: &Connection) -> rusqlite::Result<usize> {
-    Ok(conn.execute("UPDATE activity_day SET synced = 0 WHERE synced = 1", [])?)
+    conn.execute("UPDATE activity_day SET synced = 0 WHERE synced = 1", [])
 }
 
 /// Seconds per app today, busiest first (local day).
@@ -383,6 +401,7 @@ pub fn today_by_context(
 
 /// Unassigned apps with enough time to be worth a Settings nudge
 /// (≥ 30 minutes all-time). Excludes already-assigned and ignored apps.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn suggest_assignments(
     conn: &Connection,
     rules: &crate::rules::Rules,
@@ -482,7 +501,7 @@ pub fn mark_synced(conn: &Connection, ids: &[String]) -> rusqlite::Result<()> {
 /// Returns the number of rows reset. Used when the sync endpoint changes so a
 /// new Worker receives the full history (the flag is endpoint-agnostic).
 pub fn reset_synced(conn: &Connection) -> rusqlite::Result<usize> {
-    Ok(conn.execute("UPDATE sessions SET synced = 0 WHERE synced = 1", [])?)
+    conn.execute("UPDATE sessions SET synced = 0 WHERE synced = 1", [])
 }
 
 /// Read a value from the `meta` key/value table (None if unset).
@@ -706,7 +725,10 @@ mod tests {
         .unwrap();
         let n = prune_activity(&c, now, 90).unwrap();
         assert!(n >= 1);
-        assert_eq!(today_by_project(&c, now).unwrap(), vec![("Coding".into(), 60)]);
+        assert_eq!(
+            today_by_project(&c, now).unwrap(),
+            vec![("Coding".into(), 60)]
+        );
     }
 
     #[test]
@@ -736,8 +758,16 @@ mod tests {
         let now = Utc::now();
         record_activity_full(&c, now, "chrome.exe", "", "github.com", "Coding", 120).unwrap();
         record_activity_full(&c, now, "chrome.exe", "", "github.com", "Coding", 60).unwrap();
-        record_activity_full(&c, now, "chrome.exe", "", "news.ycombinator.com", "Browsing", 30)
-            .unwrap();
+        record_activity_full(
+            &c,
+            now,
+            "chrome.exe",
+            "",
+            "news.ycombinator.com",
+            "Browsing",
+            30,
+        )
+        .unwrap();
         let ctx = today_by_context(&c, now).unwrap();
         assert_eq!(ctx[0], ("github.com".into(), 180));
         assert_eq!(ctx[1], ("news.ycombinator.com".into(), 30));

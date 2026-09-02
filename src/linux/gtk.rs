@@ -41,7 +41,13 @@ unsafe extern "C" {
     fn gtk_widget_destroy(widget: Widget);
     fn gtk_container_set_border_width(container: Widget, width: c_uint);
     fn gtk_box_new(orientation: c_int, spacing: c_int) -> Widget;
-    fn gtk_box_pack_start(container: Widget, child: Widget, expand: c_int, fill: c_int, padding: c_uint);
+    fn gtk_box_pack_start(
+        container: Widget,
+        child: Widget,
+        expand: c_int,
+        fill: c_int,
+        padding: c_uint,
+    );
     fn gtk_label_new(text: *const c_char) -> Widget;
     fn gtk_label_set_line_wrap(label: Widget, wrap: c_int);
     fn gtk_entry_new() -> Widget;
@@ -81,7 +87,11 @@ unsafe extern "C" {
 
 #[link(name = "glib-2.0")]
 unsafe extern "C" {
-    fn g_timeout_add_seconds(interval: c_uint, function: TimerCallback, data: *mut c_void) -> c_uint;
+    fn g_timeout_add_seconds(
+        interval: c_uint,
+        function: TimerCallback,
+        data: *mut c_void,
+    ) -> c_uint;
 }
 
 fn c(text: &str) -> CString {
@@ -110,7 +120,12 @@ pub fn menu() -> Widget {
     unsafe { gtk_menu_new() }
 }
 
-pub fn menu_item(menu: Widget, label: &str, callback: Option<Callback>, data: *mut c_void) -> Widget {
+pub fn menu_item(
+    menu: Widget,
+    label: &str,
+    callback: Option<Callback>,
+    data: *mut c_void,
+) -> Widget {
     let label = c(label);
     let item = unsafe { gtk_menu_item_new_with_label(label.as_ptr()) };
     unsafe { gtk_menu_shell_append(menu, item) };

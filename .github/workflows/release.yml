@@ -1,8 +1,9 @@
 name: release
 
 # Builds distributable artifacts on a version tag (v*). macOS is signed +
-# notarized on an Apple runner (the only place codesign/notarytool run); Windows
-# builds the Inno Setup installer. Both upload to the GitHub Release for the tag.
+# notarized on an Apple runner (the only place codesign/notarytool run), Windows
+# builds the Inno Setup installer, and Linux builds a native x86-64 archive.
+# All three upload to the GitHub Release for the tag.
 #
 # Required repository secrets for the macOS job (leave unset to get an unsigned
 # build that will fail notarization/Gatekeeper — fine for a dry run):
@@ -21,6 +22,38 @@ permissions:
   contents: write
 
 jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install desktop build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            libwayland-dev \
+            wayland-protocols \
+            libsecret-tools
+      - name: Build archive
+        run: |
+          cargo build --release
+          package=dist/clocked-linux-x86_64-ubuntu-24.04
+          mkdir -p "$package"
+          install -m755 target/release/clocked "$package/clocked"
+          install -m755 packaging/linux/install-release.sh "$package/install.sh"
+          install -m644 packaging/linux/clocked.desktop.in "$package/clocked.desktop.in"
+          install -m644 packaging/linux/clocked.png "$package/clocked.png"
+          install -m644 packaging/linux/clocked-symbolic.svg "$package/clocked-symbolic.svg"
+          install -m644 README.md LICENSE "$package/"
+          tar -C dist -czf dist/clocked-linux-x86_64-ubuntu-24.04.tar.gz \
+            clocked-linux-x86_64-ubuntu-24.04
+      - name: Upload Linux artifact to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/clocked-linux-x86_64-ubuntu-24.04.tar.gz
+
   macos:
     runs-on: macos-14
     steps:

@@ -213,8 +213,13 @@ fn handle_client(mut stream: TcpStream, state: Arc<BridgeState>) {
     }
 }
 
-fn parse_http(raw: &str) -> Option<(String, String, Vec<(String, String)>, &str)> {
-    let (head, body) = raw.split_once("\r\n\r\n").or_else(|| raw.split_once("\n\n"))?;
+type Headers = Vec<(String, String)>;
+type ParsedRequest<'a> = (String, String, Headers, &'a str);
+
+fn parse_http(raw: &str) -> Option<ParsedRequest<'_>> {
+    let (head, body) = raw
+        .split_once("\r\n\r\n")
+        .or_else(|| raw.split_once("\n\n"))?;
     let mut lines = head.lines();
     let req = lines.next()?;
     let mut parts = req.split_whitespace();

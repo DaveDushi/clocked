@@ -116,7 +116,7 @@ pub fn extract(app: &str, raw_title: &str) -> Option<Context> {
         return None;
     }
 
-    if is_browser(&app) {
+    if is_browser_app(&app) {
         return domain_from_browser_title(title).map(|label| Context {
             kind: ContextKind::Domain,
             label,
@@ -131,20 +131,27 @@ pub fn extract(app: &str, raw_title: &str) -> Option<Context> {
 
 /// Context label only (empty string when none) — convenient for storage.
 pub fn extract_label(app: &str, raw_title: &str) -> String {
-    extract(app, raw_title)
-        .map(|c| c.label)
-        .unwrap_or_default()
+    extract(app, raw_title).map(|c| c.label).unwrap_or_default()
 }
 
-fn is_browser(app: &str) -> bool {
-    if BROWSERS.iter().any(|b| app == *b) {
+pub(crate) fn is_browser_app(app: &str) -> bool {
+    if BROWSERS.contains(&app) {
         return true;
     }
     // macOS-style process names without .exe
     let stem = app.strip_suffix(".exe").unwrap_or(app);
     matches!(
         stem,
-        "chrome" | "google chrome" | "msedge" | "firefox" | "brave" | "opera" | "vivaldi" | "safari" | "chromium" | "arc"
+        "chrome"
+            | "google chrome"
+            | "msedge"
+            | "firefox"
+            | "brave"
+            | "opera"
+            | "vivaldi"
+            | "safari"
+            | "chromium"
+            | "arc"
     ) || stem.contains("chrome")
         || stem.contains("firefox")
         || app.ends_with("browser.exe")
@@ -256,7 +263,10 @@ fn document_from_title(title: &str) -> Option<String> {
         }
     }
     // "• file" / dirty prefixes.
-    t = t.trim_start_matches(['●', '•', '*', ' ']).trim().to_string();
+    t = t
+        .trim_start_matches(['●', '•', '*', ' '])
+        .trim()
+        .to_string();
     if !is_plausible_doc(&t) {
         return None;
     }

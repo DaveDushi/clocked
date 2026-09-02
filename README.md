@@ -98,6 +98,11 @@ omarchy pkg add base-devel rust gtk3 libayatana-appindicator libsecret wayland w
 The installer adds a launcher and enables start-at-login through the standard
 XDG autostart directory. No root access is required.
 
+Tagged releases also include a prebuilt
+`clocked-linux-x86_64-ubuntu-24.04.tar.gz`. Extract it and run `./install.sh`
+from the extracted directory; GTK 3, Ayatana AppIndicator, Wayland, and
+`secret-tool` must be installed by the system package manager.
+
 ### Deploy a desktop release
 
 After committing your changes, run:

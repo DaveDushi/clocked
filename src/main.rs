@@ -11,6 +11,7 @@ mod bridge;
 mod config;
 mod context;
 mod db;
+mod desktop;
 mod events;
 // Foreground-app capture + rules-based classification into projects.
 mod foreground;

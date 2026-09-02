@@ -144,9 +144,8 @@ impl Rules {
 
     /// Persist rules to `rules.toml` as commented, hand-editable TOML.
     pub fn save(&self) -> std::io::Result<()> {
-        let path = crate::paths::rules_file().ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::NotFound, "no data dir")
-        })?;
+        let path = crate::paths::rules_file()
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no data dir"))?;
         std::fs::write(path, self.to_toml())
     }
 
@@ -179,7 +178,9 @@ impl Rules {
             ));
         }
         if !self.title_rules.is_empty() {
-            out.push_str("\n# Optional: title substring → project (only when titles are stored).\n");
+            out.push_str(
+                "\n# Optional: title substring → project (only when titles are stored).\n",
+            );
             for rule in &self.title_rules {
                 if rule.contains.trim().is_empty() || rule.project.trim().is_empty() {
                     continue;

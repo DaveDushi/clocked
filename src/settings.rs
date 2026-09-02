@@ -79,10 +79,28 @@ const BUCKET_NON_WORK: &str = "Non-work";
 // Every General-tab control except Advanced-gated rows (worker URL, track projects)
 // and project-only privacy (store_titles).
 const GENERAL_CORE_IDS: &[i32] = &[
-    ID_LBL_TOKEN, ID_TOKEN, ID_TOKEN_HINT, ID_LBL_IDLE, ID_LBL_TARGET, ID_IDLE, ID_TARGET,
-    ID_LBL_START, ID_LBL_END, ID_START, ID_END, ID_LBL_DAYS, ID_DAY_BASE, ID_DAY_BASE + 1,
-    ID_DAY_BASE + 2, ID_DAY_BASE + 3, ID_DAY_BASE + 4, ID_DAY_BASE + 5, ID_DAY_BASE + 6,
-    ID_AUTOSTART, ID_KEEPALIVE, ID_ADVANCED,
+    ID_LBL_TOKEN,
+    ID_TOKEN,
+    ID_TOKEN_HINT,
+    ID_LBL_IDLE,
+    ID_LBL_TARGET,
+    ID_IDLE,
+    ID_TARGET,
+    ID_LBL_START,
+    ID_LBL_END,
+    ID_START,
+    ID_END,
+    ID_LBL_DAYS,
+    ID_DAY_BASE,
+    ID_DAY_BASE + 1,
+    ID_DAY_BASE + 2,
+    ID_DAY_BASE + 3,
+    ID_DAY_BASE + 4,
+    ID_DAY_BASE + 5,
+    ID_DAY_BASE + 6,
+    ID_AUTOSTART,
+    ID_KEEPALIVE,
+    ID_ADVANCED,
 ];
 const PROJECT_IDS: &[i32] = &[
     ID_RULES_HELP,
@@ -279,7 +297,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                     refresh_members_label(hwnd);
                 }
                 (ID_POOL_LIST, n) if n == LBN_DBLCLK as u16 => bucket_add_selected_app(hwnd),
-                (ID_MEMBER_LIST, n) if n == LBN_DBLCLK as u16 => bucket_remove_selected_member(hwnd),
+                (ID_MEMBER_LIST, n) if n == LBN_DBLCLK as u16 => {
+                    bucket_remove_selected_member(hwnd)
+                }
                 _ => return DefWindowProcW(hwnd, msg, wp, lp),
             }
             LRESULT(0)
@@ -403,10 +423,40 @@ unsafe fn build_controls(hwnd: HWND) {
         hinst,
         font,
     );
-    edit(hwnd, ID_TARGET, right, y0 + 100, half, eh, WINDOW_STYLE(0), hinst, font);
+    edit(
+        hwnd,
+        ID_TARGET,
+        right,
+        y0 + 100,
+        half,
+        eh,
+        WINDOW_STYLE(0),
+        hinst,
+        font,
+    );
 
-    label_id(hwnd, ID_LBL_START, "Work start", m, y0 + 140, half, lh, hinst, font);
-    label_id(hwnd, ID_LBL_END, "Work end", right, y0 + 140, half, lh, hinst, font);
+    label_id(
+        hwnd,
+        ID_LBL_START,
+        "Work start",
+        m,
+        y0 + 140,
+        half,
+        lh,
+        hinst,
+        font,
+    );
+    label_id(
+        hwnd,
+        ID_LBL_END,
+        "Work end",
+        right,
+        y0 + 140,
+        half,
+        lh,
+        hinst,
+        font,
+    );
     time_picker(hwnd, ID_START, m, y0 + 162, half, eh, hinst, font);
     time_picker(hwnd, ID_END, right, y0 + 162, half, eh, hinst, font);
 
@@ -569,7 +619,16 @@ unsafe fn build_controls(hwnd: HWND) {
             hinst,
             font,
         );
-        listbox(hwnd, ID_BUCKET_LIST, m, board_top, bucket_w, board_h, hinst, font);
+        listbox(
+            hwnd,
+            ID_BUCKET_LIST,
+            m,
+            board_top,
+            bucket_w,
+            board_h,
+            hinst,
+            font,
+        );
         listbox(
             hwnd,
             ID_MEMBER_LIST,
@@ -583,10 +642,42 @@ unsafe fn build_controls(hwnd: HWND) {
 
         // Transfer buttons between pool actions and board.
         let btn_y = board_top + board_h + 8;
-        edit(hwnd, ID_NEW_BUCKET, m, btn_y, 110, eh, WINDOW_STYLE(0), hinst, font);
-        button(hwnd, ID_ADD_BUCKET, "+ New", m + 116, btn_y, 56, hinst, font, false);
-        button(hwnd, ID_DEL_BUCKET, "Delete", m + 176, btn_y, 64, hinst, font, false);
-        button(hwnd, ID_ADD_TO, "Add →", member_x, btn_y, 72, hinst, font, false);
+        edit(
+            hwnd,
+            ID_NEW_BUCKET,
+            m,
+            btn_y,
+            110,
+            eh,
+            WINDOW_STYLE(0),
+            hinst,
+            font,
+        );
+        button(
+            hwnd,
+            ID_ADD_BUCKET,
+            "+ New",
+            m + 116,
+            btn_y,
+            56,
+            hinst,
+            font,
+            false,
+        );
+        button(
+            hwnd,
+            ID_DEL_BUCKET,
+            "Delete",
+            m + 176,
+            btn_y,
+            64,
+            hinst,
+            font,
+            false,
+        );
+        button(
+            hwnd, ID_ADD_TO, "Add →", member_x, btn_y, 72, hinst, font, false,
+        );
         button(
             hwnd,
             ID_REMOVE_FROM,
@@ -866,7 +957,10 @@ unsafe fn refresh_bucket_list(parent: HWND, prefer: Option<&str>) {
         let Some(ctx) = ctx_ref(parent) else {
             return;
         };
-        (bucket_names(&ctx.rules.borrow()), prefer.map(|s| s.to_string()))
+        (
+            bucket_names(&ctx.rules.borrow()),
+            prefer.map(|s| s.to_string()),
+        )
     };
     let prev = prefer_owned.or_else(|| selected_bucket(parent));
     listbox_clear(parent, ID_BUCKET_LIST);
@@ -935,11 +1029,7 @@ unsafe fn refresh_bucket_members(parent: HWND) {
         for rule in &rules.title_rules {
             if rule.project.eq_ignore_ascii_case(&bucket) {
                 keys.push(MemberKey::Site(rule.contains.clone()));
-                listbox_add(
-                    parent,
-                    ID_MEMBER_LIST,
-                    &format!("site · {}", rule.contains),
-                );
+                listbox_add(parent, ID_MEMBER_LIST, &format!("site · {}", rule.contains));
             }
         }
     }
@@ -962,11 +1052,7 @@ unsafe fn refresh_pool(parent: HWND) {
             continue;
         }
         pool.push(key.clone());
-        listbox_add(
-            parent,
-            ID_POOL_LIST,
-            &crate::rules::pretty_app_name(&key),
-        );
+        listbox_add(parent, ID_POOL_LIST, &crate::rules::pretty_app_name(&key));
     }
     drop(rules);
     *ctx.pool_keys.borrow_mut() = pool;
@@ -1029,10 +1115,10 @@ unsafe fn bucket_add(parent: HWND) {
     // the name after first assignment. For + New with no members, use
     // reserved assignment "__bucket_marker__" = name, filtered on save and
     // hidden from pool.
-    ctx.rules
-        .borrow_mut()
-        .assignments
-        .insert(format!("__bucket__{}", name.to_ascii_lowercase()), name.clone());
+    ctx.rules.borrow_mut().assignments.insert(
+        format!("__bucket__{}", name.to_ascii_lowercase()),
+        name.clone(),
+    );
     set_text(parent, ID_NEW_BUCKET, "");
     refresh_bucket_list(parent, Some(&name));
 }
@@ -1113,10 +1199,10 @@ unsafe fn bucket_remove_selected_member(parent: HWND) {
             rules.assignments.remove(&key);
         }
         MemberKey::Site(contains) => {
-            rules
-                .title_rules
-                .retain(|r| !(r.contains.eq_ignore_ascii_case(&contains)
-                    && r.project.eq_ignore_ascii_case(&bucket)));
+            rules.title_rules.retain(|r| {
+                !(r.contains.eq_ignore_ascii_case(&contains)
+                    && r.project.eq_ignore_ascii_case(&bucket))
+            });
         }
     }
     drop(rules);
@@ -1254,7 +1340,20 @@ unsafe fn label_id(
     font: WPARAM,
 ) {
     let t = wide(text);
-    mk(p, w!("STATIC"), PCWSTR(t.as_ptr()), WINDOW_STYLE(0), WINDOW_EX_STYLE(0), x, y, w, h, id, hinst, font);
+    mk(
+        p,
+        w!("STATIC"),
+        PCWSTR(t.as_ptr()),
+        WINDOW_STYLE(0),
+        WINDOW_EX_STYLE(0),
+        x,
+        y,
+        w,
+        h,
+        id,
+        hinst,
+        font,
+    );
 }
 
 unsafe fn edit(
@@ -1311,11 +1410,25 @@ unsafe fn time_picker(
     ) {
         SendMessageW(child, WM_SETFONT, Some(font), Some(LPARAM(1)));
         let fmt = wide("HH:mm");
-        SendMessageW(child, DTM_SETFORMATW, None, Some(LPARAM(fmt.as_ptr() as isize)));
+        SendMessageW(
+            child,
+            DTM_SETFORMATW,
+            None,
+            Some(LPARAM(fmt.as_ptr() as isize)),
+        );
     }
 }
 
-unsafe fn check(p: HWND, id: i32, text: &str, x: i32, y: i32, w: i32, hinst: HINSTANCE, font: WPARAM) {
+unsafe fn check(
+    p: HWND,
+    id: i32,
+    text: &str,
+    x: i32,
+    y: i32,
+    w: i32,
+    hinst: HINSTANCE,
+    font: WPARAM,
+) {
     let t = wide(text);
     mk(
         p,
