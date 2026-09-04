@@ -15,7 +15,8 @@
     "migrate:remote": "wrangler d1 migrations apply clocked --remote",
     "access:grant": "node scripts/complimentary-access.mjs grant",
     "access:revoke": "node scripts/complimentary-access.mjs revoke",
-    "access:list": "node scripts/complimentary-access.mjs list"
+    "access:list": "node scripts/complimentary-access.mjs list",
+    "users:list": "node scripts/users.mjs"
   },
   "dependencies": {
     "better-auth": "^1.6.23",

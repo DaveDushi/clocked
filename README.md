@@ -232,6 +232,20 @@ Emails are normalized to lowercase and can be granted before or after the person
 signs up. Add `--local` to any command to manage the local development database
 instead of production. Complimentary users still need to verify their email.
 
+### User list
+
+List every registered app account, including verification status, organizations,
+roles, and access source:
+
+```sh
+npm run users:list
+npm run users:list -- --local
+```
+
+These operator commands use Wrangler's D1 access: they are not available to
+regular app users. Anyone with Cloudflare credentials that can execute queries
+against the `clocked` D1 database can run them.
+
 ### Endpoints
 
 | Method | Path                        | Auth    | Purpose                                          |
