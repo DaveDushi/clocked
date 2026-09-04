@@ -108,11 +108,13 @@ dependencies = [
 name = "clocked"
 version = "0.1.17"
 dependencies = [
+ "cc",
  "chrono",
  "directories",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
+ "pkg-config",
  "reqwest",
  "rusqlite",
  "security-framework",

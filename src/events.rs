@@ -1,6 +1,7 @@
 //! Pure mapping from OS power/session notifications to clock actions.
 //! Kept free of window/run-loop plumbing so the policy is obvious and testable.
 
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 pub enum Action {
     ClockIn(&'static str),
     /// The computer became unavailable because it locked or suspended. Unlike

@@ -191,9 +191,8 @@ impl Config {
     /// Write non-secret config to `config.toml` and the bearer token to the OS
     /// credential store.
     pub fn save(&self) -> std::io::Result<()> {
-        let path = crate::paths::config_file().ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::NotFound, "no data dir")
-        })?;
+        let path = crate::paths::config_file()
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no data dir"))?;
         std::fs::write(path, self.to_toml())?;
         crate::secret::save_token(&self.bearer_token)?;
         Ok(())
@@ -222,7 +221,11 @@ impl Config {
     pub fn within_working_hours(&self, now: DateTime<Local>) -> Option<bool> {
         let start = NaiveTime::parse_from_str(self.work_start.trim(), "%H:%M").ok()?;
         let end = NaiveTime::parse_from_str(self.work_end.trim(), "%H:%M").ok()?;
-        let days: Vec<Weekday> = self.work_days.iter().filter_map(|d| parse_weekday(d)).collect();
+        let days: Vec<Weekday> = self
+            .work_days
+            .iter()
+            .filter_map(|d| parse_weekday(d))
+            .collect();
         if days.is_empty() {
             return None;
         }
@@ -258,31 +261,52 @@ mod tests {
     fn working_hours_default_window() {
         let c = Config::default(); // 09:00–17:00, Mon–Fri
         assert_eq!(c.within_working_hours(local(2024, 1, 1, 10, 0)), Some(true));
-        assert_eq!(c.within_working_hours(local(2024, 1, 1, 8, 59)), Some(false));
-        assert_eq!(c.within_working_hours(local(2024, 1, 1, 17, 0)), Some(false)); // end exclusive
-        assert_eq!(c.within_working_hours(local(2024, 1, 1, 20, 0)), Some(false));
-        assert_eq!(c.within_working_hours(local(2024, 1, 6, 10, 0)), Some(false)); // Saturday
+        assert_eq!(
+            c.within_working_hours(local(2024, 1, 1, 8, 59)),
+            Some(false)
+        );
+        assert_eq!(
+            c.within_working_hours(local(2024, 1, 1, 17, 0)),
+            Some(false)
+        ); // end exclusive
+        assert_eq!(
+            c.within_working_hours(local(2024, 1, 1, 20, 0)),
+            Some(false)
+        );
+        assert_eq!(
+            c.within_working_hours(local(2024, 1, 6, 10, 0)),
+            Some(false)
+        ); // Saturday
     }
 
     #[test]
     fn working_hours_disabled_when_blank_or_no_days() {
-        let mut c = Config::default();
-        c.work_start = String::new();
+        let c = Config {
+            work_start: String::new(),
+            ..Config::default()
+        };
         assert_eq!(c.within_working_hours(local(2024, 1, 1, 10, 0)), None);
 
-        let mut c = Config::default();
-        c.work_days = vec![];
+        let c = Config {
+            work_days: vec![],
+            ..Config::default()
+        };
         assert_eq!(c.within_working_hours(local(2024, 1, 1, 10, 0)), None);
     }
 
     #[test]
     fn working_hours_overnight_window_wraps() {
-        let mut c = Config::default();
-        c.work_start = "22:00".to_string();
-        c.work_end = "06:00".to_string();
+        let c = Config {
+            work_start: "22:00".to_string(),
+            work_end: "06:00".to_string(),
+            ..Config::default()
+        };
         assert_eq!(c.within_working_hours(local(2024, 1, 1, 23, 0)), Some(true));
         assert_eq!(c.within_working_hours(local(2024, 1, 1, 5, 0)), Some(true));
-        assert_eq!(c.within_working_hours(local(2024, 1, 1, 12, 0)), Some(false));
+        assert_eq!(
+            c.within_working_hours(local(2024, 1, 1, 12, 0)),
+            Some(false)
+        );
     }
 
     #[test]
@@ -306,8 +330,8 @@ mod tests {
         assert_eq!(reloaded.work_start, c.work_start);
         assert_eq!(reloaded.work_end, c.work_end);
         assert_eq!(reloaded.work_days, c.work_days);
-        assert_eq!(reloaded.track_projects, true);
-        assert_eq!(reloaded.store_titles, true);
+        assert!(reloaded.track_projects);
+        assert!(reloaded.store_titles);
         assert_eq!(reloaded.activity_retention_days, 60);
         assert!(reloaded.bearer_token.is_empty());
         assert!(!c.to_toml().contains("s3cr3t"));
@@ -330,9 +354,11 @@ mod tests {
 
     #[test]
     fn old_local_dev_url_falls_back_to_hosted_domain() {
-        let mut c = Config::default();
-        c.worker_url = "http://localhost:8787/".to_string();
-        c.bearer_token = "token".to_string();
+        let c = Config {
+            worker_url: "http://localhost:8787/".to_string(),
+            bearer_token: "token".to_string(),
+            ..Config::default()
+        };
 
         assert_eq!(c.effective_worker_url(), DEFAULT_WORKER_URL);
         assert!(c.is_configured());

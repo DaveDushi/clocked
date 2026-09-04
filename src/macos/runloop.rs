@@ -212,12 +212,9 @@ fn resolve_after_hours(working: bool) {
     with_state(|app| app.after_hours_answered(working));
 }
 
-/// Whether the deferred after-hours modal should be skipped (now inside hours).
-fn after_hours_should_auto_accept() -> bool {
-    with_state(|app| {
-        crate::engine::should_auto_accept_after_hours(app.within_working_hours_now())
-    })
-    .unwrap_or(true)
+/// Re-check the deferred prompt after releasing any earlier state borrow.
+fn begin_after_hours_prompt() -> bool {
+    with_state(|app| app.begin_after_hours_prompt()).unwrap_or(false)
 }
 fn resolve_reclaim(reclaim: bool) {
     with_state(|app| app.reclaim_answered(reclaim));
@@ -336,8 +333,7 @@ mod imp {
             #[unsafe(method(afterHoursPrompt:))]
             fn after_hours_prompt(&self, _s: Option<&AnyObject>) {
                 // If work hours started while this was queued, skip the dialog.
-                if super::after_hours_should_auto_accept() {
-                    super::resolve_after_hours(true);
+                if !super::begin_after_hours_prompt() {
                     return;
                 }
                 let working = run_after_hours_yes_no();
@@ -435,12 +431,36 @@ mod imp {
 
     fn build_menu(mtm: MainThreadMarker, controller: &Retained<Controller>) -> Retained<NSMenu> {
         let menu = NSMenu::new(mtm);
-        add_item(&menu, mtm, controller, "Pause / Resume tracking", sel!(menuPause:));
-        add_item(&menu, mtm, controller, "Open timesheet", sel!(menuTimesheet:));
+        add_item(
+            &menu,
+            mtm,
+            controller,
+            "Pause / Resume tracking",
+            sel!(menuPause:),
+        );
+        add_item(
+            &menu,
+            mtm,
+            controller,
+            "Open timesheet",
+            sel!(menuTimesheet:),
+        );
         add_item(&menu, mtm, controller, "Sync now", sel!(menuSyncNow:));
         menu.addItem(&NSMenuItem::separatorItem(mtm));
-        add_item(&menu, mtm, controller, "Set sync token…", sel!(menuSetToken:));
-        let login = add_item(&menu, mtm, controller, "Start at login", sel!(menuStartAtLogin:));
+        add_item(
+            &menu,
+            mtm,
+            controller,
+            "Set sync token…",
+            sel!(menuSetToken:),
+        );
+        let login = add_item(
+            &menu,
+            mtm,
+            controller,
+            "Start at login",
+            sel!(menuStartAtLogin:),
+        );
         // Reflect the current launch-at-login state as a checkmark.
         let state: isize = if super::start_at_login_state() { 1 } else { 0 };
         unsafe {
@@ -544,10 +564,7 @@ mod imp {
     /// `stopModalWithCode` without closing an idle-reclaim dialog.
     fn run_after_hours_yes_no() -> bool {
         AFTER_HOURS_ALERT_UP.store(true, Ordering::SeqCst);
-        let working = run_yes_no(
-            "It's outside your working hours.",
-            "Are you working?",
-        );
+        let working = run_yes_no("It's outside your working hours.", "Are you working?");
         AFTER_HOURS_ALERT_UP.store(false, Ordering::SeqCst);
         working
     }

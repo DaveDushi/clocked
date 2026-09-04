@@ -60,8 +60,9 @@ mod macos_impl {
     }
 
     pub fn idle_duration() -> Duration {
-        let secs =
-            unsafe { CGEventSourceSecondsSinceLastEventType(HID_SYSTEM_STATE, ANY_INPUT_EVENT_TYPE) };
+        let secs = unsafe {
+            CGEventSourceSecondsSinceLastEventType(HID_SYSTEM_STATE, ANY_INPUT_EVENT_TYPE)
+        };
         if secs.is_finite() && secs > 0.0 {
             Duration::from_secs_f64(secs)
         } else {
@@ -90,7 +91,9 @@ mod linux_impl {
         START.call_once(|| {
             let rc = unsafe { clocked_idle_start() };
             if rc != 0 {
-                crate::logln!("Wayland idle monitor unavailable (error {rc}); idle timeout disabled");
+                crate::logln!(
+                    "Wayland idle monitor unavailable (error {rc}); idle timeout disabled"
+                );
             }
         });
         Duration::from_millis(unsafe { clocked_idle_millis() })

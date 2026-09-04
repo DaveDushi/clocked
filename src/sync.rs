@@ -21,6 +21,7 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Outcome of a sync run, posted back to the UI thread on Windows (and used for
 /// tray balloons when the user clicked **Sync now**).
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 #[derive(Debug, Clone)]
 pub struct SyncResult {
     pub manual: bool,
@@ -29,6 +30,7 @@ pub struct SyncResult {
     pub error: Option<String>,
 }
 
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 impl SyncResult {
     /// Short user-facing line for a tray balloon / notification.
     pub fn notify_body(&self) -> String {
@@ -53,6 +55,7 @@ impl SyncResult {
     }
 }
 
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn truncate(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         s.to_string()
@@ -93,12 +96,7 @@ pub fn spawn(hwnd_raw: isize, done_msg: u32, config: Config, manual: bool) {
             unsafe {
                 let hwnd = HWND(self.hwnd_raw as *mut c_void);
                 let ptr = Box::into_raw(Box::new(result));
-                let _ = PostMessageW(
-                    Some(hwnd),
-                    self.done_msg,
-                    WPARAM(ptr as usize),
-                    LPARAM(0),
-                );
+                let _ = PostMessageW(Some(hwnd), self.done_msg, WPARAM(ptr as usize), LPARAM(0));
             }
         }
     }
@@ -279,8 +277,7 @@ fn push_activity(
     // so turning the feature off hides dashboard/CSV projects without waiting
     // for new activity rows.
     let flag_s = if cfg.track_projects { "1" } else { "0" };
-    let flag_dirty =
-        crate::db::meta_get(conn, "synced_track_projects")?.as_deref() != Some(flag_s);
+    let flag_dirty = crate::db::meta_get(conn, "synced_track_projects")?.as_deref() != Some(flag_s);
 
     if pending.is_empty() && !flag_dirty {
         return Ok(0);

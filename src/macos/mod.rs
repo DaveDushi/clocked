@@ -3,29 +3,14 @@
 //! bar (menu bar) item, and drives the heartbeat / sync / update timers. Clock
 //! decisions come from the shared [`crate::engine`], so behavior matches Windows.
 //!
-//! STATUS: the portable state machine below (`AppState`) is complete and shares
-//! `engine`/`db`/`config`/`sync` with the rest of the app. The AppKit glue
-//! (`run`, the delegate class, status-item menu, notification observers, timers)
-//! is written against objc2 0.6 / objc2-app-kit 0.3 but has NOT been compiled on
-//! macOS yet — this repo is developed on Windows. Points needing on-device
-//! verification are marked `TODO(macos-build)`. Build/iterate with
-//! `cargo build --target aarch64-apple-darwin` on a Mac (see .ai/todo.md).
-#![allow(dead_code)] // scaffold: some entry points are consumed once `imp` is wired.
+//! The shared state machine owns tracking policy; this module only adapts its
+//! effects to AppKit and macOS services.
 
 mod runloop;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-
-use chrono::{DateTime, Local, NaiveDate, Utc};
-use rusqlite::Connection;
-
-use crate::activity::ActivityTracker;
-use crate::bridge::BridgeState;
-use crate::config::Config;
-use crate::engine::{self, IdleDecision, OpenDecision};
-use crate::rules::Rules;
 
 /// Blocking-sync budget on quit/power-off, mirroring the Windows shutdown path.
 const SHUTDOWN_SYNC_TIMEOUT: Duration = Duration::from_secs(3);
@@ -35,492 +20,117 @@ const SHUTDOWN_SYNC_TIMEOUT: Duration = Duration::from_secs(3);
 /// UI side effects (notify / prompt) the returned intents imply. Deliberately a
 /// close analog of the Windows `AppState` so the two can converge on `engine`.
 pub struct AppState {
-    conn: Connection,
-    config: Config,
-    rules: Rules,
-    activity: ActivityTracker,
-    own_exe: String,
-    /// Overlap guard for background sync. Shared with the worker thread (which
-    /// clears it on completion), so no main-thread callback is needed.
+    core: crate::desktop::DesktopState,
     syncing: Arc<AtomicBool>,
-    idle_out: bool,
-    paused: bool,
-    idle_warned: bool,
-    idle_since: Option<DateTime<Utc>>,
-    pending_reclaim: Option<DateTime<Utc>>,
-    after_hours_answer: Option<bool>,
-    after_hours_date: Option<NaiveDate>,
-    pending_open: Option<&'static str>,
-    /// Loopback bridge for the browser extension (active-tab domain).
-    bridge: Arc<BridgeState>,
 }
 
 impl AppState {
-    pub fn new() -> AppState {
-        let conn = crate::db::open().expect("open database");
-        let config = Config::load();
-        let _ = crate::db::prune_activity(&conn, Utc::now(), config.activity_retention_days);
-        let bridge = BridgeState::new(config.bearer_token.clone());
-        AppState {
-            conn,
-            config,
-            rules: Rules::load(),
-            activity: ActivityTracker::new(),
-            own_exe: std::env::current_exe()
-                .ok()
-                .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()))
-                .unwrap_or_default(),
+    pub fn new() -> Self {
+        Self {
+            core: crate::desktop::DesktopState::new(),
             syncing: Arc::new(AtomicBool::new(false)),
-            idle_out: false,
-            paused: false,
-            idle_warned: false,
-            idle_since: None,
-            pending_reclaim: None,
-            after_hours_answer: None,
-            after_hours_date: None,
-            pending_open: None,
-            bridge,
         }
     }
 
-    fn is_clocked_in(&self) -> bool {
-        matches!(crate::db::open_session_start(&self.conn), Ok(Some(_)))
-    }
-
-    fn clock_in(&mut self, reason: &str) {
-        self.clock_in_at(reason, Utc::now());
-    }
-
-    fn clock_in_at(&mut self, reason: &str, at: DateTime<Utc>) {
-        if self.paused {
-            return;
-        }
-        self.idle_out = false;
-        self.idle_since = None;
-        match crate::db::clock_in(&self.conn, reason, at) {
-            Ok(true) => crate::logln!("clock in ({reason})"),
-            Ok(false) => {}
-            Err(e) => crate::logln!("clock_in error: {e}"),
-        }
-    }
-
-    fn activity_flush(&mut self) {
-        self.activity.flush(&self.conn, Utc::now());
-    }
-
-    fn record_activity_tick(&mut self) {
-        if !self.config.track_projects {
-            self.activity.flush(&self.conn, Utc::now());
-            return;
-        }
-        let active = !self.paused
-            && self.is_clocked_in()
-            && (crate::idle::idle_duration().as_secs() < 60 || crate::media::in_use());
-        let now = Utc::now();
-        if !active {
-            self.activity.flush(&self.conn, now);
-            return;
-        }
-        let Some(fg) = crate::foreground::foreground() else {
-            return;
-        };
-        let own = self.own_exe.clone();
-        // Prefer extension domain when Chrome/Safari/etc. is focused.
-        let (override_ctx, title) = if is_browser_app(&fg.app) {
-            let domain = self.bridge.fresh_domain();
-            let title = self
-                .bridge
-                .fresh_title()
-                .filter(|t| !t.is_empty())
-                .unwrap_or_else(|| fg.title.clone());
-            (domain, title)
-        } else {
-            (None, fg.title.clone())
-        };
-        self.activity.observe(
-            &self.conn,
-            &self.rules,
-            self.config.store_titles,
-            true,
-            now,
-            &fg.app,
-            &title,
-            &own,
-            override_ctx.as_deref(),
-        );
-    }
-
-    fn clock_out(&mut self, reason: &str) {
-        self.activity_flush();
-        match crate::db::clock_out(&self.conn, reason, Utc::now()) {
-            Ok(crate::db::ClockOut::Closed) => {
-                crate::logln!("clock out ({reason})");
-                self.do_sync();
-            }
-            Ok(crate::db::ClockOut::DroppedEmpty) => {
-                crate::logln!("ignored empty session ({reason})")
-            }
-            Ok(crate::db::ClockOut::None) => {}
-            Err(e) => crate::logln!("clock_out error: {e}"),
-        }
-    }
-
-    /// A lock/suspend starts a fresh open cycle. The next wake/unlock must ask
-    /// again after hours; idle clock-outs deliberately leave this memory alone.
-    fn close_event(&mut self, reason: &'static str) {
-        self.after_hours_answer = None;
-        self.after_hours_date = None;
-        self.clock_out(reason);
-    }
-
-    /// Clock out and sync synchronously before returning (quit/power-off).
-    fn clock_out_blocking(&mut self, reason: &str) {
-        self.activity_flush();
-        match crate::db::clock_out(&self.conn, reason, Utc::now()) {
-            Ok(crate::db::ClockOut::Closed) => crate::logln!("clock out ({reason})"),
-            Ok(crate::db::ClockOut::DroppedEmpty) => {
-                crate::logln!("ignored empty session ({reason})");
-                return;
-            }
-            Ok(crate::db::ClockOut::None) => return,
-            Err(e) => {
-                crate::logln!("clock_out error: {e}");
-                return;
-            }
-        }
-        if !self.config.is_configured() {
-            return;
-        }
-        match crate::sync::run_blocking(&self.config, SHUTDOWN_SYNC_TIMEOUT) {
-            Ok(n) if n > 0 => crate::logln!("synced {n} session(s) before exit"),
-            Ok(_) => {}
-            Err(e) => crate::logln!("shutdown sync error: {e}"),
-        }
-    }
-
-    /// A "computer opened" moment (wake / unlock / app start).
-    fn open_event(&mut self, reason: &'static str) {
-        // Opening the machine always resumes tracking: a manual pause lasts only
-        // until the next open, so the user never has to remember to unpause.
-        if self.paused {
-            self.paused = false;
-            crate::logln!("resumed (open)");
-        }
-        let now = Local::now();
-        // Also guard against stale memory if a new day begins without a close
-        // notification; normal lock/suspend handling clears it immediately.
-        if self.after_hours_date != Some(now.date_naive()) {
-            self.after_hours_answer = None;
-        }
-        match engine::decide_open(
-            self.config.within_working_hours(now),
-            self.after_hours_answer,
-        ) {
-            OpenDecision::ClockIn => {
-                // Cancel any deferred after-hours dialog — hours (or config) say track.
-                self.pending_open = None;
-                self.after_hours_answer = None;
-                self.after_hours_date = None;
-                self.clock_in(reason);
-                self.do_sync();
-            }
-            OpenDecision::ClockInAfterHours => {
-                self.clock_in(reason);
-                self.do_sync();
-            }
-            OpenDecision::Skip => {}
-            OpenDecision::Prompt => {
-                if self.pending_open.is_none() {
-                    self.pending_open = Some(reason);
-                    runloop::defer_after_hours_prompt();
+    fn apply_effects(&mut self, effects: Vec<crate::desktop::Effect>) {
+        for effect in effects {
+            match effect {
+                crate::desktop::Effect::Sync => self.start_sync(false),
+                crate::desktop::Effect::Notify(body) => runloop::notify("clocked", &body),
+                crate::desktop::Effect::PromptAfterHours => runloop::defer_after_hours_prompt(),
+                crate::desktop::Effect::PromptReclaim { .. } => runloop::defer_reclaim_prompt(),
+                crate::desktop::Effect::DismissAfterHoursPrompt => {
+                    runloop::dismiss_after_hours_alert_if_showing()
                 }
             }
         }
-    }
-
-    /// Clock in after auto-dismissing a stale after-hours prompt / "not working"
-    /// answer once we are inside working hours (or the feature is disabled).
-    fn auto_accept_after_hours(&mut self, reason: &'static str) {
-        self.pending_open = None;
-        self.after_hours_answer = None;
-        self.after_hours_date = None;
-        runloop::dismiss_after_hours_alert_if_showing();
-        crate::logln!("after-hours: auto clock-in ({reason}; now within working hours)");
-        self.clock_in(reason);
-        self.do_sync();
-    }
-
-    /// If a deferred prompt or remembered "not working" is still open when the
-    /// clock rolls into working hours, start tracking without another click.
-    fn maybe_enter_working_hours(&mut self) {
-        if self.paused || self.is_clocked_in() {
-            if engine::should_auto_accept_after_hours(
-                self.config.within_working_hours(Local::now()),
-            ) {
-                runloop::dismiss_after_hours_alert_if_showing();
-            }
-            return;
-        }
-        let within = self.config.within_working_hours(Local::now());
-        if !engine::should_auto_accept_after_hours(within) {
-            return;
-        }
-        let reason = match self.pending_open.take() {
-            Some(r) => r,
-            None if self.after_hours_answer == Some(false) => "schedule",
-            None => {
-                runloop::dismiss_after_hours_alert_if_showing();
-                return;
-            }
-        };
-        self.auto_accept_after_hours(reason);
-    }
-
-    /// Answer a deferred after-hours prompt (run loop calls this on the main
-    /// thread after showing the modal). Re-checks working hours so a prompt that
-    /// fired before work start (or sat open past it) auto-dismisses into tracking.
-    fn resolve_after_hours(&mut self, working: bool) {
-        let Some(reason) = self.pending_open.take() else {
-            return;
-        };
-        if engine::should_auto_accept_after_hours(self.config.within_working_hours(Local::now())) {
-            self.auto_accept_after_hours(reason);
-            return;
-        }
-        self.after_hours_answer = Some(working);
-        self.after_hours_date = Some(Local::now().date_naive());
-        if working {
-            self.clock_in(reason);
-            self.do_sync();
-        } else {
-            crate::logln!("after-hours: user not working");
-        }
-    }
-
-    /// Heartbeat idle check — delegates the decision to `engine` and performs the
-    /// side effect it selects.
-    fn check_idle(&mut self) {
-        let idle_secs = crate::idle::idle_duration().as_secs();
-        let params = engine::IdleParams {
-            paused: self.paused,
-            timeout_secs: self.config.idle_timeout_secs,
-            idle_secs,
-            in_call: crate::media::in_use(),
-            clocked_in: self.is_clocked_in(),
-            idle_out: self.idle_out,
-            reclaim_pending: self.pending_reclaim.is_some(),
-            idle_warned: self.idle_warned,
-            idle_since_secs_ago: self
-                .idle_since
-                .map(|s| (Utc::now() - s).num_seconds()),
-        };
-        match engine::decide_idle(&params) {
-            IdleDecision::Nothing => {
-                // Reset the once-per-stretch warn latch once we drop back under
-                // the warn window, matching the Windows behavior.
-                let warn_at = params
-                    .timeout_secs
-                    .saturating_sub(engine::IDLE_WARN_LEAD_SECS);
-                if idle_secs < warn_at {
-                    self.idle_warned = false;
-                }
-            }
-            IdleDecision::ResumeFromCall => {
-                self.idle_warned = false;
-                self.clock_in("call");
-                self.do_sync();
-            }
-            IdleDecision::ClockOutIdle { backdate_secs } => {
-                self.activity_flush();
-                let last_input = Utc::now() - chrono::Duration::seconds(backdate_secs);
-                match crate::db::clock_out(&self.conn, "idle", last_input) {
-                    Ok(crate::db::ClockOut::Closed) => {
-                        crate::logln!("clock out (idle {idle_secs}s)");
-                        self.idle_out = true;
-                        self.idle_since = Some(last_input);
-                        self.idle_warned = false;
-                        self.do_sync();
-                    }
-                    Ok(crate::db::ClockOut::DroppedEmpty) => {
-                        crate::logln!("ignored empty session (idle {idle_secs}s)");
-                        self.idle_out = true;
-                        self.idle_since = None;
-                        self.idle_warned = false;
-                    }
-                    Ok(crate::db::ClockOut::None) => {}
-                    Err(e) => crate::logln!("idle clock_out error: {e}"),
-                }
-            }
-            IdleDecision::PromptReclaim {
-                idle_since_secs_ago,
-            } => {
-                self.idle_warned = false;
-                self.pending_reclaim = Some(Utc::now() - chrono::Duration::seconds(idle_since_secs_ago));
-                runloop::defer_reclaim_prompt();
-            }
-            IdleDecision::ResumeActive => {
-                self.idle_warned = false;
-                self.clock_in("active");
-                self.do_sync();
-            }
-            IdleDecision::Warn { minutes_left } => {
-                runloop::notify(
-                    "clocked",
-                    &format!("No activity — clocking out in ~{minutes_left} min unless you return."),
-                );
-                self.idle_warned = true;
-            }
-        }
-    }
-
-    /// Resolve a queued idle-reclaim prompt (run loop supplies the answer).
-    fn resolve_idle_reclaim(&mut self, reclaim: bool) {
-        let Some(since) = self.pending_reclaim.take() else {
-            return;
-        };
-        if reclaim {
-            let mins = ((Utc::now() - since).num_seconds().max(0) + 30) / 60;
-            self.clock_in_at("reclaimed", since);
-            crate::logln!("reclaimed idle time ({mins} min)");
-        } else {
-            self.clock_in("active");
-        }
-        self.do_sync();
-    }
-
-    /// Toggle tracking from the menu.
-    fn toggle_pause(&mut self) {
-        if self.is_clocked_in() {
-            self.activity_flush();
-            self.paused = true;
-            self.idle_out = false;
-            self.idle_warned = false;
-            match crate::db::clock_out(&self.conn, "manual", Utc::now()) {
-                Ok(_) => crate::logln!("paused"),
-                Err(e) => crate::logln!("pause clock_out error: {e}"),
-            }
-            self.do_sync();
-        } else {
-            self.paused = false;
-            self.idle_warned = false;
-            self.after_hours_answer = Some(true);
-            self.after_hours_date = Some(Local::now().date_naive());
-            crate::logln!("resumed");
-            self.clock_in("manual");
-            self.do_sync();
-        }
-    }
-
-    fn do_sync(&mut self) {
-        self.start_sync(false);
     }
 
     fn start_sync(&mut self, manual: bool) {
-        if !self.config.is_configured() {
+        if !self.core.config.is_configured() {
             if manual {
-                runloop::notify("clocked", "Add your sync token in Settings first.");
+                runloop::notify("clocked", "Add your sync token first.");
             }
             return;
         }
-        // Claim the guard; bail if a sync is already in flight. The worker clears
-        // it when done — no window message / main-thread hop required.
         if self.syncing.swap(true, Ordering::SeqCst) {
             if manual {
                 runloop::notify("clocked", "Sync already in progress…");
             }
             return;
         }
-        runloop::spawn_sync(self.config.clone(), self.syncing.clone(), manual);
+        runloop::spawn_sync(self.core.config.clone(), Arc::clone(&self.syncing), manual);
     }
 
-    fn reload_config(&mut self) {
-        self.config = Config::load();
-    }
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Entry points the run loop (child module) calls in response to timers,
-/// observers, menu commands, and marshaled worker completions. Thin wrappers over
-/// the private state-machine methods above so the run loop needs no internals.
-impl AppState {
-    /// One-time startup: crash recovery, first heartbeat, initial open, first
-    /// update check. Mirrors the Windows startup sequence.
     pub(crate) fn on_startup(&mut self) {
-        crate::bridge::start(Arc::clone(&self.bridge), crate::bridge::DEFAULT_PORT);
-        let _ = crate::db::recover_crashed(&self.conn, Utc::now());
-        let _ = crate::db::heartbeat(&self.conn, Utc::now());
-        self.open_event("start");
-        self.do_sync();
+        let effects = self.core.startup(true);
+        self.apply_effects(effects);
         self.check_for_updates();
     }
 
-    /// 60s heartbeat: keep the crash-recovery marker fresh, then run idle logic
-    /// and sample foreground app time.
     pub(crate) fn heartbeat_tick(&mut self) {
-        let now = Utc::now();
-        let _ = crate::db::heartbeat(&self.conn, now);
-        if self.config.track_projects {
-            self.activity.checkpoint(&self.conn, now);
-            let _ = crate::db::prune_activity(&self.conn, now, self.config.activity_retention_days);
-            self.record_activity_tick();
-        }
-        self.maybe_enter_working_hours();
-        self.check_idle();
+        self.core.record_activity_tick();
+        let effects = self.core.heartbeat();
+        self.apply_effects(effects);
     }
 
     pub(crate) fn open_cmd(&mut self, reason: &'static str) {
-        self.open_event(reason);
+        let effects = self.core.open_event(reason);
+        self.apply_effects(effects);
     }
+
     pub(crate) fn close_cmd(&mut self, reason: &'static str) {
-        self.close_event(reason);
+        let effects = self.core.close_event(reason);
+        self.apply_effects(effects);
     }
+
     pub(crate) fn sync_now(&mut self) {
         self.start_sync(true);
     }
+
     pub(crate) fn toggle_pause_cmd(&mut self) {
-        self.toggle_pause();
+        let effects = self.core.toggle_pause();
+        self.apply_effects(effects);
     }
+
     pub(crate) fn quit(&mut self) {
-        self.clock_out_blocking("quit");
+        if self.core.shutdown("quit") && self.core.config.is_configured() {
+            match crate::sync::run_blocking(&self.core.config, SHUTDOWN_SYNC_TIMEOUT) {
+                Ok(n) if n > 0 => crate::logln!("synced {n} item(s) before exit"),
+                Ok(_) => {}
+                Err(e) => crate::logln!("shutdown sync error: {e}"),
+            }
+        }
     }
+
+    pub(crate) fn begin_after_hours_prompt(&mut self) -> bool {
+        let (show, effects) = self.core.begin_after_hours_prompt();
+        self.apply_effects(effects);
+        show
+    }
+
     pub(crate) fn after_hours_answered(&mut self, working: bool) {
-        self.resolve_after_hours(working);
+        let effects = self.core.answer_after_hours(working);
+        self.apply_effects(effects);
     }
 
-    /// Working-hours snapshot for the run loop (skip dialog if already inside hours).
-    pub(crate) fn within_working_hours_now(&self) -> Option<bool> {
-        self.config.within_working_hours(Local::now())
-    }
     pub(crate) fn reclaim_answered(&mut self, reclaim: bool) {
-        self.resolve_idle_reclaim(reclaim);
-    }
-    pub(crate) fn config_changed(&mut self) {
-        self.reload_config();
-        self.do_sync();
+        let effects = self.core.answer_reclaim(reclaim);
+        self.apply_effects(effects);
     }
 
-    /// Open the Worker dashboard (current month), signed in when possible. The
-    /// token→login-URL swap is a network call, so it runs off the main thread.
     pub(crate) fn open_timesheet(&mut self) {
-        let cfg = self.config.clone();
-        let fallback = cfg.effective_worker_url().to_string();
+        let config = self.core.config.clone();
+        let fallback = config.effective_worker_url().to_string();
         if fallback.trim().is_empty() {
             return;
         }
         std::thread::spawn(move || {
-            let url = crate::sync::desktop_login_url(&cfg).unwrap_or(fallback);
+            let url = crate::sync::desktop_login_url(&config).unwrap_or(fallback);
             let _ = std::process::Command::new("open").arg(url).spawn();
         });
     }
 
-    /// Background update check. Reuses the portable `update::check_latest`; when a
-    /// newer release exists, notify via `osascript` (delivery differs from the
-    /// Win32 tray-menu link, but the check itself is shared).
     pub(crate) fn check_for_updates(&mut self) {
         std::thread::spawn(|| match crate::update::check_latest() {
             Ok(crate::update::UpdateStatus::Available { version, .. }) => {
@@ -538,33 +148,28 @@ impl AppState {
         });
     }
 
-    /// Store a pasted sync token: persist to Keychain + config.toml, reload, sync.
     pub(crate) fn set_sync_token(&mut self, token: String) {
-        self.config.bearer_token = token;
-        if let Err(e) = self.config.save() {
+        self.core.config.bearer_token = token;
+        if let Err(e) = self.core.config.save() {
             crate::logln!("save token error: {e}");
             return;
         }
-        self.config = Config::load();
-        self.bridge.set_token(&self.config.bearer_token);
-        self.do_sync();
+        self.core.reload();
+        self.start_sync(false);
     }
 
-    /// Toggle launch-at-login (LaunchAgent). Returns the resulting enabled state
-    /// so the menu checkmark can be updated.
     pub(crate) fn set_start_at_login(&mut self, enable: bool) -> bool {
-        let r = if enable {
+        let result = if enable {
             crate::autostart::enable()
         } else {
             crate::autostart::disable()
         };
-        if let Err(e) = r {
+        if let Err(e) = result {
             crate::logln!("start-at-login toggle error: {e}");
         }
         crate::autostart::is_enabled()
     }
 
-    /// Whether launch-at-login is currently enabled (for the initial menu state).
     pub(crate) fn start_at_login_enabled(&self) -> bool {
         crate::autostart::is_enabled()
     }
@@ -573,17 +178,4 @@ impl AppState {
 /// Entry point for the macOS build. Delegates to the AppKit run loop.
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     runloop::run()
-}
-
-fn is_browser_app(app: &str) -> bool {
-    let a = app.to_ascii_lowercase();
-    a.contains("chrome")
-        || a.contains("msedge")
-        || a.contains("firefox")
-        || a.contains("brave")
-        || a.contains("opera")
-        || a.contains("vivaldi")
-        || a == "safari"
-        || a.contains("safari")
-        || a.ends_with("browser")
 }

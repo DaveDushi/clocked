@@ -86,6 +86,10 @@ the sync token, and logind/desktop integration for lock and suspend handling.
 Hyprland on Omarchy is fully supported; other Wayland desktops work when they
 provide the idle-notify protocol and update logind's `LockedHint`.
 
+Choose **Settings…** from the tray menu to edit sync, idle, goal, working-hours,
+privacy, and startup options in a native GTK panel. Saving applies the changes
+to the running tracker immediately.
+
 On Arch/Omarchy, install build dependencies if needed and install for the
 current user:
 
@@ -97,6 +101,11 @@ omarchy pkg add base-devel rust gtk3 libayatana-appindicator libsecret wayland w
 
 The installer adds a launcher and enables start-at-login through the standard
 XDG autostart directory. No root access is required.
+
+Tagged releases also include a prebuilt
+`clocked-linux-x86_64-ubuntu-24.04.tar.gz`. Extract it and run `./install.sh`
+from the extracted directory; GTK 3, Ayatana AppIndicator, Wayland, and
+`secret-tool` must be installed by the system package manager.
 
 ### Deploy a desktop release
 

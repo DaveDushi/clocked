@@ -87,7 +87,12 @@ mod windows_impl {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
         let mut buf = vec![0u16; MAX_PATH];
         let mut size = buf.len() as u32;
-        let res = QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut size);
+        let res = QueryFullProcessImageNameW(
+            handle,
+            PROCESS_NAME_WIN32,
+            PWSTR(buf.as_mut_ptr()),
+            &mut size,
+        );
         let _ = CloseHandle(handle);
         res.ok()?;
         let path = String::from_utf16_lossy(&buf[..size as usize]);

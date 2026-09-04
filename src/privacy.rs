@@ -124,7 +124,14 @@ fn redact_emails(s: &str) -> String {
         let left = &rest[..at];
         // Find start of the local part (walk back over word chars).
         let start = left
-            .rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '%' || c == '+' || c == '-'))
+            .rfind(|c: char| {
+                !(c.is_ascii_alphanumeric()
+                    || c == '.'
+                    || c == '_'
+                    || c == '%'
+                    || c == '+'
+                    || c == '-')
+            })
             .map(|i| i + 1)
             .unwrap_or(0);
         let after = &rest[at + 1..];
@@ -183,10 +190,7 @@ mod tests {
 
     #[test]
     fn private_app_never_stores_title() {
-        assert_eq!(
-            title_for_storage("1password.exe", "Vault — Work", true),
-            ""
-        );
+        assert_eq!(title_for_storage("1password.exe", "Vault — Work", true), "");
         assert!(is_private_app("Bitwarden.exe"));
     }
 

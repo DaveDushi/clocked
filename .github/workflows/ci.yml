@@ -1,24 +1,51 @@
 name: ci
 
-# Real compile + link on every push. The macOS job is the point: it links against
-# AppKit / CoreGraphics / Security.framework / system libsqlite3 on an actual Mac,
-# verifying what a Windows dev box can only typecheck.
+# Compile, lint, test, and link each native desktop implementation on its own OS.
 
 on:
   push:
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+      - name: Install desktop build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            libwayland-dev \
+            wayland-protocols \
+            libsecret-tools
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test
+        run: cargo test
+      - name: Build
+        run: cargo build --release
+
   macos:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
+          components: clippy
           targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
       - name: Build (Apple Silicon)
         run: cargo build --target aarch64-apple-darwin --verbose
       - name: Build (Intel)
@@ -31,6 +58,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
       - name: Test
         run: cargo test
       - name: Build

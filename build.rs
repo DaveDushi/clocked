@@ -3,13 +3,8 @@
 //! Also embeds a manifest opting into Common-Controls v6 for themed widgets.
 
 fn main() {
-    #[cfg(windows)]
-    {
-        // Only embed Windows resources when the *target* is Windows. On a Windows
-        // host cross-checking a macOS target, skip it (winresource would warn).
-        if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
-            return;
-        }
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if target_os == "windows" {
         println!("cargo:rerun-if-changed=assets/clocked.ico");
         let mut res = winresource::WindowsResource::new();
         res.set_icon_with_id("assets/clocked.ico", "1");
@@ -23,7 +18,7 @@ fn main() {
         }
     }
 
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
+    if target_os == "linux" {
         build_linux_idle_monitor();
     }
 }
@@ -44,9 +39,6 @@ fn build_linux_idle_monitor() {
     let out = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
     let header = out.join("ext-idle-notify-v1-client-protocol.h");
     let protocol_c = out.join("ext-idle-notify-v1-protocol.c");
-    let protocol_o = out.join("ext-idle-notify-v1-protocol.o");
-    let idle_o = out.join("clocked-idle-wayland.o");
-    let archive = out.join("libclocked_idle_wayland.a");
 
     run(
         Command::new("wayland-scanner")
@@ -61,52 +53,20 @@ fn build_linux_idle_monitor() {
         "generate Wayland idle protocol code",
     );
 
-    let cflags = Command::new("pkg-config")
-        .args(["--cflags", "wayland-client"])
-        .output()
-        .expect("run pkg-config for wayland-client");
-    if !cflags.status.success() {
-        panic!("wayland-client development files are required to build clocked on Linux");
-    }
-    let flags = String::from_utf8_lossy(&cflags.stdout);
+    let wayland = pkg_config::Config::new()
+        .atleast_version("1.20")
+        .probe("wayland-client")
+        .expect("wayland-client development files are required to build clocked on Linux");
 
-    let mut protocol_cc = Command::new("cc");
-    protocol_cc
-        .arg("-fPIC")
-        .arg("-I")
-        .arg(&out)
-        .args(flags.split_whitespace())
-        .arg("-c")
-        .arg(&protocol_c)
-        .arg("-o")
-        .arg(&protocol_o);
-    run(&mut protocol_cc, "compile Wayland idle protocol");
-
-    let mut idle_cc = Command::new("cc");
-    idle_cc
-        .args(["-std=c11", "-fPIC", "-pthread"])
-        .arg("-I")
-        .arg(&out)
-        .args(flags.split_whitespace())
-        .arg("-c")
-        .arg("src/linux/idle_wayland.c")
-        .arg("-o")
-        .arg(&idle_o);
-    run(&mut idle_cc, "compile clocked Wayland idle monitor");
-
-    run(
-        Command::new("ar")
-            .arg("crs")
-            .arg(&archive)
-            .arg(&protocol_o)
-            .arg(&idle_o),
-        "archive clocked Wayland idle monitor",
-    );
-
-    println!("cargo:rustc-link-search=native={}", out.display());
-    println!("cargo:rustc-link-lib=static=clocked_idle_wayland");
-    println!("cargo:rustc-link-lib=dylib=wayland-client");
-    println!("cargo:rustc-link-lib=dylib=pthread");
+    let mut build = cc::Build::new();
+    build
+        .file(&protocol_c)
+        .file("src/linux/idle_wayland.c")
+        .include(&out)
+        .includes(wayland.include_paths)
+        .flag_if_supported("-std=c11")
+        .flag_if_supported("-pthread")
+        .compile("clocked_idle_wayland");
 }
 
 fn run(command: &mut std::process::Command, what: &str) {
@@ -116,7 +76,6 @@ fn run(command: &mut std::process::Command, what: &str) {
     assert!(status.success(), "failed to {what}");
 }
 
-#[cfg(windows)]
 const MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <dependency>

@@ -29,6 +29,17 @@ pub struct ActivityTracker {
     open: Option<OpenSeg>,
 }
 
+pub struct Observation<'a> {
+    pub rules: &'a Rules,
+    pub store_titles: bool,
+    pub active: bool,
+    pub now: DateTime<Utc>,
+    pub app: &'a str,
+    pub raw_title: &'a str,
+    pub own_exe: &'a str,
+    pub context_override: Option<&'a str>,
+}
+
 impl ActivityTracker {
     pub fn new() -> Self {
         Self { open: None }
@@ -39,18 +50,17 @@ impl ActivityTracker {
     ///
     /// `context_override` (e.g. domain from the browser extension) wins over
     /// title-bar heuristics when non-empty.
-    pub fn observe(
-        &mut self,
-        conn: &Connection,
-        rules: &Rules,
-        store_titles: bool,
-        active: bool,
-        now: DateTime<Utc>,
-        app: &str,
-        raw_title: &str,
-        own_exe: &str,
-        context_override: Option<&str>,
-    ) {
+    pub fn observe(&mut self, conn: &Connection, observation: Observation<'_>) {
+        let Observation {
+            rules,
+            store_titles,
+            active,
+            now,
+            app,
+            raw_title,
+            own_exe,
+            context_override,
+        } = observation;
         if !active {
             self.flush(conn, now);
             return;
@@ -79,9 +89,7 @@ impl ActivityTracker {
         let title = privacy::title_for_storage(&app, raw_title, store_titles);
 
         match &self.open {
-            Some(seg)
-                if seg.app == app && seg.project == project && seg.context == context =>
-            {
+            Some(seg) if seg.app == app && seg.project == project && seg.context == context => {
                 if !title.is_empty() && seg.title != title {
                     if let Some(s) = self.open.as_mut() {
                         s.title = title;
@@ -184,6 +192,30 @@ mod tests {
         }
     }
 
+    fn observe(
+        tracker: &mut ActivityTracker,
+        conn: &Connection,
+        rules: &Rules,
+        now: DateTime<Utc>,
+        app: &str,
+        title: &str,
+        context_override: Option<&str>,
+    ) {
+        tracker.observe(
+            conn,
+            Observation {
+                rules,
+                store_titles: false,
+                active: true,
+                now,
+                app,
+                raw_title: title,
+                own_exe: "clocked.exe",
+                context_override,
+            },
+        );
+    }
+
     #[test]
     fn switch_flushes_previous_segment() {
         let c = mem();
@@ -193,8 +225,8 @@ mod tests {
         let t1 = t0 + chrono::Duration::seconds(120);
         let t2 = t1 + chrono::Duration::seconds(60);
 
-        t.observe(&c, &r, false, true, t0, "code.exe", "a.rs", "clocked.exe", None);
-        t.observe(&c, &r, false, true, t1, "chrome.exe", "News", "clocked.exe", None);
+        observe(&mut t, &c, &r, t0, "code.exe", "a.rs", None);
+        observe(&mut t, &c, &r, t1, "chrome.exe", "News", None);
         t.flush(&c, t2);
 
         let by = db::today_by_project(&c, t2).unwrap();
@@ -208,15 +240,13 @@ mod tests {
         let r = rules();
         let mut t = ActivityTracker::new();
         let t0 = Utc::now() - chrono::Duration::seconds(90);
-        t.observe(
+        observe(
+            &mut t,
             &c,
             &r,
-            false,
-            true,
             t0,
             "chrome.exe",
             "PR · github.com - Google Chrome",
-            "clocked.exe",
             None,
         );
         t.flush(&c, t0 + chrono::Duration::seconds(90));
@@ -239,15 +269,13 @@ mod tests {
         let mut t = ActivityTracker::new();
         let t0 = Utc::now() - chrono::Duration::seconds(60);
         // Title has no domain, but extension reports github.com.
-        t.observe(
+        observe(
+            &mut t,
             &c,
             &r,
-            false,
-            true,
             t0,
             "chrome.exe",
             "Pull requests",
-            "clocked.exe",
             Some("github.com"),
         );
         t.flush(&c, t0 + chrono::Duration::seconds(60));
@@ -263,17 +291,19 @@ mod tests {
         let r = rules();
         let mut t = ActivityTracker::new();
         let t0 = Utc::now() - chrono::Duration::seconds(90);
-        t.observe(&c, &r, false, true, t0, "code.exe", "", "clocked.exe", None);
+        observe(&mut t, &c, &r, t0, "code.exe", "", None);
         t.observe(
             &c,
-            &r,
-            false,
-            false,
-            t0 + chrono::Duration::seconds(90),
-            "code.exe",
-            "",
-            "clocked.exe",
-            None,
+            Observation {
+                rules: &r,
+                store_titles: false,
+                active: false,
+                now: t0 + chrono::Duration::seconds(90),
+                app: "code.exe",
+                raw_title: "",
+                own_exe: "clocked.exe",
+                context_override: None,
+            },
         );
         let by = db::today_by_project(&c, t0 + chrono::Duration::seconds(90)).unwrap();
         assert_eq!(by, vec![("Coding".into(), 90)]);
