@@ -10,6 +10,7 @@ import {
 } from "../.tmp-test/plans.js";
 import { rateLimitAllow } from "../.tmp-test/rate-limit.js";
 import { MAX_SESSIONS_PER_REQUEST } from "../.tmp-test/ingest.js";
+import { accessRowsGrantAccess } from "../.tmp-test/access.js";
 
 test("period validation accepts YYYY-MM only", () => {
   assert.equal(isValidPeriod("2026-06"), true);
@@ -41,6 +42,25 @@ test("past_due grants access only within grace window", () => {
     false,
   );
   assert.equal(isPaidBillingStatusWithGrace("canceled", now, now), false);
+});
+
+test("complimentary email grants access without paid billing", () => {
+  const now = 1_700_000_000_000;
+  assert.equal(
+    accessRowsGrantAccess(
+      [{ source: "complimentary", status: null, updatedAt: null }],
+      now,
+    ),
+    true,
+  );
+  assert.equal(
+    accessRowsGrantAccess(
+      [{ source: "billing", status: "canceled", updatedAt: now }],
+      now,
+    ),
+    false,
+  );
+  assert.equal(accessRowsGrantAccess([], now), false);
 });
 
 test("in-memory rate limiter trips after max", () => {

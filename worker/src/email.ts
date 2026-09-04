@@ -1,7 +1,8 @@
 import type { Env } from "./types";
 import { projectTotalsForPeriod } from "./activity";
 import { buildReportCsv, buildHoursReport, formatHours, isWorkDay, type HoursReport } from "./report";
-import { getEffectiveRecipients, getEffectiveSendDay } from "./settings";
+import { getEffectiveRecipients, listUsersWithEffectiveSchedules } from "./settings";
+import { isScheduleDue, periodForSchedule } from "./schedule";
 
 /**
  * Referral footer on outgoing timesheets. These land in clients'/managers'
@@ -358,33 +359,24 @@ export async function sendContactSales(
   return { ok: true };
 }
 
-/** Sentinel `send_day` meaning "the last day of the month". */
-export const SEND_DAY_LAST = 99;
-
 /**
- * Monthly cron fan-out: email every account its own report for `period`.
- * The cron fires daily, so each user is only sent when `dayOfMonth` matches
- * their *effective* send day: for a team member that's the manager's org-level
- * schedule; for a solo user their own (default 1, 0 disables, 99 = last day).
+ * Monthly cron fan-out: email every account whose configured local delivery
+ * minute is due. For a team member, the manager's org-level schedule wins; for
+ * a solo user, their personal schedule is used.
  * Recipients are likewise the effective ones — the manager's team destination in
  * a team, or the user's own `mail_to`/account email when solo.
  */
-export async function sendMonthlyReports(
-  env: Env,
-  period: string,
-  opts: { force: boolean; dayOfMonth: number; lastDayOfMonth: number },
-): Promise<void> {
-  const users = await env.DB.prepare(`SELECT id, email FROM user`).all<{
-    id: string;
-    email: string;
-  }>();
-  for (const u of users.results ?? []) {
-    const sendDay = await getEffectiveSendDay(env, u.id);
-    if (sendDay === 0) continue;
-    const target = sendDay === SEND_DAY_LAST ? opts.lastDayOfMonth : sendDay;
-    if (target !== opts.dayOfMonth) continue;
+export async function sendMonthlyReports(env: Env, now: Date): Promise<void> {
+  const users = await listUsersWithEffectiveSchedules(env);
+  for (const u of users) {
+    const { schedule } = u;
+    if (!isScheduleDue(schedule, now)) continue;
     const { recipients } = await getEffectiveRecipients(env, u.id, u.email);
     if (recipients.length === 0) continue;
-    await buildAndSendReport(env, period, { force: opts.force, userId: u.id, to: recipients });
+    await buildAndSendReport(env, periodForSchedule(schedule, now), {
+      force: false,
+      userId: u.id,
+      to: recipients,
+    });
   }
 }

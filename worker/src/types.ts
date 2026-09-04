@@ -11,7 +11,7 @@ export interface Env {
   BEARER_TOKEN?: string;
   /** Opt-in: allow BEARER_TOKEN to authenticate POST /sessions (default off). */
   ALLOW_LEGACY_BEARER_TOKEN?: string;
-  /** IANA timezone used for day names, day boundaries, and the cron gate. */
+  /** IANA timezone used for report day names and calendar boundaries. */
   REPORT_TZ: string;
   /** Default timesheet recipient; overridden by the `mail_to` setting if set. */
   MAIL_TO: string;

@@ -9,10 +9,13 @@
     "build": "vite build",
     "preview": "vite build && vite preview",
     "deploy": "vite build && wrangler deploy",
-    "test": "tsc --target es2022 --module es2022 --moduleResolution bundler --strict --skipLibCheck --types @cloudflare/workers-types --outDir .tmp-test --noEmit false src/calendar-days.ts src/session-intervals.ts src/tokens.ts src/dashboard.ts src/download.ts src/security.ts src/plans.ts src/rate-limit.ts src/auth.ts src/ingest.ts && node --test test/*.test.mjs",
+    "test": "tsc --target es2022 --module es2022 --moduleResolution bundler --strict --skipLibCheck --types @cloudflare/workers-types --outDir .tmp-test --noEmit false src/calendar-days.ts src/session-intervals.ts src/tokens.ts src/dashboard.ts src/download.ts src/security.ts src/plans.ts src/access.ts src/rate-limit.ts src/auth.ts src/ingest.ts src/time.ts src/schedule.ts && node --test test/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "migrate:local": "wrangler d1 migrations apply clocked --local",
-    "migrate:remote": "wrangler d1 migrations apply clocked --remote"
+    "migrate:remote": "wrangler d1 migrations apply clocked --remote",
+    "access:grant": "node scripts/complimentary-access.mjs grant",
+    "access:revoke": "node scripts/complimentary-access.mjs revoke",
+    "access:list": "node scripts/complimentary-access.mjs list"
   },
   "dependencies": {
     "better-auth": "^1.6.23",

@@ -229,13 +229,15 @@ const HTML = /* html */ `<!doctype html>
   .schedule { display:flex; flex-direction:column; gap:9px; margin:2px 0 12px; }
   .check { display:flex; align-items:center; gap:9px; margin:0; text-transform:none; letter-spacing:0; font-size:14px; color:var(--fg); cursor:pointer; }
   .check input { width:auto; margin:0; accent-color:var(--amber); }
-  .sendday { display:flex; align-items:center; gap:9px; padding-left:26px; color:var(--faint); font-size:14px; }
+  .sendday { display:flex; align-items:center; gap:9px; padding-left:26px; color:var(--faint); font-size:14px; flex-wrap:wrap; }
   .sendday.off { opacity:.4; }
-  .sendday select {
+  .sendday select, .sendday input {
     width:auto; padding:8px 10px; border-radius:9px; border:1px solid var(--border);
     background:#0b0d13; color:var(--fg); font:inherit; font-family:var(--mono); cursor:pointer;
   }
-  .sendday select:disabled { cursor:default; }
+  .sendday input[type=time] { width:126px; }
+  .sendday input[list] { width:min(240px, 100%); }
+  .sendday select:disabled, .sendday input:disabled { cursor:default; }
 
   button, a.btn {
     display:inline-flex; align-items:center; justify-content:center; text-decoration:none;
@@ -695,7 +697,7 @@ const HTML = /* html */ `<!doctype html>
       <div class="feature"><div class="k">Automatic presence</div><div class="v">Wake, unlock, and activity clock you in. Sleep, lock, idle, quit, and shutdown clock you out — idle is backdated to last input so empty time doesn&rsquo;t inflate the day.</div></div>
       <div class="feature"><div class="k">Local first</div><div class="v">Sessions live in SQLite on your machine. Pause from the tray, tune idle timeout, set working hours with an after-hours prompt, and keep tracking offline.</div></div>
       <div class="feature"><div class="k">Optional projects</div><div class="v">Opt in to attribute time to the focused app and privacy-safe context (document name or browser hostname). Window titles stay off by default.</div></div>
-      <div class="feature"><div class="k">Monthly timesheet</div><div class="v">Hosted cloud emails a day-by-day CSV on your send day. Preview anytime, add manual spans, and export or delete your cloud data.</div></div>
+      <div class="feature"><div class="k">Monthly timesheet</div><div class="v">Hosted cloud emails a day-by-day CSV on your schedule. Preview anytime, add manual spans, and export or delete your cloud data.</div></div>
       <div class="feature"><div class="k">Teams</div><div class="v">Invite workers, review their hours, adjust entries as a manager, and centralize report delivery — not live surveillance.</div></div>
       <div class="feature"><div class="k">Yours to run</div><div class="v">Point the desktop app at your own Cloudflare Worker, or use hosted clocked for accounts, dashboard, billing, and email without ops work.</div></div>
     </div>
@@ -758,7 +760,7 @@ const HTML = /* html */ `<!doctype html>
             <tr>
               <th scope="row">Monthly email report</th>
               <td>You wire Resend / Email Routing</td>
-              <td class="hosted-col yes">Scheduled send day, multi-recipient</td>
+              <td class="hosted-col yes">Scheduled day, time &amp; timezone; multi-recipient</td>
             </tr>
             <tr>
               <th scope="row">Manual time edits</th>
@@ -1128,8 +1130,12 @@ const HTML = /* html */ `<!doctype html>
             <label class="check"><input type="checkbox" id="autoSend"> Email automatically each month</label>
             <div id="sendDayWrap" class="sendday">
               <span>Send on the</span>
-              <select id="sendDay"></select>
-              <span>of each month</span>
+              <select id="sendDay" aria-label="Day of month"></select>
+              <span>at</span>
+              <input id="sendTime" type="time" step="60" aria-label="Delivery time" />
+              <span>in</span>
+              <input id="sendTimezone" type="text" list="sendTimezones" maxlength="100" placeholder="Timezone" aria-label="Delivery timezone" autocomplete="off" />
+              <datalist id="sendTimezones"></datalist>
             </div>
           </div>
           <div class="inline-actions">
@@ -2691,45 +2697,64 @@ function fillSendDays() {
   for (let d = 1; d <= 28; d++) sel.add(new Option(ordinal(d), String(d)));
   sel.add(new Option("last day", "99")); // 99 = last day of the month
 }
+function fillTimeZones() {
+  const list = $("sendTimezones");
+  if (list.children.length) return;
+  let zones = ["UTC"];
+  try {
+    if (typeof Intl.supportedValuesOf === "function") zones = zones.concat(Intl.supportedValuesOf("timeZone"));
+  } catch (e) {}
+  if (zones.length === 1) zones = zones.concat([
+    "America/Los_Angeles", "America/Denver", "America/Chicago", "America/New_York",
+    "Europe/London", "Europe/Paris", "Asia/Jerusalem", "Asia/Kolkata", "Asia/Tokyo", "Australia/Sydney"
+  ]);
+  zones.forEach((z) => list.appendChild(new Option(z, z)));
+}
 function syncSendDayState() {
   const on = $("autoSend").checked;
   $("sendDay").disabled = !on;
+  $("sendTime").disabled = !on;
+  $("sendTimezone").disabled = !on;
   $("sendDayWrap").classList.toggle("off", !on);
 }
 $("autoSend").onchange = syncSendDayState;
 
 async function loadEmailSettings() {
   fillSendDays();
+  fillTimeZones();
   if (emailMode === "manager") {
     const r = await api("/api/team/settings?organizationId=" + encodeURIComponent(orgId));
-    const d = r.ok ? await r.json() : { recipients: [], sendDay: 1, defaultRecipients: [] };
+    const d = r.ok ? await r.json() : { recipients: [], sendDay: 1, sendTime: "06:00", sendTimezone: "UTC", defaultRecipients: [] };
     // Prefill with the managers' emails until an explicit destination is saved.
     renderRecipients((d.recipients && d.recipients.length) ? d.recipients : (d.defaultRecipients || []));
-    setSchedule(d.sendDay);
+    setSchedule(d.sendDay, d.sendTime, d.sendTimezone);
   } else if (emailMode === "member") {
     const r = await api("/api/settings");
-    const d = r.ok ? await r.json() : { recipients: [], sendDay: 1 };
-    renderEmailReadonly(d.recipients || [], d.sendDay);
+    const d = r.ok ? await r.json() : { recipients: [], sendDay: 1, sendTime: "06:00", sendTimezone: "UTC" };
+    renderEmailReadonly(d.recipients || [], d.sendDay, d.sendTime, d.sendTimezone);
   } else {
     const r = await api("/api/settings");
-    const d = r.ok ? await r.json() : { recipients: [], sendDay: 1 };
+    const d = r.ok ? await r.json() : { recipients: [], sendDay: 1, sendTime: "06:00", sendTimezone: "UTC" };
     renderRecipients(d.recipients);
-    setSchedule(d.sendDay);
+    setSchedule(d.sendDay, d.sendTime, d.sendTimezone);
   }
 }
 
-function setSchedule(day) {
+function setSchedule(day, time, timezone) {
   day = Number(day);
   $("autoSend").checked = day !== 0;
   $("sendDay").value = String(day === 0 ? 1 : day);
+  $("sendTime").value = time || "06:00";
+  $("sendTimezone").value = timezone || "UTC";
   syncSendDayState();
 }
 
-function renderEmailReadonly(recipients, sendDay) {
+function renderEmailReadonly(recipients, sendDay, sendTime, sendTimezone) {
   const day = Number(sendDay);
   const when = day === 0
     ? "not emailed automatically"
-    : (day === 99 ? "emailed on the last day of each month" : "emailed on the " + ordinal(day) + " of each month");
+    : (day === 99 ? "emailed on the last day of each month" : "emailed on the " + ordinal(day) + " of each month") +
+      " at " + pvEsc(sendTime || "06:00") + " (" + pvEsc(sendTimezone || "UTC") + ")";
   const who = (recipients && recipients.length) ? recipients.map(pvEsc).join(", ") : "your manager";
   $("emailReadonly").innerHTML = "<p class='muted' style='font-size:13.5px;margin:0;line-height:1.6'>Your monthly timesheet is " + when + " to <b style='color:var(--fg)'>" + who + "</b> — set by your team manager.</p>";
 }
@@ -2780,11 +2805,16 @@ $("saveEmail").onclick = async () => {
   $("emailMsg").textContent = ""; $("emailMsg").className = "msg";
   if (!recipients.length) { $("emailMsg").textContent = "Add at least one recipient."; $("emailMsg").className = "msg err"; return; }
   const sendDay = $("autoSend").checked ? Number($("sendDay").value) : 0;
+  const sendTime = $("sendTime").value;
+  const sendTimezone = $("sendTimezone").value.trim();
+  if ($("autoSend").checked && (!sendTime || !sendTimezone)) {
+    $("emailMsg").textContent = "Choose a time and timezone."; $("emailMsg").className = "msg err"; return;
+  }
   const path = emailMode === "manager"
     ? "/api/team/settings?organizationId=" + encodeURIComponent(orgId)
     : "/api/settings";
   $("saveEmail").disabled = true;
-  const r = await api(path, { method:"POST", body: JSON.stringify({ recipients, sendDay }) });
+  const r = await api(path, { method:"POST", body: JSON.stringify({ recipients, sendDay, sendTime, sendTimezone }) });
   $("saveEmail").disabled = false;
   if (r.ok) { $("emailMsg").textContent = "Saved."; $("emailMsg").className = "msg ok"; }
   else { const e = await r.json().catch(()=>({})); $("emailMsg").textContent = e.error || "Save failed."; $("emailMsg").className = "msg err"; }

@@ -17,7 +17,7 @@ that emails a monthly report — whether or not your laptop is awake at month-en
 ```
 Desktop tray app (Rust)                     Cloudflare Worker (TypeScript)
   wake / unlock  -> clock in                  POST /sessions -> D1 (upsert by id)
-  sleep / lock   -> clock out                 cron (daily; per-user send day)
+  sleep / lock   -> clock out                 cron (per-user day, time, timezone)
   local SQLite (source of truth)   --HTTPS--> Resend: monthly timesheet email
 ```
 
@@ -216,6 +216,22 @@ npx wrangler secret put RESEND_API_KEY
 npx wrangler deploy
 ```
 
+### Complimentary access
+
+The paywall can be bypassed for selected signup emails. After applying migration
+`0016_complimentary_access.sql` and deploying this version once, manage the
+production list from the `worker` directory without another deploy:
+
+```sh
+npm run access:grant -- person@example.com
+npm run access:list
+npm run access:revoke -- person@example.com
+```
+
+Emails are normalized to lowercase and can be granted before or after the person
+signs up. Add `--local` to any command to manage the local development database
+instead of production. Complimentary users still need to verify their email.
+
 ### Endpoints
 
 | Method | Path                        | Auth    | Purpose                                          |
@@ -242,11 +258,12 @@ token; a global `BEARER_TOKEN` secret, if set, still works as a legacy fallback
 
 ### Monthly send
 
-A cron runs daily at 06:00 UTC; the handler only acts when it's the **1st in
-`REPORT_TZ`**, emailing **every account** its own **previous full calendar
-month** exactly once (tracked per account in the `sent_reports` table). Each
-account's recipient is the address it set in the dashboard, falling back to its
-sign-up email. It sends on the 1st and ignores late-arriving data for that month.
+A cron checks each account's dashboard-configured **day, time, and IANA
+timezone**, emailing its **previous full calendar month** exactly once (tracked
+per account in the `sent_reports` table). Existing accounts default to the
+original 06:00 UTC schedule. Each account's recipient is the address it set in
+the dashboard, falling back to its sign-up email. Team managers control the
+shared delivery schedule for their members.
 
 ---
 

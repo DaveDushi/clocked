@@ -64,3 +64,11 @@ test("dashboard exposes additive device tokens instead of a revoke-all control",
   assert.match(html, /Add device/);
   assert.doesNotMatch(html, /id="regenToken"/);
 });
+
+test("dashboard exposes the complete monthly delivery schedule", async () => {
+  const html = await dashboardResponse().text();
+  assert.match(html, /id="sendDay"/);
+  assert.match(html, /id="sendTime" type="time"/);
+  assert.match(html, /id="sendTimezone"/);
+  assert.match(html, /Intl\.supportedValuesOf\("timeZone"\)/);
+});

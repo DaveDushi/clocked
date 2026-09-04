@@ -7,9 +7,9 @@
   // better-auth imports node:crypto / node:async_hooks at load, so enable Node compat.
   "compatibility_flags": ["nodejs_compat"],
 
-  // 06:00 UTC — monthly report fan-out (acts on each user's send day).
+  // Every minute — report fan-out checks each user's configured local schedule.
   // 14:00 UTC — marketing agent (IndexNow + site tips; optional X if secrets set).
-  "triggers": { "crons": ["0 6 * * *", "0 14 * * *"] },
+  "triggers": { "crons": ["* * * * *", "0 14 * * *"] },
   "routes": [
     { "pattern": "clocked.daviddusi.com", "custom_domain": true },
     { "pattern": "clocked.daviddusi.com/*", "zone_name": "daviddusi.com" }

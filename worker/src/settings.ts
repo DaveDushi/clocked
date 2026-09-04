@@ -1,4 +1,29 @@
 import type { Env } from "./types";
+import {
+  DEFAULT_SEND_TIME,
+  DEFAULT_SEND_TIMEZONE,
+  isValidSendDay,
+  isValidSendTime,
+  isValidTimeZone,
+  type SendSchedule,
+} from "./schedule";
+
+type StoredSchedule = {
+  send_day: number | null;
+  send_time: string | null;
+  send_timezone: string | null;
+};
+
+function normalizeSchedule(row: StoredSchedule | null): SendSchedule {
+  const day = row?.send_day ?? 1;
+  const time = row?.send_time ?? DEFAULT_SEND_TIME;
+  const timezone = row?.send_timezone ?? DEFAULT_SEND_TIMEZONE;
+  return {
+    day: isValidSendDay(day) ? day : 1,
+    time: isValidSendTime(time) ? time : DEFAULT_SEND_TIME,
+    timezone: isValidTimeZone(timezone) ? timezone : DEFAULT_SEND_TIMEZONE,
+  };
+}
 
 /** Read a value from the `settings` key/value table (null if unset). */
 export async function getSetting(env: Env, key: string): Promise<string | null> {
@@ -36,22 +61,30 @@ export async function setMailTo(env: Env, userId: string, value: string): Promis
     .run();
 }
 
-/** Per-user auto-send day of the month. Absent/NULL -> 1 (send on the 1st);
- * 0 means automatic monthly sending is turned off; 99 means the last day. */
-export async function getSendDay(env: Env, userId: string): Promise<number> {
-  const row = await env.DB.prepare("SELECT send_day FROM user_settings WHERE userId = ?")
+/** Per-user delivery schedule. NULL columns retain the historical 06:00 UTC default. */
+export async function getSendSchedule(env: Env, userId: string): Promise<SendSchedule> {
+  const row = await env.DB.prepare(
+    "SELECT send_day, send_time, send_timezone FROM user_settings WHERE userId = ?",
+  )
     .bind(userId)
-    .first<{ send_day: number | null }>();
-  return row?.send_day ?? 1;
+    .first<StoredSchedule>();
+  return normalizeSchedule(row);
 }
 
-/** Upsert a user's auto-send day (0 = disabled, 1..28 = day of month). */
-export async function setSendDay(env: Env, userId: string, day: number): Promise<void> {
+/** Atomically upsert all per-user schedule fields. */
+export async function setSendSchedule(
+  env: Env,
+  userId: string,
+  schedule: SendSchedule,
+): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO user_settings (userId, send_day) VALUES (?, ?)
-     ON CONFLICT(userId) DO UPDATE SET send_day = excluded.send_day`,
+    `INSERT INTO user_settings (userId, send_day, send_time, send_timezone) VALUES (?, ?, ?, ?)
+     ON CONFLICT(userId) DO UPDATE SET
+       send_day = excluded.send_day,
+       send_time = excluded.send_time,
+       send_timezone = excluded.send_timezone`,
   )
-    .bind(userId, day)
+    .bind(userId, schedule.day, schedule.time, schedule.timezone)
     .run();
 }
 
@@ -141,19 +174,31 @@ export async function setOrgMailTo(env: Env, orgId: string, value: string): Prom
     .run();
 }
 
-/** The team's auto-send day (1 default, 0 off, 99 last day). */
-export async function getOrgSendDay(env: Env, orgId: string): Promise<number> {
-  const row = await env.DB.prepare("SELECT send_day FROM org_settings WHERE organizationId = ?")
-    .bind(orgId)
-    .first<{ send_day: number | null }>();
-  return row?.send_day ?? 1;
-}
-export async function setOrgSendDay(env: Env, orgId: string, day: number): Promise<void> {
-  await env.DB.prepare(
-    `INSERT INTO org_settings (organizationId, send_day) VALUES (?, ?)
-     ON CONFLICT(organizationId) DO UPDATE SET send_day = excluded.send_day`,
+/** Organization delivery schedule, shared by every member. */
+export async function getOrgSendSchedule(env: Env, orgId: string): Promise<SendSchedule> {
+  const row = await env.DB.prepare(
+    "SELECT send_day, send_time, send_timezone FROM org_settings WHERE organizationId = ?",
   )
-    .bind(orgId, day)
+    .bind(orgId)
+    .first<StoredSchedule>();
+  return normalizeSchedule(row);
+}
+
+/** Atomically upsert all organization schedule fields. */
+export async function setOrgSendSchedule(
+  env: Env,
+  orgId: string,
+  schedule: SendSchedule,
+): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO org_settings (organizationId, send_day, send_time, send_timezone)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(organizationId) DO UPDATE SET
+       send_day = excluded.send_day,
+       send_time = excluded.send_time,
+       send_timezone = excluded.send_timezone`,
+  )
+    .bind(orgId, schedule.day, schedule.time, schedule.timezone)
     .run();
 }
 
@@ -188,8 +233,46 @@ export async function getEffectiveRecipients(
   return { recipients, managed: true };
 }
 
-/** Effective auto-send day for a user (the team schedule wins in a team). */
-export async function getEffectiveSendDay(env: Env, userId: string): Promise<number> {
+/** Effective schedule for a user (the team schedule wins in a team). */
+export async function getEffectiveSendSchedule(
+  env: Env,
+  userId: string,
+): Promise<SendSchedule> {
   const orgId = await orgIdForUser(env, userId);
-  return orgId ? await getOrgSendDay(env, orgId) : await getSendDay(env, userId);
+  return orgId ? await getOrgSendSchedule(env, orgId) : await getSendSchedule(env, userId);
+}
+
+export interface ScheduledUser {
+  id: string;
+  email: string;
+  schedule: SendSchedule;
+}
+
+/**
+ * Load every account's effective schedule in one query for the per-minute cron.
+ * The earliest membership matches `orgIdForUser`; an org schedule overrides the
+ * personal schedule whenever the user belongs to a team.
+ */
+export async function listUsersWithEffectiveSchedules(env: Env): Promise<ScheduledUser[]> {
+  const res = await env.DB.prepare(
+    `WITH first_membership AS (
+       SELECT userId, organizationId,
+              ROW_NUMBER() OVER (PARTITION BY userId ORDER BY createdAt) AS position
+         FROM member
+     )
+     SELECT u.id, u.email,
+            CASE WHEN fm.organizationId IS NOT NULL THEN os.send_day ELSE us.send_day END AS send_day,
+            CASE WHEN fm.organizationId IS NOT NULL THEN os.send_time ELSE us.send_time END AS send_time,
+            CASE WHEN fm.organizationId IS NOT NULL THEN os.send_timezone ELSE us.send_timezone END AS send_timezone
+       FROM user u
+       LEFT JOIN first_membership fm ON fm.userId = u.id AND fm.position = 1
+       LEFT JOIN user_settings us ON us.userId = u.id
+       LEFT JOIN org_settings os ON os.organizationId = fm.organizationId`,
+  ).all<{ id: string; email: string } & StoredSchedule>();
+
+  return (res.results ?? []).map((row) => ({
+    id: row.id,
+    email: row.email,
+    schedule: normalizeSchedule(row),
+  }));
 }

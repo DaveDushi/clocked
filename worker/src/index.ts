@@ -1,4 +1,5 @@
 import { checkAuth } from "./auth";
+import { userHasProductAccess } from "./access";
 import { makeAuth } from "./auth-server";
 import { dashboardResponse } from "./dashboard";
 import {
@@ -24,23 +25,31 @@ import {
   newsPageResponse,
   runMarketingAgent,
 } from "./marketing-agent";
-import { buildAndSendReport, sendContactSales, sendMonthlyReports, SEND_DAY_LAST } from "./email";
+import { buildAndSendReport, sendContactSales, sendMonthlyReports } from "./email";
 import { handleActivityIngest, projectTotalsForPeriod } from "./activity";
 import { handleIngest } from "./ingest";
 import { buildHoursReport, buildReportCsv, listSessionsForPeriod } from "./report";
 import {
   getEffectiveRecipients,
-  getEffectiveSendDay,
+  getEffectiveSendSchedule,
   getOrgMailTo,
-  getOrgSendDay,
+  getOrgSendSchedule,
   managerEmailsForOrg,
   orgIdForUser,
   parseRecipients,
   setMailTo,
   setOrgMailTo,
-  setOrgSendDay,
-  setSendDay,
+  setOrgSendSchedule,
+  setSendSchedule,
 } from "./settings";
+import {
+  DEFAULT_SEND_TIME,
+  DEFAULT_SEND_TIMEZONE,
+  isValidSendDay,
+  isValidSendTime,
+  isValidTimeZone,
+  type SendSchedule,
+} from "./schedule";
 import {
   getOrCreateToken,
   listTokens,
@@ -51,7 +60,7 @@ import {
   rotateToken,
   userIdForToken,
 } from "./tokens";
-import { localYMD, previousMonthPeriod, wallToUtc } from "./time";
+import { previousMonthPeriod, wallToUtc } from "./time";
 import {
   effectiveMemberCap,
   effectiveOrgPlan,
@@ -66,7 +75,6 @@ import {
   ensureTeamOrg,
   handleWebhook,
   isSelfServePlan,
-  userHasPaidAccess,
 } from "./billing";
 import { clientIp, rateLimitAllowDurable } from "./rate-limit";
 import {
@@ -89,20 +97,17 @@ export default {
   },
 
   // Cron schedules (wrangler.jsonc):
-  //   0 6 * * *  — monthly timesheet emails (per-user send day in REPORT_TZ)
+  //   * * * * *   — monthly timesheet emails (per-user day, time, and timezone)
   //   0 14 * * * — marketing agent (IndexNow + site tips; optional X)
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const now = new Date(controller.scheduledTime);
-    if (now.getUTCHours() === 14) {
+    if (controller.cron === "0 14 * * *") {
       ctx.waitUntil(
         runMarketingAgent(env).then((r) => console.log("marketing agent:", r.summary)),
       );
       return;
     }
-    const { y, m, d } = localYMD(now, env.REPORT_TZ);
-    const lastDayOfMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
-    const period = previousMonthPeriod(now, env.REPORT_TZ);
-    ctx.waitUntil(sendMonthlyReports(env, period, { force: false, dayOfMonth: d, lastDayOfMonth }));
+    ctx.waitUntil(sendMonthlyReports(env, now));
   },
 } satisfies ExportedHandler<Env>;
 
@@ -275,7 +280,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     if (!user) return json({ error: "unauthorized" }, 401);
     const orgs = user.emailVerified ? await membershipsFor(env, user.id) : [];
     const manager = orgs.some((o) => isManagerRole(o.role));
-    const hasAccess = user.emailVerified && orgs.some((o) => o.paid);
+    const hasAccess = user.emailVerified && (await userHasProductAccess(env, user.id));
     const waitingOnTeam =
       user.emailVerified &&
       !hasAccess &&
@@ -339,9 +344,12 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const orgId = url.searchParams.get("organizationId") ?? "";
     if (!(await isManagerOf(env, user.id, orgId))) return json({ error: "forbidden" }, 403);
     if (req.method === "GET") {
+      const schedule = await getOrgSendSchedule(env, orgId);
       return json({
         recipients: parseRecipients(await getOrgMailTo(env, orgId)),
-        sendDay: await getOrgSendDay(env, orgId),
+        sendDay: schedule.day,
+        sendTime: schedule.time,
+        sendTimezone: schedule.timezone,
         defaultRecipients: await managerEmailsForOrg(env, orgId),
       });
     }
@@ -349,6 +357,8 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
       const body = (await req.json().catch(() => ({}))) as {
         recipients?: unknown;
         sendDay?: unknown;
+        sendTime?: unknown;
+        sendTimezone?: unknown;
       };
       const recipients = Array.isArray(body.recipients)
         ? body.recipients.map((r) => (typeof r === "string" ? r.trim() : "")).filter(Boolean)
@@ -356,16 +366,17 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
       if (recipients.length === 0) return json({ error: "at least one recipient required" }, 400);
       if (recipients.length > 20) return json({ error: "too many recipients" }, 400);
       if (!recipients.every(isEmail)) return json({ error: "invalid email" }, 400);
-      let sendDay = 1;
-      if (body.sendDay !== undefined) {
-        const n = Number(body.sendDay);
-        const valid = n === 0 || n === SEND_DAY_LAST || (n >= 1 && n <= 28);
-        if (!Number.isInteger(n) || !valid) return json({ error: "invalid send day" }, 400);
-        sendDay = n;
-      }
+      const schedule = parseSendSchedule(body);
+      if (typeof schedule === "string") return json({ error: schedule }, 400);
       await setOrgMailTo(env, orgId, recipients.join("\n"));
-      await setOrgSendDay(env, orgId, sendDay);
-      return json({ ok: true, recipients, sendDay });
+      await setOrgSendSchedule(env, orgId, schedule);
+      return json({
+        ok: true,
+        recipients,
+        sendDay: schedule.day,
+        sendTime: schedule.time,
+        sendTimezone: schedule.timezone,
+      });
     }
   }
 
@@ -511,9 +522,12 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     if (user instanceof Response) return user;
     if (req.method === "GET") {
       const eff = await getEffectiveRecipients(env, user.id, user.email);
+      const schedule = await getEffectiveSendSchedule(env, user.id);
       return json({
         recipients: eff.recipients,
-        sendDay: await getEffectiveSendDay(env, user.id),
+        sendDay: schedule.day,
+        sendTime: schedule.time,
+        sendTimezone: schedule.timezone,
         managed: eff.managed,
       });
     }
@@ -524,6 +538,8 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
       const body = (await req.json().catch(() => ({}))) as {
         recipients?: unknown;
         sendDay?: unknown;
+        sendTime?: unknown;
+        sendTimezone?: unknown;
       };
       const recipients = Array.isArray(body.recipients)
         ? body.recipients.map((r) => (typeof r === "string" ? r.trim() : "")).filter(Boolean)
@@ -531,16 +547,17 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
       if (recipients.length === 0) return json({ error: "at least one recipient required" }, 400);
       if (recipients.length > 20) return json({ error: "too many recipients" }, 400);
       if (!recipients.every(isEmail)) return json({ error: "invalid email" }, 400);
-      let sendDay = 1;
-      if (body.sendDay !== undefined) {
-        const n = Number(body.sendDay);
-        const valid = n === 0 || n === SEND_DAY_LAST || (n >= 1 && n <= 28);
-        if (!Number.isInteger(n) || !valid) return json({ error: "invalid send day" }, 400);
-        sendDay = n;
-      }
+      const schedule = parseSendSchedule(body);
+      if (typeof schedule === "string") return json({ error: schedule }, 400);
       await setMailTo(env, user.id, recipients.join("\n"));
-      await setSendDay(env, user.id, sendDay);
-      return json({ ok: true, recipients, sendDay });
+      await setSendSchedule(env, user.id, schedule);
+      return json({
+        ok: true,
+        recipients,
+        sendDay: schedule.day,
+        sendTime: schedule.time,
+        sendTimezone: schedule.timezone,
+      });
     }
   }
 
@@ -580,7 +597,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
     const userId = await userIdForToken(env, bearer);
     if (userId) {
-      if (!(await userHasPaidAccess(env, userId))) {
+      if (!(await userHasProductAccess(env, userId))) {
         return json({ error: "subscription required" }, 402);
       }
       if (!(await rateLimitAllowDurable(env.DB, `sessions:user:${userId}`, 120, 60_000))) {
@@ -603,7 +620,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
     const userId = await userIdForToken(env, bearer);
     if (!userId) return json({ error: "unauthorized" }, 401);
-    if (!(await userHasPaidAccess(env, userId))) {
+    if (!(await userHasProductAccess(env, userId))) {
       return json({ error: "subscription required" }, 402);
     }
     if (!(await rateLimitAllowDurable(env.DB, `activity:user:${userId}`, 120, 60_000))) {
@@ -651,8 +668,8 @@ async function requireVerifiedUser(
 }
 
 /**
- * Verified user on a paid org (owner or member). Used for product APIs.
- * Billing/checkout stays on requireVerifiedUser so unpaid users can subscribe.
+ * Verified user with paid or complimentary access. Used for product APIs.
+ * Billing/checkout stays on requireVerifiedUser so users can subscribe.
  */
 async function requirePaidUser(
   req: Request,
@@ -660,7 +677,7 @@ async function requirePaidUser(
 ): Promise<SessionUser | Response> {
   const user = await requireVerifiedUser(req, env);
   if (user instanceof Response) return user;
-  if (!(await userHasPaidAccess(env, user.id))) {
+  if (!(await userHasProductAccess(env, user.id))) {
     return json({ error: "subscription required" }, 402);
   }
   return user;
@@ -909,6 +926,33 @@ async function deleteUserClockedData(env: Env, userId: string): Promise<void> {
       console.error("deleteUserClockedData step failed:", String((e as Error)?.message ?? e));
     }
   }
+}
+
+function parseSendSchedule(body: {
+  sendDay?: unknown;
+  sendTime?: unknown;
+  sendTimezone?: unknown;
+}): SendSchedule | string {
+  const day = body.sendDay === undefined ? 1 : Number(body.sendDay);
+  if (!isValidSendDay(day)) return "invalid send day";
+
+  const time =
+    body.sendTime === undefined
+      ? DEFAULT_SEND_TIME
+      : typeof body.sendTime === "string"
+        ? body.sendTime.trim()
+        : body.sendTime;
+  if (!isValidSendTime(time)) return "invalid send time";
+
+  const timezone =
+    body.sendTimezone === undefined
+      ? DEFAULT_SEND_TIMEZONE
+      : typeof body.sendTimezone === "string"
+        ? body.sendTimezone.trim()
+        : body.sendTimezone;
+  if (!isValidTimeZone(timezone)) return "invalid timezone";
+
+  return { day, time, timezone };
 }
 
 function isEmail(s: string): boolean {
