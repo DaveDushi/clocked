@@ -101,12 +101,6 @@ unsafe extern "C" {
     fn app_indicator_set_menu(indicator: Widget, menu: Widget);
     fn app_indicator_set_title(indicator: Widget, title: *const c_char);
     fn app_indicator_set_icon_theme_path(indicator: Widget, path: *const c_char);
-    fn app_indicator_set_tooltip_full(
-        indicator: Widget,
-        icon: *const c_char,
-        title: *const c_char,
-        body: *const c_char,
-    );
 }
 
 #[link(name = "gobject-2.0")]
@@ -371,13 +365,11 @@ pub fn indicator(menu: Widget, icon_name: &str, icon_theme_path: Option<&str>) -
     }
 }
 
-pub fn tooltip(indicator: Widget, icon_name: &str, body: &str) {
-    let icon = c(icon_name);
-    let title = c("clocked");
+// Ayatana AppIndicator has no tooltip API; the title is what tray hosts (e.g.
+// the GNOME AppIndicator extension) surface on hover, so route status there.
+pub fn tooltip(indicator: Widget, _icon_name: &str, body: &str) {
     let body = c(body);
-    unsafe {
-        app_indicator_set_tooltip_full(indicator, icon.as_ptr(), title.as_ptr(), body.as_ptr())
-    }
+    unsafe { app_indicator_set_title(indicator, body.as_ptr()) }
 }
 
 struct PopoverAttempt {
