@@ -245,7 +245,7 @@ pub fn today_total_secs(conn: &Connection, now: DateTime<Utc>) -> rusqlite::Resu
 /// Record a foreground activity segment: `secs` credited to `project`, tagged
 /// with the app, optional full title (opt-in), and privacy-safe context (domain
 /// / document). Raw rows stay local; daily aggregates sync without titles/context.
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg(test)]
 pub fn record_activity(
     conn: &Connection,
     now: DateTime<Utc>,

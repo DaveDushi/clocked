@@ -67,6 +67,7 @@ impl Rules {
     ///
     /// `title` is the raw window title; `context` is the privacy-safe inferred
     /// label (domain or document). Rules match either string.
+    #[cfg(test)]
     pub fn classify(&self, app: &str, title: &str) -> String {
         self.classify_with_context(app, title, "")
     }

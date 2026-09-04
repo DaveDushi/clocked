@@ -485,7 +485,7 @@ unsafe fn show_menu(hwnd: HWND, ptr: *mut AppState) {
             // one-time login URL off the UI thread (network), falling back to
             // the plain dashboard if that's unavailable. open_url just launches
             // the default browser, which is safe from a background thread.
-            let cfg = (*ptr).config.clone();
+            let cfg = (*ptr).core.config.clone();
             std::thread::spawn(move || {
                 let url = crate::sync::desktop_login_url(&cfg).unwrap_or(worker_url);
                 open_url(&url);

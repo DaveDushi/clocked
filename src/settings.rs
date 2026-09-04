@@ -6,6 +6,11 @@
 //! Saving writes `config.toml` and posts `saved_msg` back to the main window so
 //! the running app reloads live.
 
+// The control-builder helpers below mirror CreateWindowExW's wide parameter
+// list (position, size, style, font, id); grouping them into a struct would
+// obscure call sites more than it clarifies.
+#![allow(clippy::too_many_arguments)]
+
 use core::ffi::c_void;
 use std::cell::{Cell, RefCell};
 
@@ -905,7 +910,7 @@ fn bucket_names(rules: &crate::rules::Rules) -> Vec<String> {
             rest.push(p.to_string());
         }
     }
-    rest.sort_by(|a, b| a.to_ascii_lowercase().cmp(&b.to_ascii_lowercase()));
+    rest.sort_by_key(|a| a.to_ascii_lowercase());
     names.extend(rest);
     names
 }
@@ -1398,7 +1403,7 @@ unsafe fn time_picker(
         WINDOW_EX_STYLE(0),
         w!("SysDateTimePick32"),
         PCWSTR::null(),
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(DTS_TIMEFORMAT as u32),
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(DTS_TIMEFORMAT),
         x,
         y,
         w,

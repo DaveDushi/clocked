@@ -64,7 +64,7 @@ mod windows_impl {
     }
 
     fn protect(plain: &str) -> Result<Vec<u8>, String> {
-        let mut input = CRYPT_INTEGER_BLOB {
+        let input = CRYPT_INTEGER_BLOB {
             cbData: plain.len() as u32,
             pbData: plain.as_ptr() as *mut u8,
         };
@@ -74,7 +74,7 @@ mod windows_impl {
         };
         unsafe {
             CryptProtectData(
-                &mut input,
+                &input,
                 PWSTR::null(),
                 None,
                 None,
@@ -91,7 +91,7 @@ mod windows_impl {
     }
 
     fn unprotect(blob: &[u8]) -> Result<String, String> {
-        let mut input = CRYPT_INTEGER_BLOB {
+        let input = CRYPT_INTEGER_BLOB {
             cbData: blob.len() as u32,
             pbData: blob.as_ptr() as *mut u8,
         };
@@ -101,7 +101,7 @@ mod windows_impl {
         };
         unsafe {
             CryptUnprotectData(
-                &mut input,
+                &input,
                 Some(ptr::null_mut()),
                 None,
                 None,
