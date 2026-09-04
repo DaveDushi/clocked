@@ -11,9 +11,10 @@ pub type Widget = *mut c_void;
 pub type Callback = unsafe extern "C" fn(Widget, *mut c_void);
 pub type TimerCallback = unsafe extern "C" fn(*mut c_void) -> c_int;
 
+const GTK_ORIENTATION_HORIZONTAL: c_int = 0;
 const GTK_ORIENTATION_VERTICAL: c_int = 1;
-const GTK_RESPONSE_CANCEL: c_int = -6;
-const GTK_RESPONSE_ACCEPT: c_int = -3;
+pub const RESPONSE_CANCEL: c_int = -6;
+pub const RESPONSE_ACCEPT: c_int = -3;
 const GTK_RESPONSE_YES: c_int = -8;
 const GTK_RESPONSE_NO: c_int = -9;
 const GDK_WINDOW_TYPE_HINT_DIALOG: c_int = 1;
@@ -59,15 +60,38 @@ unsafe extern "C" {
         fill: c_int,
         padding: c_uint,
     );
+    fn gtk_grid_new() -> Widget;
+    fn gtk_grid_set_row_spacing(grid: Widget, spacing: c_uint);
+    fn gtk_grid_set_column_spacing(grid: Widget, spacing: c_uint);
+    fn gtk_grid_attach(
+        grid: Widget,
+        child: Widget,
+        left: c_int,
+        top: c_int,
+        width: c_int,
+        height: c_int,
+    );
     fn gtk_label_new(text: *const c_char) -> Widget;
     fn gtk_label_set_line_wrap(label: Widget, wrap: c_int);
     fn gtk_label_set_max_width_chars(label: Widget, count: c_int);
+    fn gtk_label_set_xalign(label: Widget, alignment: f32);
     fn gtk_entry_new() -> Widget;
+    fn gtk_entry_set_text(entry: Widget, text: *const c_char);
     fn gtk_entry_set_placeholder_text(entry: Widget, text: *const c_char);
     fn gtk_entry_set_visibility(entry: Widget, visible: c_int);
     fn gtk_entry_set_activates_default(entry: Widget, setting: c_int);
     fn gtk_entry_get_text(entry: Widget) -> *const c_char;
-    fn gtk_widget_grab_focus(widget: Widget);
+    fn gtk_check_button_new_with_label(label: *const c_char) -> Widget;
+    fn gtk_toggle_button_set_active(button: Widget, active: c_int);
+    fn gtk_toggle_button_get_active(button: Widget) -> c_int;
+    fn gtk_spin_button_new_with_range(min: f64, max: f64, step: f64) -> Widget;
+    fn gtk_spin_button_set_value(spin: Widget, value: f64);
+    fn gtk_spin_button_get_value(spin: Widget) -> f64;
+    fn gtk_spin_button_set_digits(spin: Widget, digits: c_uint);
+    fn gtk_expander_new(label: *const c_char) -> Widget;
+    fn gtk_expander_set_expanded(expander: Widget, expanded: c_int);
+    fn gtk_container_add(container: Widget, child: Widget);
+    fn gtk_widget_set_hexpand(widget: Widget, expand: c_int);
 }
 
 #[link(name = "ayatana-appindicator3")]
@@ -176,6 +200,152 @@ pub fn set_sensitive(widget: Widget, sensitive: bool) {
 pub fn set_label(widget: Widget, label: &str) {
     let label = c(label);
     unsafe { gtk_menu_item_set_label(widget, label.as_ptr()) }
+}
+
+pub fn dialog(title: &str, width: i32, height: i32) -> Widget {
+    unsafe {
+        let dialog = gtk_dialog_new();
+        let title = c(title);
+        gtk_window_set_title(dialog, title.as_ptr());
+        gtk_window_set_default_size(dialog, width, height);
+        gtk_window_set_resizable(dialog, 1);
+        dialog
+    }
+}
+
+pub fn dialog_content(dialog: Widget, border: u32) -> Widget {
+    unsafe {
+        let area = gtk_dialog_get_content_area(dialog);
+        gtk_container_set_border_width(area, border);
+        area
+    }
+}
+
+pub fn dialog_button(dialog: Widget, label: &str, response: i32) -> Widget {
+    let label = c(label);
+    unsafe { gtk_dialog_add_button(dialog, label.as_ptr(), response) }
+}
+
+pub fn dialog_default(dialog: Widget, response: i32) {
+    unsafe { gtk_dialog_set_default_response(dialog, response) }
+}
+
+pub fn dialog_run_modal(dialog: Widget) -> i32 {
+    unsafe {
+        gtk_widget_show_all(dialog);
+        gtk_dialog_run(dialog)
+    }
+}
+
+pub fn destroy(widget: Widget) {
+    unsafe { gtk_widget_destroy(widget) }
+}
+
+pub fn box_layout(horizontal: bool, spacing: i32) -> Widget {
+    unsafe {
+        gtk_box_new(
+            if horizontal {
+                GTK_ORIENTATION_HORIZONTAL
+            } else {
+                GTK_ORIENTATION_VERTICAL
+            },
+            spacing,
+        )
+    }
+}
+
+pub fn pack(container: Widget, child: Widget, expand: bool) {
+    unsafe { gtk_box_pack_start(container, child, expand as c_int, expand as c_int, 0) }
+}
+
+pub fn grid(row_spacing: u32, column_spacing: u32) -> Widget {
+    unsafe {
+        let grid = gtk_grid_new();
+        gtk_grid_set_row_spacing(grid, row_spacing);
+        gtk_grid_set_column_spacing(grid, column_spacing);
+        gtk_widget_set_hexpand(grid, 1);
+        grid
+    }
+}
+
+pub fn grid_attach(grid: Widget, child: Widget, left: i32, top: i32, width: i32) {
+    unsafe { gtk_grid_attach(grid, child, left, top, width, 1) }
+}
+
+pub fn label(text: &str) -> Widget {
+    let text = c(text);
+    unsafe {
+        let label = gtk_label_new(text.as_ptr());
+        gtk_label_set_xalign(label, 0.0);
+        label
+    }
+}
+
+pub fn wrapping_label(text: &str) -> Widget {
+    let label = label(text);
+    unsafe { gtk_label_set_line_wrap(label, 1) };
+    label
+}
+
+pub fn entry(text: &str, placeholder: &str, secret: bool) -> Widget {
+    unsafe {
+        let entry = gtk_entry_new();
+        let text = c(text);
+        let placeholder = c(placeholder);
+        gtk_entry_set_text(entry, text.as_ptr());
+        gtk_entry_set_placeholder_text(entry, placeholder.as_ptr());
+        gtk_entry_set_visibility(entry, (!secret) as c_int);
+        gtk_entry_set_activates_default(entry, 1);
+        gtk_widget_set_hexpand(entry, 1);
+        entry
+    }
+}
+
+pub fn entry_text(entry: Widget) -> String {
+    unsafe {
+        let text = gtk_entry_get_text(entry);
+        if text.is_null() {
+            String::new()
+        } else {
+            CStr::from_ptr(text).to_string_lossy().into_owned()
+        }
+    }
+}
+
+pub fn checkbox(label: &str, active: bool) -> Widget {
+    let label = c(label);
+    unsafe {
+        let button = gtk_check_button_new_with_label(label.as_ptr());
+        gtk_toggle_button_set_active(button, active as c_int);
+        button
+    }
+}
+
+pub fn checked(button: Widget) -> bool {
+    unsafe { gtk_toggle_button_get_active(button) != 0 }
+}
+
+pub fn spin(min: f64, max: f64, step: f64, value: f64, digits: u32) -> Widget {
+    unsafe {
+        let spin = gtk_spin_button_new_with_range(min, max, step);
+        gtk_spin_button_set_value(spin, value);
+        gtk_spin_button_set_digits(spin, digits);
+        spin
+    }
+}
+
+pub fn spin_value(spin: Widget) -> f64 {
+    unsafe { gtk_spin_button_get_value(spin) }
+}
+
+pub fn expander(label: &str, child: Widget) -> Widget {
+    let label = c(label);
+    unsafe {
+        let expander = gtk_expander_new(label.as_ptr());
+        gtk_expander_set_expanded(expander, 0);
+        gtk_container_add(expander, child);
+        expander
+    }
 }
 
 pub fn indicator(menu: Widget, icon_name: &str, icon_theme_path: Option<&str>) -> Widget {
@@ -372,51 +542,5 @@ pub fn ask(title: &str, body: &str, yes: &str, no: &str) -> bool {
         let response = gtk_dialog_run(dialog);
         gtk_widget_destroy(dialog);
         response == GTK_RESPONSE_YES
-    }
-}
-
-pub fn text_input(title: &str, body: &str, placeholder: &str) -> Option<String> {
-    unsafe {
-        let dialog = gtk_dialog_new();
-        let title = c(title);
-        gtk_window_set_title(dialog, title.as_ptr());
-        gtk_window_set_default_size(dialog, 480, 150);
-        let area = gtk_dialog_get_content_area(dialog);
-        gtk_container_set_border_width(area, 18);
-        let column = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
-        gtk_box_pack_start(area, column, 1, 1, 0);
-
-        let body = c(body);
-        let label = gtk_label_new(body.as_ptr());
-        gtk_label_set_line_wrap(label, 1);
-        gtk_box_pack_start(column, label, 0, 0, 0);
-
-        let entry = gtk_entry_new();
-        let placeholder = c(placeholder);
-        gtk_entry_set_placeholder_text(entry, placeholder.as_ptr());
-        gtk_entry_set_visibility(entry, 0);
-        gtk_entry_set_activates_default(entry, 1);
-        gtk_box_pack_start(column, entry, 0, 0, 0);
-
-        let cancel = c("Cancel");
-        let save = c("Save");
-        gtk_dialog_add_button(dialog, cancel.as_ptr(), GTK_RESPONSE_CANCEL);
-        gtk_dialog_add_button(dialog, save.as_ptr(), GTK_RESPONSE_ACCEPT);
-        gtk_dialog_set_default_response(dialog, GTK_RESPONSE_ACCEPT);
-        gtk_widget_show_all(dialog);
-        gtk_widget_grab_focus(entry);
-        let response = gtk_dialog_run(dialog);
-        let result = if response == GTK_RESPONSE_ACCEPT {
-            let text = gtk_entry_get_text(entry);
-            if text.is_null() {
-                None
-            } else {
-                Some(CStr::from_ptr(text).to_string_lossy().trim().to_string())
-            }
-        } else {
-            None
-        };
-        gtk_widget_destroy(dialog);
-        result.filter(|s| !s.is_empty())
     }
 }

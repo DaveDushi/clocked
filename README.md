@@ -86,6 +86,10 @@ the sync token, and logind/desktop integration for lock and suspend handling.
 Hyprland on Omarchy is fully supported; other Wayland desktops work when they
 provide the idle-notify protocol and update logind's `LockedHint`.
 
+Choose **Settings…** from the tray menu to edit sync, idle, goal, working-hours,
+privacy, and startup options in a native GTK panel. Saving applies the changes
+to the running tracker immediately.
+
 On Arch/Omarchy, install build dependencies if needed and install for the
 current user:
 

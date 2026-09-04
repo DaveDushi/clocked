@@ -2,6 +2,7 @@
 //! Hyprland/logind lock detection, and suspend-aware session accounting.
 
 mod gtk;
+mod settings;
 
 use std::fs::{File, OpenOptions};
 use std::ops::{Deref, DerefMut};
@@ -152,7 +153,7 @@ impl AppState {
     fn start_sync(&mut self, manual: bool) {
         if !self.config.is_configured() {
             if manual {
-                notify("Add your sync token from the clocked tray menu first.");
+                notify("Add your sync token in Settings first.");
             }
             return;
         }
@@ -196,21 +197,6 @@ impl AppState {
         });
     }
 
-    fn save_sync_token(&mut self, token: String) {
-        self.config.bearer_token = token;
-        match self.config.save() {
-            Ok(()) => {
-                self.core.reload();
-                notify("Sync token saved securely.");
-                self.do_sync();
-            }
-            Err(e) => {
-                crate::logln!("save token error: {e}");
-                notify(&format!("Could not save the token: {e}"));
-            }
-        }
-    }
-
     fn open_timesheet(&self) {
         let config = self.config.clone();
         let fallback = config.effective_worker_url().to_string();
@@ -225,18 +211,33 @@ impl AppState {
         });
     }
 
-    fn open_settings(&self) {
-        if let Some(path) = crate::paths::config_file() {
-            if let Err(e) = open_settings_file(&path) {
-                crate::logln!("open settings error: {e}");
-                notify(&format!("Could not open settings: {e}"));
+    fn apply_settings(&mut self, update: settings::Update, autostart: bool) {
+        if let Err(e) = update.config.save() {
+            crate::logln!("settings save error: {e}");
+            notify(&format!("Could not save settings: {e}"));
+            return;
+        }
+
+        let mut autostart_error = None;
+        if update.autostart != autostart {
+            let result = if update.autostart {
+                crate::autostart::enable()
+            } else {
+                crate::autostart::disable()
+            };
+            if let Err(e) = result {
+                crate::logln!("autostart update error: {e}");
+                autostart_error = Some(e);
             }
         }
-    }
-
-    fn reload_settings(&mut self) {
         self.core.reload();
-        notify("Settings reloaded.");
+        if let Some(e) = autostart_error {
+            notify(&format!(
+                "Settings saved, but start at login could not be updated: {e}"
+            ));
+        } else {
+            notify("Settings saved.");
+        }
         self.do_sync();
         self.refresh_ui();
     }
@@ -303,33 +304,6 @@ impl AppState {
     }
 }
 
-/// Open the hand-editable config in the desktop's editor.
-///
-/// On Hyprland, `xdg-open` uses its generic launcher. That launcher does not
-/// honor `Terminal=true` in desktop files, so terminal editors such as Neovim
-/// are started without a terminal and disappear immediately. Omarchy's editor
-/// launcher handles both terminal and graphical editor choices correctly.
-fn open_settings_file(path: &std::path::Path) -> std::io::Result<()> {
-    let omarchy = Command::new("omarchy-launch-editor")
-        .arg(path)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn();
-
-    match omarchy {
-        Ok(_) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Command::new("xdg-open")
-            .arg(path)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map(|_| ()),
-        Err(e) => Err(e),
-    }
-}
-
 struct Ui {
     indicator: gtk::Widget,
     icon_name: String,
@@ -352,9 +326,7 @@ impl Ui {
         gtk::menu_item(menu, "Open timesheet", Some(on_timesheet), data);
         gtk::menu_item(menu, "Sync now", Some(on_sync), data);
         gtk::separator(menu);
-        gtk::menu_item(menu, "Set sync token…", Some(on_token), data);
-        gtk::menu_item(menu, "Open settings file", Some(on_settings), data);
-        gtk::menu_item(menu, "Reload settings", Some(on_reload), data);
+        gtk::menu_item(menu, "Settings…", Some(on_settings), data);
         let autostart = gtk::menu_item(menu, "Enable start at login", Some(on_autostart), data);
         gtk::separator(menu);
         gtk::menu_item(menu, "Quit", Some(on_quit), data);
@@ -447,26 +419,18 @@ callback!(on_sync, |app: &mut AppState| {
     app.start_sync(true);
     Vec::new()
 });
-unsafe extern "C" fn on_token(_: gtk::Widget, data: *mut std::ffi::c_void) {
+unsafe extern "C" fn on_settings(_: gtk::Widget, data: *mut std::ffi::c_void) {
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let Some(token) = gtk::text_input(
-            "Set clocked sync token",
-            "Paste the clk_… token from your clocked dashboard. It will be stored in your desktop keyring.",
-            "clk_…",
-        ) else {
-            return;
-        };
-        (&mut *data.cast::<AppState>()).save_sync_token(token);
+        let app = data.cast::<AppState>();
+        // Do not hold a Rust borrow of AppState while gtk_dialog_run spins its
+        // nested event loop: heartbeat timer callbacks remain live underneath.
+        let current = (&*app).config.clone();
+        let autostart = crate::autostart::is_enabled();
+        if let Some(update) = settings::show(&current, autostart) {
+            (&mut *app).apply_settings(update, autostart);
+        }
     }));
 }
-callback!(on_settings, |app: &mut AppState| {
-    app.open_settings();
-    Vec::new()
-});
-callback!(on_reload, |app: &mut AppState| {
-    app.reload_settings();
-    Vec::new()
-});
 callback!(on_autostart, |app: &mut AppState| {
     app.toggle_autostart();
     Vec::new()
