@@ -1,5 +1,5 @@
 import type { Env } from "./types";
-import { getTrackProjects, setTrackProjects } from "./settings";
+import { getTrackProjects, setTrackProjects } from "./settings.js";
 
 /** Max day-aggregate rows accepted in a single POST /activity. */
 export const MAX_ACTIVITY_ROWS = 2000;

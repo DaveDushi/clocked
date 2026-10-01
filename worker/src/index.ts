@@ -266,11 +266,12 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   if (url.pathname === "/api/hours" && req.method === "GET") {
     const user = await requirePaidUser(req, env);
     if (user instanceof Response) return user;
-    const period = resolvePeriod(url, env);
+    const schedule = await getEffectiveSendSchedule(env, user.id);
+    const period = resolvePeriod(url, schedule.timezone);
     if (!period) return json({ error: "invalid period" }, 400);
-    const report = await buildHoursReport(env, period, user.id);
+    const report = await buildHoursReport(env, period, user.id, schedule.timezone);
     const projects = await projectTotalsForPeriod(env, user.id, period);
-    const sessions = await listSessionsForPeriod(env, period, user.id);
+    const sessions = await listSessionsForPeriod(env, period, user.id, schedule.timezone);
     return json({ ...report, projects, sessions });
   }
 
@@ -327,14 +328,15 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     if (!targetId || !(await isMemberOf(env, targetId, orgId))) {
       return json({ error: "user is not in your organization" }, 403);
     }
-    const period = resolvePeriod(url, env);
+    const schedule = await getOrgSendSchedule(env, orgId);
+    const period = resolvePeriod(url, schedule.timezone);
     if (!period) return json({ error: "invalid period" }, 400);
     if (url.pathname === "/api/team/preview") {
-      const csv = await buildReportCsv(env, period, targetId);
+      const csv = await buildReportCsv(env, period, targetId, schedule.timezone);
       return new Response(csv, { status: 200, headers: { "content-type": "text/csv" } });
     }
-    const report = await buildHoursReport(env, period, targetId);
-    const sessions = await listSessionsForPeriod(env, period, targetId);
+    const report = await buildHoursReport(env, period, targetId, schedule.timezone);
+    const sessions = await listSessionsForPeriod(env, period, targetId, schedule.timezone);
     return json({ ...report, sessions });
   }
 
@@ -389,7 +391,8 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     if (!targetId || !(await isMemberOf(env, targetId, orgId))) {
       return json({ error: "user is not in your organization" }, 403);
     }
-    return handleManualSession(req, url, env, targetId);
+    const schedule = await getOrgSendSchedule(env, orgId);
+    return handleManualSession(req, url, env, targetId, schedule.timezone);
   }
 
   // ---- Billing (Stripe).
@@ -487,7 +490,8 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
         return json({ error: "too many requests" }, 429);
       }
     }
-    return handleManualSession(req, url, env, user.id);
+    const schedule = await getEffectiveSendSchedule(env, user.id);
+    return handleManualSession(req, url, env, user.id, schedule.timezone);
   }
 
   // Privacy: export this account's cloud data (sessions + activity aggregates).
@@ -564,9 +568,10 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   if (req.method === "GET" && url.pathname === "/preview") {
     const user = await requirePaidUser(req, env);
     if (user instanceof Response) return user;
-    const period = resolvePeriod(url, env);
+    const schedule = await getEffectiveSendSchedule(env, user.id);
+    const period = resolvePeriod(url, schedule.timezone);
     if (!period) return json({ error: "invalid period" }, 400);
-    const csv = await buildReportCsv(env, period, user.id);
+    const csv = await buildReportCsv(env, period, user.id, schedule.timezone);
     return new Response(csv, { status: 200, headers: { "content-type": "text/csv" } });
   }
 
@@ -577,10 +582,16 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     if (!(await rateLimitAllowDurable(env.DB, `send:${user.id}`, 3, 60 * 60_000))) {
       return json({ error: "too many sends; try again later" }, 429);
     }
-    const period = resolvePeriod(url, env);
+    const schedule = await getEffectiveSendSchedule(env, user.id);
+    const period = resolvePeriod(url, schedule.timezone);
     if (!period) return json({ error: "invalid period" }, 400);
     const { recipients: to } = await getEffectiveRecipients(env, user.id, user.email);
-    const result = await buildAndSendReport(env, period, { force: true, userId: user.id, to });
+    const result = await buildAndSendReport(env, period, {
+      force: true,
+      userId: user.id,
+      to,
+      timezone: schedule.timezone,
+    });
     return json(
       result.ok
         ? { ok: true, period: result.period, rows: result.rows, recipients: to.length }
@@ -632,9 +643,9 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   return json({ error: "not found" }, 404);
 }
 
-function resolvePeriod(url: URL, env: Env): string | null {
+function resolvePeriod(url: URL, timezone: string): string | null {
   const raw = url.searchParams.get("period");
-  if (raw == null || raw === "") return previousMonthPeriod(new Date(), env.REPORT_TZ);
+  if (raw == null || raw === "") return previousMonthPeriod(new Date(), timezone);
   return parsePeriodParam(raw);
 }
 
@@ -775,11 +786,12 @@ async function handleManualSession(
   url: URL,
   env: Env,
   userId: string,
+  timezone: string,
 ): Promise<Response> {
   if (req.method === "GET") {
-    const period = resolvePeriod(url, env);
+    const period = resolvePeriod(url, timezone);
     if (!period) return json({ error: "invalid period" }, 400);
-    const entries = await listSessionsForPeriod(env, period, userId);
+    const entries = await listSessionsForPeriod(env, period, userId, timezone);
     return json({ entries });
   }
 
@@ -848,8 +860,8 @@ async function handleManualSession(
     if (eh * 60 + emi - (sh * 60 + smi) > 24 * 60) {
       return json({ error: "session too long" }, 400);
     }
-    const startUtc = wallToUtc(y, m, d, sh, smi, 0, env.REPORT_TZ);
-    const endUtc = wallToUtc(y, m, d, eh, emi, 0, env.REPORT_TZ);
+    const startUtc = wallToUtc(y, m, d, sh, smi, 0, timezone);
+    const endUtc = wallToUtc(y, m, d, eh, emi, 0, timezone);
     if (!(endUtc.getTime() > startUtc.getTime())) {
       return json({ error: "clock-out must be after clock-in" }, 400);
     }
