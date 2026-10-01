@@ -6,7 +6,7 @@ import {
   isValidSendTime,
   isValidTimeZone,
   type SendSchedule,
-} from "./schedule";
+} from "./schedule.js";
 
 type StoredSchedule = {
   send_day: number | null;

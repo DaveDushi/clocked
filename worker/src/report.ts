@@ -1,18 +1,18 @@
 import type { Env } from "./types";
-import { projectTotalsForPeriod } from "./activity";
-import { expandCalendarDays } from "./calendar-days";
+import { projectTotalsForPeriod } from "./activity.js";
+import { expandCalendarDays } from "./calendar-days.js";
 import {
   mergeTimeIntervals,
   unionMinutes,
   type TimeInterval,
-} from "./session-intervals";
+} from "./session-intervals.js";
 import {
   formatDateLabel,
   formatHM,
   localYMD,
   monthBoundsUtc,
   nextLocalMidnightUtc,
-} from "./time";
+} from "./time.js";
 
 interface Row {
   start_utc: string;
@@ -117,8 +117,8 @@ export async function buildHoursReport(
   env: Env,
   period: string,
   userId: string,
+  tz: string = env.REPORT_TZ,
 ): Promise<HoursReport> {
-  const tz = env.REPORT_TZ;
   const { start, end } = monthBoundsUtc(period, tz);
 
   const res = await env.DB.prepare(
@@ -151,8 +151,8 @@ export async function listSessionsForPeriod(
   env: Env,
   period: string,
   userId: string,
+  tz: string = env.REPORT_TZ,
 ): Promise<SessionSegment[]> {
-  const tz = env.REPORT_TZ;
   const { start, end } = monthBoundsUtc(period, tz);
 
   const res = await env.DB.prepare(
@@ -251,8 +251,12 @@ interface DaySpan {
  * sessions shows `Vacation`, and a trailing row puts the month's total under the
  * Hours Worked column. Empty months (no sessions at all) still produce no output.
  */
-export async function buildReportCsv(env: Env, period: string, userId: string): Promise<string> {
-  const tz = env.REPORT_TZ;
+export async function buildReportCsv(
+  env: Env,
+  period: string,
+  userId: string,
+  tz: string = env.REPORT_TZ,
+): Promise<string> {
   const { start, end } = monthBoundsUtc(period, tz);
 
   const res = await env.DB.prepare(

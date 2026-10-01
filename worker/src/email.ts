@@ -147,9 +147,10 @@ export interface SendResult {
 export async function buildAndSendReport(
   env: Env,
   period: string,
-  opts: { force: boolean; userId: string; to: string[] },
+  opts: { force: boolean; userId: string; to: string[]; timezone?: string },
 ): Promise<SendResult> {
   const { userId, to } = opts;
+  const timezone = opts.timezone ?? env.REPORT_TZ;
 
   if (!env.RESEND_API_KEY) {
     console.error("buildAndSendReport: RESEND_API_KEY not configured");
@@ -168,9 +169,9 @@ export async function buildAndSendReport(
     if (existing) return { ok: true, period, rows: 0, skipped: true };
   }
 
-  const csv = await buildReportCsv(env, period, userId);
+  const csv = await buildReportCsv(env, period, userId, timezone);
   const rows = csv ? csv.trimEnd().split("\n").length : 0;
-  const report = await buildHoursReport(env, period, userId);
+  const report = await buildHoursReport(env, period, userId, timezone);
   const projects = await projectTotalsForPeriod(env, userId, period);
   const body =
     rows > 0
@@ -377,6 +378,7 @@ export async function sendMonthlyReports(env: Env, now: Date): Promise<void> {
       force: false,
       userId: u.id,
       to: recipients,
+      timezone: schedule.timezone,
     });
   }
 }
