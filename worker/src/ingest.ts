@@ -134,7 +134,7 @@ export async function handleIngest(
         s.end_utc,
         sanitizeSessionReason(s.start_reason),
         sanitizeSessionReason(s.end_reason),
-        s.timezone ?? null,
+        isValidTimeZone(s.timezone) ? s.timezone : null,
         userId,
       ),
     );
@@ -191,7 +191,6 @@ function isValid(s: unknown): s is SessionIn {
   ) {
     return false;
   }
-  if (o.timezone != null && !isValidTimeZone(o.timezone)) return false;
   return true;
 }
 
