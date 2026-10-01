@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildReportCsv } from "../.tmp-test/report.js";
+import { buildReportCsv, timezoneForLocalDate } from "../.tmp-test/report.js";
 
 function envWithSessions(sessions) {
   return {
@@ -57,4 +57,21 @@ test("CSV renders travel days in the timezone captured on each session", async (
 
   assert.match(csv, /Tuesday, September 1, 2026.*09:00,10:00/);
   assert.match(csv, /Thursday, September 10, 2026.*16:00,17:00/);
+});
+
+test("manual entries use where the desktop was on that local day", async () => {
+  const env = envWithSessions([
+    // 2026-09-02 03:00Z is still Sep 1 in New York, so it must not count for Sep 2.
+    { start_utc: "2026-09-02T03:00:00.000Z", timezone: "America/New_York" },
+    { start_utc: "2026-09-02T13:00:00.000Z", timezone: "America/New_York" },
+  ]);
+
+  assert.equal(
+    await timezoneForLocalDate(env, "traveler", "2026-09-02", "Asia/Jerusalem"),
+    "America/New_York",
+  );
+  assert.equal(
+    await timezoneForLocalDate(env, "traveler", "2026-09-03", "Asia/Jerusalem"),
+    "Asia/Jerusalem",
+  );
 });

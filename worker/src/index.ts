@@ -28,7 +28,12 @@ import {
 import { buildAndSendReport, sendContactSales, sendMonthlyReports } from "./email";
 import { handleActivityIngest, projectTotalsForPeriod } from "./activity";
 import { handleIngest } from "./ingest";
-import { buildHoursReport, buildReportCsv, listSessionsForPeriod } from "./report";
+import {
+  buildHoursReport,
+  buildReportCsv,
+  listSessionsForPeriod,
+  timezoneForLocalDate,
+} from "./report";
 import {
   getEffectiveRecipients,
   getEffectiveSendSchedule,
@@ -860,8 +865,9 @@ async function handleManualSession(
     if (eh * 60 + emi - (sh * 60 + smi) > 24 * 60) {
       return json({ error: "session too long" }, 400);
     }
-    const startUtc = wallToUtc(y, m, d, sh, smi, 0, timezone);
-    const endUtc = wallToUtc(y, m, d, eh, emi, 0, timezone);
+    const dayTimezone = await timezoneForLocalDate(env, userId, date, timezone);
+    const startUtc = wallToUtc(y, m, d, sh, smi, 0, dayTimezone);
+    const endUtc = wallToUtc(y, m, d, eh, emi, 0, dayTimezone);
     if (!(endUtc.getTime() > startUtc.getTime())) {
       return json({ error: "clock-out must be after clock-in" }, 400);
     }
@@ -869,7 +875,7 @@ async function handleManualSession(
       `INSERT INTO sessions (id, start_utc, end_utc, start_reason, end_reason, timezone, user_id)
        VALUES (?, ?, ?, 'manual', 'manual', ?, ?)`,
     )
-      .bind(crypto.randomUUID(), startUtc.toISOString(), endUtc.toISOString(), timezone, userId)
+      .bind(crypto.randomUUID(), startUtc.toISOString(), endUtc.toISOString(), dayTimezone, userId)
       .run();
     return json({ ok: true });
   }

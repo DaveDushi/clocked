@@ -104,6 +104,40 @@ function periodQueryBounds(period: string): { start: Date; end: Date } {
   };
 }
 
+/** Timezone the desktop recorded on local `date` ("YYYY-MM-DD"), i.e. where the
+ * user was that work day; `fallback` when no desktop session exists that day. */
+export async function timezoneForLocalDate(
+  env: Env,
+  userId: string,
+  date: string,
+  fallback: string,
+): Promise<string> {
+  const [y, m, d] = date.split("-").map(Number);
+  const dayStartUtc = Date.UTC(y, m - 1, d);
+  const hour = 60 * 60 * 1000;
+  const res = await env.DB.prepare(
+    `SELECT start_utc, timezone FROM sessions
+      WHERE user_id = ? AND timezone IS NOT NULL AND COALESCE(start_reason, '') != 'manual'
+        AND start_utc >= ? AND start_utc < ?
+      ORDER BY start_utc`,
+  )
+    .bind(
+      userId,
+      new Date(dayStartUtc - 14 * hour).toISOString(),
+      new Date(dayStartUtc + 36 * hour).toISOString(),
+    )
+    .all<{ start_utc: string; timezone: string }>();
+  for (const row of res.results ?? []) {
+    const tz = validTimezoneOr(row.timezone, "");
+    if (!tz) continue;
+    const local = localYMD(new Date(row.start_utc), tz);
+    if (`${local.y}-${String(local.m).padStart(2, "0")}-${String(local.d).padStart(2, "0")}` === date) {
+      return tz;
+    }
+  }
+  return fallback;
+}
+
 function validTimezoneOr(timezone: string | null | undefined, fallback: string): string {
   if (!timezone) return fallback;
   try {
