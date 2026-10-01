@@ -1,3 +1,4 @@
+import { isValidTimeZone } from "./schedule.js";
 import type { Env, SessionIn } from "./types";
 
 /** Max sessions accepted in a single POST /sessions (DoS / cost guard). */
@@ -118,13 +119,14 @@ export async function handleIngest(
 
     stmts.push(
       env.DB.prepare(
-        `INSERT INTO sessions (id, start_utc, end_utc, start_reason, end_reason, user_id)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO sessions (id, start_utc, end_utc, start_reason, end_reason, timezone, user_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            start_utc    = excluded.start_utc,
            end_utc      = excluded.end_utc,
            start_reason = excluded.start_reason,
            end_reason   = excluded.end_reason,
+           timezone     = COALESCE(excluded.timezone, sessions.timezone),
            user_id      = COALESCE(sessions.user_id, excluded.user_id)`,
       ).bind(
         s.id,
@@ -132,6 +134,7 @@ export async function handleIngest(
         s.end_utc,
         sanitizeSessionReason(s.start_reason),
         sanitizeSessionReason(s.end_reason),
+        s.timezone ?? null,
         userId,
       ),
     );
@@ -188,6 +191,7 @@ function isValid(s: unknown): s is SessionIn {
   ) {
     return false;
   }
+  if (o.timezone != null && !isValidTimeZone(o.timezone)) return false;
   return true;
 }
 

@@ -866,10 +866,10 @@ async function handleManualSession(
       return json({ error: "clock-out must be after clock-in" }, 400);
     }
     await env.DB.prepare(
-      `INSERT INTO sessions (id, start_utc, end_utc, start_reason, end_reason, user_id)
-       VALUES (?, ?, ?, 'manual', 'manual', ?)`,
+      `INSERT INTO sessions (id, start_utc, end_utc, start_reason, end_reason, timezone, user_id)
+       VALUES (?, ?, ?, 'manual', 'manual', ?, ?)`,
     )
-      .bind(crypto.randomUUID(), startUtc.toISOString(), endUtc.toISOString(), userId)
+      .bind(crypto.randomUUID(), startUtc.toISOString(), endUtc.toISOString(), timezone, userId)
       .run();
     return json({ ok: true });
   }
@@ -890,7 +890,7 @@ async function isMemberOf(env: Env, userId: string, organizationId: string): Pro
 /** JSON dump of cloud sessions + activity for GDPR-style portability. */
 async function handleDataExport(env: Env, user: SessionUser): Promise<Response> {
   const sessions = await env.DB.prepare(
-    `SELECT id, start_utc, end_utc, start_reason, end_reason
+    `SELECT id, start_utc, end_utc, start_reason, end_reason, timezone
        FROM sessions WHERE user_id = ? ORDER BY start_utc`,
   )
     .bind(user.id)
