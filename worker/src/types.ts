@@ -50,4 +50,6 @@ export interface SessionIn {
   end_utc: string;
   start_reason?: string | null;
   end_reason?: string | null;
+  /** IANA timezone active on the device when the session began. */
+  timezone?: string | null;
 }

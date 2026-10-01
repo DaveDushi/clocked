@@ -18,6 +18,8 @@ pub struct Session {
     pub end_utc: String,
     pub start_reason: String,
     pub end_reason: String,
+    /// IANA timezone active when the session began (for travel-aware reports).
+    pub timezone: Option<String>,
 }
 
 /// Open (or create) the on-disk database and ensure the schema exists.
@@ -38,6 +40,7 @@ pub fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
             end_utc      TEXT,
             start_reason TEXT NOT NULL,
             end_reason   TEXT,
+            timezone     TEXT,
             synced       INTEGER NOT NULL DEFAULT 0
          );
          CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
@@ -74,6 +77,15 @@ pub fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
             "ALTER TABLE activity ADD COLUMN context TEXT NOT NULL DEFAULT ''",
             [],
         );
+    }
+    // Older installs created `sessions` before historical timezone capture.
+    let has_timezone: bool = conn
+        .prepare("PRAGMA table_info(sessions)")?
+        .query_map([], |r| r.get::<_, String>(1))?
+        .filter_map(|c| c.ok())
+        .any(|name| name == "timezone");
+    if !has_timezone {
+        let _ = conn.execute("ALTER TABLE sessions ADD COLUMN timezone TEXT", []);
     }
     // One-time scrub: blank historical titles so older installs don't keep a
     // sensitive title corpus after upgrading to privacy defaults.
@@ -127,13 +139,24 @@ pub fn open_session_start(conn: &Connection) -> rusqlite::Result<Option<DateTime
 
 /// Open a new session. No-op (returns `false`) if one is already open.
 pub fn clock_in(conn: &Connection, reason: &str, now: DateTime<Utc>) -> rusqlite::Result<bool> {
+    let timezone = iana_time_zone::get_timezone().ok();
+    clock_in_with_timezone(conn, reason, now, timezone.as_deref())
+}
+
+fn clock_in_with_timezone(
+    conn: &Connection,
+    reason: &str,
+    now: DateTime<Utc>,
+    timezone: Option<&str>,
+) -> rusqlite::Result<bool> {
     if open_session_start(conn)?.is_some() {
         return Ok(false);
     }
     let id = uuid::Uuid::new_v4().to_string();
     conn.execute(
-        "INSERT INTO sessions (id, start_utc, start_reason, synced) VALUES (?1, ?2, ?3, 0)",
-        params![id, fmt(now), reason],
+        "INSERT INTO sessions (id, start_utc, start_reason, timezone, synced)
+         VALUES (?1, ?2, ?3, ?4, 0)",
+        params![id, fmt(now), reason, timezone],
     )?;
     Ok(true)
 }
@@ -471,7 +494,7 @@ pub fn apps_seen(conn: &Connection, limit: usize) -> rusqlite::Result<Vec<String
 /// Completed sessions not yet acknowledged by the Worker.
 pub fn unsynced(conn: &Connection) -> rusqlite::Result<Vec<Session>> {
     let mut stmt = conn.prepare(
-        "SELECT id, start_utc, end_utc, start_reason, end_reason
+        "SELECT id, start_utc, end_utc, start_reason, end_reason, timezone
            FROM sessions
           WHERE end_utc IS NOT NULL AND synced = 0
           ORDER BY start_utc",
@@ -483,6 +506,7 @@ pub fn unsynced(conn: &Connection) -> rusqlite::Result<Vec<Session>> {
             end_utc: r.get(2)?,
             start_reason: r.get(3)?,
             end_reason: r.get(4)?,
+            timezone: r.get(5)?,
         })
     })?;
     rows.collect()
@@ -547,6 +571,22 @@ mod tests {
             .unwrap();
         assert_eq!(n, 1);
         assert!(open_session_start(&c).unwrap().is_some());
+    }
+
+    #[test]
+    fn session_keeps_timezone_captured_at_clock_in() {
+        let c = mem();
+        assert!(clock_in_with_timezone(
+            &c,
+            "resume",
+            t("2026-09-01T13:00:00Z"),
+            Some("America/New_York"),
+        )
+        .unwrap());
+        clock_out(&c, "lock", t("2026-09-01T14:00:00Z")).unwrap();
+
+        let pending = unsynced(&c).unwrap();
+        assert_eq!(pending[0].timezone.as_deref(), Some("America/New_York"));
     }
 
     #[test]

@@ -29,6 +29,7 @@ test("CSV report uses the explicitly supplied user timezone", async () => {
     {
       start_utc: "2026-09-01T00:30:00.000Z",
       end_utc: "2026-09-01T02:00:00.000Z",
+      timezone: null,
     },
   ]);
 
@@ -36,4 +37,24 @@ test("CSV report uses the explicitly supplied user timezone", async () => {
 
   assert.match(csv, /Tuesday, September 1, 2026.*03:30,05:00/);
   assert.doesNotMatch(csv, /00:30,02:00/);
+});
+
+test("CSV renders travel days in the timezone captured on each session", async () => {
+  const env = envWithSessions([
+    {
+      start_utc: "2026-09-01T13:00:00.000Z",
+      end_utc: "2026-09-01T14:00:00.000Z",
+      timezone: "America/New_York",
+    },
+    {
+      start_utc: "2026-09-10T13:00:00.000Z",
+      end_utc: "2026-09-10T14:00:00.000Z",
+      timezone: "Asia/Jerusalem",
+    },
+  ]);
+
+  const csv = await buildReportCsv(env, "2026-09", "traveler", "UTC");
+
+  assert.match(csv, /Tuesday, September 1, 2026.*09:00,10:00/);
+  assert.match(csv, /Thursday, September 10, 2026.*16:00,17:00/);
 });

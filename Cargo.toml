@@ -22,6 +22,7 @@ uuid        = { version = "1", features = ["v4"] }
 chrono      = { version = "0.4", features = ["serde"] }
 toml        = "0.8"
 directories = "5"
+iana-time-zone = "0.1.65"
 
 # Windows OS glue: Win32 bindings + registry.
 [target.'cfg(windows)'.dependencies]

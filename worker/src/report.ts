@@ -2,7 +2,6 @@ import type { Env } from "./types";
 import { projectTotalsForPeriod } from "./activity.js";
 import { expandCalendarDays } from "./calendar-days.js";
 import {
-  mergeTimeIntervals,
   unionMinutes,
   type TimeInterval,
 } from "./session-intervals.js";
@@ -17,12 +16,18 @@ import {
 interface Row {
   start_utc: string;
   end_utc: string;
+  timezone: string | null;
+}
+
+interface ZonedTimeInterval extends TimeInterval {
+  startTimezone: string;
+  endTimezone: string;
 }
 
 interface LocalDayIntervals {
   date: string;
   label: string;
-  intervals: TimeInterval[];
+  intervals: ZonedTimeInterval[];
 }
 
 /** Gaps shorter than this are lock/unlock, suspend/resume, or app-relaunch
@@ -47,12 +52,13 @@ export interface HoursReport {
 /** Clamp sessions to a month, split them at local midnight, and group by day. */
 function intervalsByLocalDay(
   rows: readonly Row[],
-  start: Date,
-  end: Date,
-  tz: string,
+  period: string,
+  fallbackTz: string,
 ): Map<string, LocalDayIntervals> {
   const byDay = new Map<string, LocalDayIntervals>();
   for (const row of rows) {
+    const tz = validTimezoneOr(row.timezone, fallbackTz);
+    const { start, end } = monthBoundsUtc(period, tz);
     const rawStart = Date.parse(row.start_utc);
     const rawEnd = Date.parse(row.end_utc);
     if (Number.isNaN(rawStart) || Number.isNaN(rawEnd) || rawEnd <= rawStart) continue;
@@ -65,7 +71,12 @@ function intervalsByLocalDay(
       const { y, m, d } = localYMD(segStart, tz);
       const date = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
       const existing = byDay.get(date);
-      const interval = { start: segStart.getTime(), end: segEnd.getTime() };
+      const interval = {
+        start: segStart.getTime(),
+        end: segEnd.getTime(),
+        startTimezone: tz,
+        endTimezone: tz,
+      };
       if (existing) existing.intervals.push(interval);
       else {
         byDay.set(date, {
@@ -78,6 +89,29 @@ function intervalsByLocalDay(
     }
   }
   return byDay;
+}
+
+/** Query broadly enough to include a local month in every supported timezone;
+ * each row is then clamped to its own exact local month. */
+function periodQueryBounds(period: string): { start: Date; end: Date } {
+  const [y, m] = period.split("-").map(Number);
+  const nextY = m === 12 ? y + 1 : y;
+  const nextM = m === 12 ? 1 : m + 1;
+  const padding = 15 * 60 * 60 * 1000;
+  return {
+    start: new Date(Date.UTC(y, m - 1, 1) - padding),
+    end: new Date(Date.UTC(nextY, nextM - 1, 1) + padding),
+  };
+}
+
+function validTimezoneOr(timezone: string | null | undefined, fallback: string): string {
+  if (!timezone) return fallback;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(0);
+    return timezone;
+  } catch {
+    return fallback;
+  }
 }
 
 /** One local-day slice of a closed session for the dashboard timeline. */
@@ -97,6 +131,7 @@ export interface SessionSegment {
   start_reason: string | null;
   end_reason: string | null;
   source: "manual" | "app";
+  timezone: string;
 }
 
 interface SessionRow {
@@ -105,6 +140,7 @@ interface SessionRow {
   end_utc: string;
   start_reason: string | null;
   end_reason: string | null;
+  timezone: string | null;
 }
 
 /**
@@ -119,17 +155,17 @@ export async function buildHoursReport(
   userId: string,
   tz: string = env.REPORT_TZ,
 ): Promise<HoursReport> {
-  const { start, end } = monthBoundsUtc(period, tz);
+  const { start, end } = periodQueryBounds(period);
 
   const res = await env.DB.prepare(
-    `SELECT start_utc, end_utc FROM sessions
+    `SELECT start_utc, end_utc, timezone FROM sessions
       WHERE user_id = ? AND end_utc > ? AND start_utc < ?
       ORDER BY start_utc`,
   )
     .bind(userId, start.toISOString(), end.toISOString())
     .all<Row>();
 
-  const grouped = intervalsByLocalDay(res.results ?? [], start, end, tz);
+  const grouped = intervalsByLocalDay(res.results ?? [], period, tz);
   const days = [...grouped.values()]
     .map(({ date, label, intervals }) => ({
       date,
@@ -153,10 +189,10 @@ export async function listSessionsForPeriod(
   userId: string,
   tz: string = env.REPORT_TZ,
 ): Promise<SessionSegment[]> {
-  const { start, end } = monthBoundsUtc(period, tz);
+  const { start, end } = periodQueryBounds(period);
 
   const res = await env.DB.prepare(
-    `SELECT id, start_utc, end_utc, start_reason, end_reason FROM sessions
+    `SELECT id, start_utc, end_utc, start_reason, end_reason, timezone FROM sessions
       WHERE user_id = ? AND end_utc IS NOT NULL AND end_utc > ? AND start_utc < ?
       ORDER BY start_utc`,
   )
@@ -165,19 +201,21 @@ export async function listSessionsForPeriod(
 
   const out: SessionSegment[] = [];
   for (const r of res.results ?? []) {
+    const sessionTz = validTimezoneOr(r.timezone, tz);
+    const localBounds = monthBoundsUtc(period, sessionTz);
     const sessStart = Date.parse(r.start_utc);
     const sessEnd = Date.parse(r.end_utc);
     if (Number.isNaN(sessStart) || Number.isNaN(sessEnd) || sessEnd <= sessStart) continue;
 
-    let segStart = new Date(Math.max(sessStart, start.getTime()));
-    const hardEnd = new Date(Math.min(sessEnd, end.getTime()));
+    let segStart = new Date(Math.max(sessStart, localBounds.start.getTime()));
+    const hardEnd = new Date(Math.min(sessEnd, localBounds.end.getTime()));
     while (segStart < hardEnd) {
-      const midnight = nextLocalMidnightUtc(segStart, tz);
+      const midnight = nextLocalMidnightUtc(segStart, sessionTz);
       const segEnd = midnight < hardEnd ? midnight : hardEnd;
-      const { y, m, d } = localYMD(segStart, tz);
+      const { y, m, d } = localYMD(segStart, sessionTz);
       const date = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-      const startMin = localMinutesFromMidnight(segStart, tz);
-      const endMinRaw = localMinutesFromMidnight(segEnd, tz);
+      const startMin = localMinutesFromMidnight(segStart, sessionTz);
+      const endMinRaw = localMinutesFromMidnight(segEnd, sessionTz);
       // Midnight end of a day is 1440, not 0 of the next day.
       const endMin = endMinRaw === 0 && segEnd.getTime() > segStart.getTime() ? 1440 : endMinRaw;
       const minutes = Math.max(0, Math.round((segEnd.getTime() - segStart.getTime()) / 60000));
@@ -185,8 +223,8 @@ export async function listSessionsForPeriod(
       out.push({
         id: r.id,
         date,
-        start: formatHM(segStart, tz),
-        end: formatHM(segEnd, tz),
+        start: formatHM(segStart, sessionTz),
+        end: formatHM(segEnd, sessionTz),
         minutes,
         startMs: segStart.getTime(),
         endMs: segEnd.getTime(),
@@ -195,6 +233,7 @@ export async function listSessionsForPeriod(
         start_reason: r.start_reason,
         end_reason: r.end_reason,
         source: reason === "manual" ? "manual" : "app",
+        timezone: sessionTz,
       });
       segStart = segEnd;
     }
@@ -235,9 +274,28 @@ export function isWorkDay(date: string): boolean {
  * (each `"HH:MM-HH:MM"`) for one local day. */
 interface DaySpan {
   in: Date;
+  inTimezone: string;
   out: Date;
+  outTimezone: string;
   minutes: number;
   breaks: string[];
+}
+
+function mergeZonedTimeIntervals(intervals: ZonedTimeInterval[]): ZonedTimeInterval[] {
+  const sorted = intervals
+    .filter((x) => Number.isFinite(x.start) && Number.isFinite(x.end) && x.end > x.start)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+  const merged: ZonedTimeInterval[] = [];
+  for (const interval of sorted) {
+    const last = merged[merged.length - 1];
+    if (!last || interval.start > last.end) {
+      merged.push({ ...interval });
+    } else if (interval.end > last.end) {
+      last.end = interval.end;
+      last.endTimezone = interval.endTimezone;
+    }
+  }
+  return merged;
 }
 
 /**
@@ -257,10 +315,10 @@ export async function buildReportCsv(
   userId: string,
   tz: string = env.REPORT_TZ,
 ): Promise<string> {
-  const { start, end } = monthBoundsUtc(period, tz);
+  const { start, end } = periodQueryBounds(period);
 
   const res = await env.DB.prepare(
-    `SELECT start_utc, end_utc FROM sessions
+    `SELECT start_utc, end_utc, timezone FROM sessions
       WHERE user_id = ? AND end_utc > ? AND start_utc < ?
       ORDER BY start_utc`,
   )
@@ -271,9 +329,9 @@ export async function buildReportCsv(
   // gaps while ensuring overlapping sessions from multiple devices count once.
   const spanByDate = new Map<string, DaySpan>();
   const labelByDate = new Map<string, string>();
-  const grouped = intervalsByLocalDay(res.results ?? [], start, end, tz);
+  const grouped = intervalsByLocalDay(res.results ?? [], period, tz);
   for (const { date, label, intervals } of grouped.values()) {
-    const merged = mergeTimeIntervals(intervals);
+    const merged = mergeZonedTimeIntervals(intervals);
     if (merged.length === 0) continue;
     const breaks: string[] = [];
     for (let i = 1; i < merged.length; i++) {
@@ -281,13 +339,15 @@ export async function buildReportCsv(
       const current = merged[i];
       if (current.start - previous.end >= MIN_BREAK_MS) {
         breaks.push(
-          `${formatHM(new Date(previous.end), tz)}-${formatHM(new Date(current.start), tz)}`,
+          `${formatHM(new Date(previous.end), previous.endTimezone)}-${formatHM(new Date(current.start), current.startTimezone)}`,
         );
       }
     }
     spanByDate.set(date, {
       in: new Date(merged[0].start),
+      inTimezone: merged[0].startTimezone,
       out: new Date(merged[merged.length - 1].end),
+      outTimezone: merged[merged.length - 1].endTimezone,
       minutes: unionMinutes(merged),
       breaks,
     });
@@ -312,7 +372,7 @@ export async function buildReportCsv(
     const span = spanByDate.get(day.date);
     if (span) {
       lines.push(
-        `${csvField(day.label)},${formatHM(span.in, tz)},${formatHM(span.out, tz)},${csvField(span.breaks.join("; "))},${formatHours(span.minutes)}`,
+        `${csvField(day.label)},${formatHM(span.in, span.inTimezone)},${formatHM(span.out, span.outTimezone)},${csvField(span.breaks.join("; "))},${formatHours(span.minutes)}`,
       );
       totalMinutes += span.minutes;
     } else if (isWorkDay(day.date)) {
