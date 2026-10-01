@@ -6,6 +6,7 @@
 use std::ffi::{c_char, c_int, c_uint, c_ulong, c_void, CStr, CString};
 use std::process::{Command, Stdio};
 use std::ptr;
+use std::sync::OnceLock;
 
 pub type Widget = *mut c_void;
 pub type Callback = unsafe extern "C" fn(Widget, *mut c_void);
@@ -100,8 +101,25 @@ unsafe extern "C" {
     fn app_indicator_set_status(indicator: Widget, status: c_int);
     fn app_indicator_set_menu(indicator: Widget, menu: Widget);
     fn app_indicator_set_title(indicator: Widget, title: *const c_char);
-    fn app_indicator_set_tooltip_title(indicator: Widget, title: *const c_char);
     fn app_indicator_set_icon_theme_path(indicator: Widget, path: *const c_char);
+}
+
+unsafe extern "C" {
+    fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+}
+
+type SetTooltipTitle = unsafe extern "C" fn(Widget, *const c_char);
+
+/// `app_indicator_set_tooltip_title` only exists in libayatana-appindicator
+/// 0.6+ (Ubuntu 24.04 ships 0.5.93), so resolve it at runtime instead of
+/// linking against it.
+fn set_tooltip_title() -> Option<SetTooltipTitle> {
+    static ADDR: OnceLock<usize> = OnceLock::new();
+    let addr = *ADDR.get_or_init(|| unsafe {
+        // RTLD_DEFAULT is a null handle on glibc.
+        dlsym(ptr::null_mut(), c"app_indicator_set_tooltip_title".as_ptr()) as usize
+    });
+    (addr != 0).then(|| unsafe { std::mem::transmute::<usize, SetTooltipTitle>(addr) })
 }
 
 #[link(name = "gobject-2.0")]
@@ -368,12 +386,14 @@ pub fn indicator(menu: Widget, icon_name: &str, icon_theme_path: Option<&str>) -
 
 // Keep both protocol values in sync. AppIndicator's title is what many tray
 // hosts display on hover, while hosts such as Quickshell refresh their cached
-// tooltip text only after the NewToolTip signal emitted by this setter.
+// tooltip text only after the NewToolTip signal emitted by the tooltip setter.
 pub fn tooltip(indicator: Widget, _icon_name: &str, body: &str) {
     let body = c(body);
     unsafe {
         app_indicator_set_title(indicator, body.as_ptr());
-        app_indicator_set_tooltip_title(indicator, body.as_ptr());
+        if let Some(set_tooltip_title) = set_tooltip_title() {
+            set_tooltip_title(indicator, body.as_ptr());
+        }
     }
 }
 
