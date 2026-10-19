@@ -1,0 +1,93 @@
+name: mobile-ios
+
+# Headless checks for the iPhone app. No simulator or device is used: the core
+# logic is tested with `swift test`, and the app plus both Screen Time
+# extensions are compiled for generic iOS without code signing.
+
+on:
+  push:
+    paths:
+      - "mobile/ios/**"
+      - "worker/src/mobile-usage.ts"
+      - "worker/test/fixtures/ios-*.json"
+      - ".github/workflows/mobile-ios.yml"
+  pull_request:
+    paths:
+      - "mobile/ios/**"
+      - "worker/src/mobile-usage.ts"
+      - "worker/test/fixtures/ios-*.json"
+      - ".github/workflows/mobile-ios.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core-linux:
+    # The core package depends only on Foundation, so its tests also run on Linux.
+    runs-on: ubuntu-24.04
+    container: swift:6.1-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test ClockedCore
+        run: swift test --package-path mobile/ios/ClockedCore
+      - name: Typecheck Screen Time bridge against stub SDK modules
+        run: bash mobile/ios/scripts/typecheck_bridge.sh
+
+  ios:
+    runs-on: macos-26
+    env:
+      DERIVED: ${{ github.workspace }}/mobile/ios/DerivedData
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select the newest Xcode 26
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Static project validation
+        run: python3 mobile/ios/scripts/validate_static.py
+
+      - name: Test ClockedCore (macOS)
+        run: swift test --package-path mobile/ios/ClockedCore
+
+      - name: Generate Xcode project
+        working-directory: mobile/ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Build app and extensions for iOS (unsigned)
+        working-directory: mobile/ios
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project Clocked.xcodeproj \
+            -scheme Clocked \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$DERIVED" \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee xcodebuild.log
+
+      - name: Check bundle layout
+        run: |
+          APP="$DERIVED/Build/Products/Release-iphoneos/Clocked.app"
+          test -d "$APP/PlugIns/ClockedMonitor.appex"
+          test -d "$APP/Extensions/ClockedReport.appex"
+          test ! -d "$APP/PlugIns/ClockedReport.appex"
+          /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$APP/PlugIns/ClockedMonitor.appex/Info.plist" | grep -qx com.apple.deviceactivity.monitor-extension
+          /usr/libexec/PlistBuddy -c 'Print :EXAppExtensionAttributes:EXExtensionPointIdentifier' "$APP/Extensions/ClockedReport.appex/Info.plist" | grep -qx com.apple.deviceactivityui.report-extension
+          /usr/libexec/PlistBuddy -c 'Print :ClockedAppGroup' "$APP/Info.plist" | grep -qx group.com.daviddusi.clocked
+          echo "Bundle layout OK"
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-xcodebuild-log
+          path: mobile/ios/xcodebuild.log
+          if-no-files-found: ignore
