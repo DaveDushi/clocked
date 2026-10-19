@@ -4,9 +4,8 @@ import { createTimesheetView } from "./timesheet-view.js";
 // no assets). Auth is better-auth (cookies, same-origin fetch); data comes from
 // /api/hours, /api/settings, and /api/token. Served at GET /.
 //
-// Logged-out visitors see a marketing landing page with sign-up / sign-in.
-// On sign-up the account is created and its per-account Bearer token is shown so
-// the desktop app can be pointed at this Worker.
+// New accounts require an invitation. Verified invitees join their team before
+// the dashboard exposes desktop sync and timesheets.
 //
 // The lifecycle function is serialized below. Handwritten inline JS uses string concatenation.
 const HTML = /* html */ `<!doctype html>
@@ -22,7 +21,7 @@ const HTML = /* html */ `<!doctype html>
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://clocked.daviddusi.com/" />
 <meta property="og:title" content="clocked — automatic Windows time tracking" />
-<meta property="og:description" content="Tray app tracks real work time. Cloud sync + monthly timesheet email. Open-source desktop, free cloud account for solo and teams." />
+<meta property="og:description" content="Automatic time tracking with an open-source desktop app. Request hosted access for yourself or your team, with cloud sync and monthly timesheet email." />
 <meta property="og:image" content="https://clocked.daviddusi.com/og.jpg" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="675" />
@@ -31,7 +30,7 @@ const HTML = /* html */ `<!doctype html>
 <meta name="twitter:description" content="Automatic time tracking for Windows. No timers. No spyware. Monthly timesheet by email." />
 <meta name="twitter:image" content="https://clocked.daviddusi.com/og.jpg" />
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareApplication","name":"clocked","applicationCategory":"BusinessApplication","operatingSystem":"Windows, macOS","offers":{"@type":"Offer","price":"0","priceCurrency":"USD","description":"Free open-source desktop app and free hosted cloud account"},"description":"Automatic time tracking from power and session events. Local SQLite, optional project attribution, cloud sync, teams, and monthly timesheet email.","url":"https://clocked.daviddusi.com/","downloadUrl":"https://clocked.daviddusi.com/download","softwareVersion":"0.1.14","license":"https://opensource.org/licenses/MIT","codeRepository":"https://github.com/DaveDushi/clocked"}
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"clocked","applicationCategory":"BusinessApplication","operatingSystem":"Windows, macOS","description":"Automatic time tracking from power and session events. Local SQLite, optional project attribution, cloud sync, teams, and monthly timesheet email.","url":"https://clocked.daviddusi.com/","downloadUrl":"https://clocked.daviddusi.com/download","softwareVersion":"0.1.14","license":"https://opensource.org/licenses/MIT","codeRepository":"https://github.com/DaveDushi/clocked"}
 </script>
 <link rel="icon" type="image/png" href="/favicon.ico" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -487,29 +486,24 @@ const HTML = /* html */ `<!doctype html>
   @keyframes pop { from { opacity:0; transform:translateY(8px) scale(.98); } }
   .modal-close { position:absolute; top:12px; right:12px; width:32px; height:32px; padding:0; font-size:18px; line-height:1; }
 
-  /* ---------- pricing ---------- */
-  .price-head { text-align:center; margin:36px auto 18px; max-width:560px; }
-  .price-head h2 { font-size:23px; margin:0 0 6px; letter-spacing:.02em; }
-  .price-head p { color:var(--muted); font-size:15px; margin:0; }
-  .pricing { display:grid; grid-template-columns:1fr; gap:14px; max-width:380px; margin:0 auto 26px; }
-  .price-card {
+  /* ---------- request hosted access ---------- */
+  .access-head { text-align:center; margin:36px auto 18px; max-width:560px; }
+  .access-head h2 { font-size:23px; margin:0 0 6px; letter-spacing:.02em; }
+  .access-head p { color:var(--muted); font-size:15px; margin:0; }
+  .access-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; max-width:760px; margin:0 auto 26px; }
+  .access-card {
     position:relative; overflow:hidden; display:flex; flex-direction:column;
     background:linear-gradient(180deg, var(--panel), var(--panel2));
     border:1px solid var(--border); border-radius:16px; padding:22px 22px 24px;
     box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 10px 26px rgba(0,0,0,.3);
   }
-  .price-card::before { content:""; position:absolute; top:0; left:0; right:0; height:2px; background:linear-gradient(90deg, transparent, var(--amber) 30%, var(--amber2) 70%, transparent); }
-  .price-card.enterprise { border-color:rgba(242,169,80,.35); }
-  .plan-name { font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); margin-bottom:10px; }
-  .price-tag { display:flex; align-items:baseline; gap:6px; min-height:40px; }
-  .price-num { font-family:var(--mono); font-size:40px; font-weight:600; color:var(--amber); text-shadow:0 0 12px rgba(242,169,80,.2); line-height:1; font-variant-numeric:tabular-nums; }
-  .price-num.sm { font-size:26px; }
-  .price-per { color:var(--muted); font-size:15px; }
-  .plan-meta { color:var(--fg); font-size:14px; margin:9px 0 14px; }
-  .price-list { list-style:none; margin:0 0 20px; padding:0; text-align:left; display:flex; flex-direction:column; gap:9px; flex:1; }
-  .price-list li { position:relative; padding-left:24px; font-size:13.5px; color:var(--fg); }
-  .price-list li::before { content:"✓"; position:absolute; left:0; top:0; color:var(--ok); font-weight:700; }
-  .price-card button { margin-top:auto; }
+  .access-card::before { content:""; position:absolute; top:0; left:0; right:0; height:2px; background:linear-gradient(90deg, transparent, var(--amber) 30%, var(--amber2) 70%, transparent); }
+  .access-card h3 { font-size:20px; margin:0 0 10px; }
+  .access-card p { color:var(--muted); font-size:14px; line-height:1.6; margin:0 0 14px; }
+  .access-card ul { padding-left:18px; margin:0 0 22px; font-size:13.5px; line-height:1.7; flex:1; }
+  .access-card button { margin-top:auto; }
+  #accessRequestModal .modal-card { max-height:calc(100dvh - 40px); overflow:auto; }
+  @media(max-width:600px) { .access-grid { grid-template-columns:1fr; } }
   #verifyGate { max-width:520px; margin:24px auto; }
 
   .muted { color:var(--muted); }
@@ -561,7 +555,7 @@ const HTML = /* html */ `<!doctype html>
     <div id="now" title="Current time" aria-label="Current time"></div>
     <div id="topAuth" class="hidden">
       <button id="navSignin" class="ghost">Sign in</button>
-      <button id="navSignup">Sign up</button>
+      <button id="navRequestAccess">Request access</button>
     </div>
     <button id="signout" class="ghost hidden">Sign out</button>
   </div>
@@ -577,13 +571,13 @@ const HTML = /* html */ `<!doctype html>
         activity — unlock, work, lock, idle. Hours stay on your PC (SQLite) first.
         Optional cloud sync emails a monthly timesheet even if the laptop was asleep.</p>
       <div class="downloadCta row">
-        <button type="button" class="btn" id="heroSignup">Create account</button>
+        <button type="button" class="btn" id="heroRequestAccess">Request access</button>
         <a class="btn ghost" href="/download/mac">Download for macOS</a>
         <a class="btn ghost" href="/download/win">Download for Windows</a>
         <a class="btn ghost" href="/download/extension">Chrome extension</a>
         <div class="hintline">Optional extension sends site hostnames to the local app only — no screenshots, no keylogging, no full URLs.</div>
       </div>
-      <p class="trust">MIT desktop app · local SQLite source of truth · free hosted cloud · self-host the Worker anytime</p>
+      <p class="trust">MIT desktop app · local SQLite source of truth · hosted access by invitation · self-host the Worker anytime</p>
     </div>
 
     <div class="features">
@@ -607,7 +601,7 @@ const HTML = /* html */ `<!doctype html>
         <div class="how-step">
           <div class="n">02</div>
           <h3>Connect cloud (optional)</h3>
-          <p>Create a free account here, verify email, paste your sync token into Settings — or point the app at your self-hosted Worker.</p>
+          <p>Request hosted access, accept your invitation, then connect the app with your sync token. You can also point the app at your self-hosted Worker.</p>
         </div>
         <div class="how-step">
           <div class="n">03</div>
@@ -678,7 +672,7 @@ const HTML = /* html */ `<!doctype html>
           </tbody>
         </table>
       </div>
-      <p class="compare-note">Self-host stays intentionally simple. Hosted is free: sign up and connect the app.</p>
+      <p class="compare-note">Run it yourself, or request hosted access and connect the app after receiving an invitation.</p>
     </div>
 
     <div class="audience">
@@ -693,29 +687,34 @@ const HTML = /* html */ `<!doctype html>
       </div>
     </div>
 
-    <div class="price-head">
-      <h2>Free</h2>
-      <p>The desktop app and the hosted cloud are both free. Just create an account.</p>
-    </div>
-    <div class="pricing">
-      <div class="price-card">
-        <div class="plan-name">Everything</div>
-        <div class="price-tag"><span class="price-num">$0</span></div>
-        <div class="plan-meta">Solo or teams of up to 50</div>
-        <ul class="price-list">
-          <li>Desktop sync token</li>
-          <li>Hours dashboard + day timeline</li>
-          <li>Manual adjustments &amp; data export</li>
-          <li>Monthly timesheet email</li>
-          <li>Invite workers &amp; manager timesheet view</li>
-        </ul>
-        <button class="planCta" style="width:100%">Create account</button>
+    <section class="access-section" aria-labelledby="accessHeading">
+      <div class="access-head">
+        <h2 id="accessHeading">Hosted access, by invitation</h2>
+        <p>Tell us how you want to use Clocked. We review requests and send invitations by email.</p>
       </div>
-    </div>
-    <p class="compare-note">Bigger team? <a href="#" id="salesCta">Talk to us</a>.</p>
+      <div class="access-grid">
+        <div class="access-card">
+          <h3>For yourself</h3>
+          <p>Your time, your timesheets, your delivery schedule. No team needed.</p>
+          <ul><li>Sync across your computers</li><li>Review and export your hours</li><li>Schedule your monthly timesheet email</li></ul>
+          <button class="requestAccess" data-kind="individual" type="button">Request individual access</button>
+        </div>
+        <div class="access-card">
+          <h3>For your team</h3>
+          <p>A separate team for your business, with managers and workers in one place.</p>
+          <ul><li>Invite workers and additional managers</li><li>Review hours and manage timesheet delivery</li><li>Up to 50 people, including managers</li></ul>
+          <button class="requestAccess" data-kind="team" type="button">Request team access</button>
+        </div>
+      </div>
+      <p class="compare-note">The open-source desktop app works locally without an account.</p>
+    </section>
 
     <div class="faq">
       <h2>FAQ</h2>
+      <details>
+        <summary>How do I get hosted access?</summary>
+        <p>Request access for yourself or your team. We review each request and email an invitation if approved. You can then create an account or sign in, verify your email, and accept the invitation. Sending a request does not create an account.</p>
+      </details>
       <details>
         <summary>Is this employee surveillance software?</summary>
         <p>No. By default clocked tracks presence from OS power and input events on the machine you install it on — no screenshots, no keylogging. Optional project tracking can record focused apps and privacy-safe site hostnames (not full URLs). Team managers see hours for people who joined their org — not live monitoring.</p>
@@ -756,6 +755,7 @@ const HTML = /* html */ `<!doctype html>
       </div>
 
       <div id="nameField" class="field">
+        <p class="hint">Clocked is invite-only. Use the email address your invitation was sent to. Already have an account? Sign in with that address to join.</p>
         <label for="name">Name <span class="muted" style="text-transform:none;letter-spacing:0">(optional)</span></label>
         <input id="name" type="text" autocomplete="name" />
       </div>
@@ -779,7 +779,7 @@ const HTML = /* html */ `<!doctype html>
   <!-- Dashboard (logged in) -->
   <div id="app" class="hidden">
     <div id="freshBanner" class="banner hidden">
-      <b>Account created.</b> Verify your email and we will review your account.
+      <b>Account created.</b> Verify your email to accept your invitation and open Clocked.
     </div>
     <!-- Verify email first (blocking). -->
     <div id="verifyGate" class="card hidden">
@@ -789,14 +789,32 @@ const HTML = /* html */ `<!doctype html>
       <div id="verifyGateMsg" class="msg" role="status"></div>
     </div>
 
-    <!-- Waiting for the operator to approve the account. -->
+    <!-- Invitation failures and accounts that have not joined yet. -->
     <div id="approvalGate" class="card hidden">
-      <h3>Your account is waiting for approval</h3>
-      <p class="hint">Thanks for signing up. We review new accounts by hand and will email you as soon as yours is approved.</p>
+      <h3>Join with your invitation</h3>
+      <p class="hint">Open the invitation sent to your account's email address to get access. If it expired, ask the person who invited you for a new one.</p>
+      <div id="invitationMsg" class="msg" role="status"></div>
+      <button id="retryInvitation" class="ghost" type="button">Try again</button>
     </div>
 
     <!-- Product UI — only after email verification. Tabbed to keep the page short. -->
     <div id="appMain" class="hidden">
+
+    <div id="operatorInvites" class="card hidden">
+      <h3>Invite someone</h3>
+      <p id="operatorInviteHint" class="hint">Individuals manage their own timesheets and email delivery without a team. They can join a team later.</p>
+      <div class="row">
+        <div><label for="operatorInviteKind">Invite as</label><select id="operatorInviteKind"><option value="individual">Individual</option><option value="manager">Team manager</option></select></div>
+        <div id="operatorTeamField" class="hidden"><label for="operatorTeamName">Their team name</label><input id="operatorTeamName" maxlength="80" placeholder="Acme Inc." /></div>
+        <div><label for="operatorInviteEmail">Email</label><input id="operatorInviteEmail" type="email" placeholder="person@example.com" /></div>
+        <button id="sendOperatorInvite" type="button">Send invitation</button>
+      </div>
+      <div id="operatorInviteMsg" class="msg" role="status"></div>
+      <div id="operatorLinkBox" class="invitelink hidden">
+        <input id="operatorInviteLink" readonly aria-label="Invitation link" />
+        <button id="copyOperatorInvite" class="ghost" type="button">Copy invite link</button>
+      </div>
+    </div>
 
     <nav class="dash-nav" id="dashNav" aria-label="Dashboard sections">
       <button type="button" class="dashTab active" data-tab="hours">Hours</button>
@@ -1032,37 +1050,39 @@ const HTML = /* html */ `<!doctype html>
     </div><!-- /appMain -->
   </div><!-- /app -->
 
-  <!-- Contact modal for larger teams. -->
-  <div id="salesModal" class="modal hidden">
+  <!-- Public access request. It notifies the operator and does not grant access. -->
+  <div id="accessRequestModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="requestAccessHeading">
     <div class="modal-backdrop"></div>
     <div class="card modal-card">
-      <button id="salesClose" class="ghost modal-close" aria-label="Close">&times;</button>
-      <h3>Contact sales</h3>
-      <p class="hint">Tell us about your team and we&rsquo;ll be in touch.</p>
+      <button id="accessRequestClose" class="ghost modal-close" aria-label="Close">&times;</button>
+      <h3 id="requestAccessHeading">Request access</h3>
+      <p class="hint">Clocked's hosted service is invite-only. Tell us a little about yourself. We'll review your request and reply by email.</p>
+      <div class="field"><label for="requestKind">Access for</label><select id="requestKind"><option value="individual">Just me</option><option value="team">My team</option></select></div>
       <div class="field">
-        <label for="sName">Name</label>
-        <input id="sName" type="text" autocomplete="name" />
+        <label for="requestName">Name</label>
+        <input id="requestName" type="text" autocomplete="name" />
       </div>
       <div class="field">
-        <label for="sEmail">Work email</label>
-        <input id="sEmail" type="email" autocomplete="email" />
+        <label for="requestEmail">Email</label>
+        <input id="requestEmail" type="email" autocomplete="email" />
       </div>
-      <div class="row">
+      <div id="requestTeamFields" class="row hidden">
         <div>
-          <label for="sCompany">Company</label>
-          <input id="sCompany" type="text" autocomplete="organization" />
+          <label for="requestCompany">Company (optional)</label>
+          <input id="requestCompany" type="text" autocomplete="organization" />
         </div>
         <div>
-          <label for="sTeam">Team size</label>
-          <input id="sTeam" type="text" inputmode="numeric" placeholder="e.g. 45" />
+          <label for="requestTeamSize">Team size (optional)</label>
+          <input id="requestTeamSize" type="text" inputmode="numeric" placeholder="e.g. 45" />
         </div>
       </div>
       <div class="field" style="margin-top:14px">
-        <label for="sMsg">Message <span class="muted" style="text-transform:none;letter-spacing:0">(optional)</span></label>
-        <textarea id="sMsg" rows="3"></textarea>
+        <label for="requestMessage">Message <span class="muted" style="text-transform:none;letter-spacing:0">(optional)</span></label>
+        <textarea id="requestMessage" rows="3"></textarea>
       </div>
-      <button id="sSubmit" style="width:100%">Send message</button>
-      <div id="salesMsg" class="msg" role="status"></div>
+      <button id="submitAccessRequest" style="width:100%">Send request</button>
+      <div id="accessRequestMsg" class="msg" role="status"></div>
+      <button id="navSignup" class="ghost" type="button" style="width:100%;margin-top:12px">I already have an invitation</button>
     </div>
   </div>
 </div>
@@ -1107,6 +1127,7 @@ document.querySelectorAll(".dashTab").forEach((b) => {
 });
 
 // ---- auth mode (sign up / sign in) ----
+function invitationCallbackURL() { return location.pathname + location.search; }
 let mode = "signup";
 function setMode(m) {
   mode = m;
@@ -1130,44 +1151,62 @@ function openAuth(m) {
 }
 function closeAuth() { $("authModal").classList.add("hidden"); }
 $("navSignin").onclick = () => openAuth("signin");
-$("navSignup").onclick = () => openAuth("signup");
-if ($("heroSignup")) $("heroSignup").onclick = () => openAuth("signup");
-document.querySelectorAll(".planCta").forEach((b) => {
-  b.onclick = () => openAuth("signup");
+$("navSignup").onclick = () => { closeAccessRequest(); openAuth("signup"); };
+$("navRequestAccess").onclick = () => openAccessRequest();
+$("heroRequestAccess").onclick = () => openAccessRequest();
+document.querySelectorAll(".requestAccess").forEach((button) => {
+  button.onclick = () => openAccessRequest(button.dataset.kind);
 });
 $("authClose").onclick = closeAuth;
 $("authModal").querySelector(".modal-backdrop").onclick = closeAuth;
 
-// ---- contact (larger teams) ----
-function openSales() { $("salesModal").classList.remove("hidden"); setTimeout(() => $("sName").focus(), 30); }
-function closeSales() { $("salesModal").classList.add("hidden"); }
-$("salesCta").onclick = (e) => { e.preventDefault(); openSales(); };
-$("salesClose").onclick = closeSales;
-$("salesModal").querySelector(".modal-backdrop").onclick = closeSales;
-$("sSubmit").onclick = async () => {
-  const name = $("sName").value.trim();
-  const email = $("sEmail").value.trim();
-  const company = $("sCompany").value.trim();
-  const teamSize = $("sTeam").value.trim();
-  const message = $("sMsg").value.trim();
-  $("salesMsg").textContent = ""; $("salesMsg").className = "msg";
-  if (!name || !email) { $("salesMsg").textContent = "Name and work email are required."; $("salesMsg").className = "msg err"; return; }
-  $("sSubmit").disabled = true; $("sSubmit").textContent = "Sending…";
-  const r = await api("/api/contact-sales", { method:"POST", body: JSON.stringify({ name, email, company, teamSize, message }) });
-  $("sSubmit").disabled = false; $("sSubmit").textContent = "Send message";
-  const d = await r.json().catch(()=>({}));
-  if (r.ok) {
-    $("salesMsg").textContent = "Thanks — we'll be in touch shortly."; $("salesMsg").className = "msg ok";
-    $("sName").value = $("sEmail").value = $("sCompany").value = $("sTeam").value = $("sMsg").value = "";
-  } else {
-    $("salesMsg").textContent = d.error || "Could not send. Please try again."; $("salesMsg").className = "msg err";
+// ---- public access requests ----
+function openAccessRequest(kind = "individual") {
+  $("requestKind").value = kind;
+  $("requestKind").onchange();
+  $("accessRequestMsg").textContent = "";
+  $("accessRequestModal").classList.remove("hidden");
+  setTimeout(() => $("requestName").focus(), 30);
+}
+function closeAccessRequest() { $("accessRequestModal").classList.add("hidden"); }
+$("requestKind").onchange = () => $("requestTeamFields").classList.toggle("hidden", $("requestKind").value !== "team");
+$("accessRequestClose").onclick = closeAccessRequest;
+$("accessRequestModal").querySelector(".modal-backdrop").onclick = closeAccessRequest;
+$("submitAccessRequest").onclick = async () => {
+  const name = $("requestName").value.trim();
+  const email = $("requestEmail").value.trim();
+  const kind = $("requestKind").value;
+  const company = $("requestCompany").value.trim();
+  const teamSize = $("requestTeamSize").value.trim();
+  const message = $("requestMessage").value.trim();
+  $("accessRequestMsg").textContent = ""; $("accessRequestMsg").className = "msg";
+  if (!name || !email || !$("requestEmail").checkValidity()) { $("accessRequestMsg").textContent = "Enter your name and a valid email address."; $("accessRequestMsg").className = "msg err"; return; }
+  $("submitAccessRequest").disabled = true; $("submitAccessRequest").textContent = "Sending…";
+  try {
+    const body = kind === "team" ? { name, email, kind, company, teamSize, message } : { name, email, kind, message };
+    const r = await api("/api/request-access", { method:"POST", body: JSON.stringify(body) });
+    const d = await r.json().catch(()=>({}));
+    if (r.ok) {
+      $("accessRequestMsg").textContent = "Request sent. We'll review it and email you about access.";
+      $("accessRequestMsg").className = "msg ok";
+      $("requestName").value = $("requestEmail").value = $("requestCompany").value = $("requestTeamSize").value = $("requestMessage").value = "";
+    } else {
+      $("accessRequestMsg").textContent = d.error || "Could not send your request. Please try again.";
+      $("accessRequestMsg").className = "msg err";
+    }
+  } catch {
+    $("accessRequestMsg").textContent = "Could not reach Clocked. Check your connection and try again.";
+    $("accessRequestMsg").className = "msg err";
+  } finally {
+    $("submitAccessRequest").disabled = false;
+    $("submitAccessRequest").textContent = "Send request";
   }
 };
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     closeAuth();
-    closeSales();
+    closeAccessRequest();
   }
 });
 
@@ -1181,10 +1220,10 @@ async function submitAuth() {
   $("authBtn").disabled = true;
   let r, body;
   if (mode === "signup") {
-    body = { email, password, name: ($("name").value.trim() || email) };
+    body = { email, password, name: ($("name").value.trim() || email), callbackURL: invitationCallbackURL() };
     r = await api("/api/auth/sign-up/email", { method:"POST", body: JSON.stringify(body) });
   } else {
-    r = await api("/api/auth/sign-in/email", { method:"POST", body: JSON.stringify({ email, password }) });
+    r = await api("/api/auth/sign-in/email", { method:"POST", body: JSON.stringify({ email, password, callbackURL: invitationCallbackURL() }) });
   }
   $("authBtn").disabled = false;
 
@@ -1207,7 +1246,7 @@ $("password").addEventListener("keydown", (e) => { if (e.key === "Enter") submit
 $("googleBtn").onclick = async () => {
   $("authMsg").textContent = ""; $("authMsg").className = "msg";
   $("googleBtn").disabled = true;
-  const r = await api("/api/auth/sign-in/social", { method:"POST", body: JSON.stringify({ provider:"google", callbackURL:"/" }) });
+  const r = await api("/api/auth/sign-in/social", { method:"POST", body: JSON.stringify({ provider:"google", callbackURL:invitationCallbackURL() }) });
   const data = await r.json().catch(()=>({}));
   if (r.ok && data.url) { window.location.href = data.url; return; }
   $("googleBtn").disabled = false;
@@ -1220,7 +1259,12 @@ async function init() {
   const r = await api("/api/auth/get-session");
   const data = r.ok ? await r.json() : null;
   if (data && data.user) { show(true); await afterLogin(false); }
-  else { show(false); setMode("signup"); }
+  else {
+    show(false);
+    setMode("signin");
+    const params = new URLSearchParams(location.search);
+    if (params.has("invitation") || params.has("individualInvitation")) openAuth("signup");
+  }
 }
 
 async function afterLogin(fresh) {
@@ -1228,10 +1272,9 @@ async function afterLogin(fresh) {
   const now = new Date();
   $("month").value = now.getFullYear() + "-" + pad(now.getMonth()+1);
   $("mDate").value = now.getFullYear() + "-" + pad(now.getMonth()+1) + "-" + pad(now.getDate());
-  await acceptPendingInvite();
 
   // Verify email, then the product.
-  const me = await fetchMe();
+  let me = await fetchMe();
   if (!me || !me.user) {
     show(false);
     setMode("signin");
@@ -1242,11 +1285,18 @@ async function afterLogin(fresh) {
     setAccessStage("verify");
     return;
   }
+  if (!(await acceptPendingInvite())) {
+    setAccessStage("approval");
+    return;
+  }
+  me = await fetchMe();
+  if (!me || !me.user) { show(false); return; }
   if (!me.user.approved) {
     setAccessStage("approval");
     return;
   }
   setAccessStage("app");
+  $("operatorInvites").classList.toggle("hidden", !me.operator);
   setDashTab("hours");
   await applyTeamFromMe(me);
   await Promise.all([loadToken(), loadHours(), loadEmailSettings()]);
@@ -1276,7 +1326,7 @@ if ($("resendVerifyGate")) {
     // better-auth requires email in the body (optional callbackURL).
     const r = await api("/api/auth/send-verification-email", {
       method: "POST",
-      body: JSON.stringify({ email: email, callbackURL: "/" }),
+      body: JSON.stringify({ email: email, callbackURL: invitationCallbackURL() }),
     });
     const d = await r.json().catch(() => ({}));
     $("verifyGateMsg").textContent = r.ok
@@ -1302,11 +1352,65 @@ function roleLabel(role) { return isManagerRoleC(role) ? "Manager" : "Worker"; }
 
 // If arriving from an invite link (/?invitation=ID) while signed in, accept it.
 async function acceptPendingInvite() {
-  const inv = new URLSearchParams(location.search).get("invitation");
-  if (!inv) return;
-  await api("/api/auth/organization/accept-invitation", { method:"POST", body: JSON.stringify({ invitationId: inv }) });
-  history.replaceState({}, "", location.pathname);
+  const params = new URLSearchParams(location.search);
+  const individual = params.get("individualInvitation");
+  const inv = individual || params.get("invitation");
+  $("invitationMsg").textContent = "";
+  if (!inv) return true;
+  let r;
+  try {
+    r = await api(individual ? "/api/invitations/individual/accept" : "/api/auth/organization/accept-invitation", { method:"POST", body: JSON.stringify({ invitationId: inv }) });
+  } catch {
+    $("invitationMsg").textContent = "Could not reach clocked. Your invitation is still here. Check your connection and try again.";
+    $("invitationMsg").className = "msg err";
+    return false;
+  }
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({}));
+    $("invitationMsg").textContent = d.message || "Could not accept this invitation. Check you are signed in with the invited email address, or ask for a new invitation.";
+    $("invitationMsg").className = "msg err";
+    return false;
+  }
+  const url = new URL(location.href);
+  url.searchParams.delete(individual ? "individualInvitation" : "invitation");
+  history.replaceState({}, "", url.pathname + url.search);
+  return acceptPendingInvite();
 }
+
+$("retryInvitation").onclick = () => afterLogin(false);
+$("operatorInviteKind").onchange = () => {
+  const manager = $("operatorInviteKind").value === "manager";
+  $("operatorTeamField").classList.toggle("hidden", !manager);
+  $("operatorInviteHint").textContent = manager
+    ? "Create a separate team for this person. They will own that team and invite their workers. They will not join your team."
+    : "Individuals manage their own timesheets and email delivery without a team. They can join a team later.";
+  $("operatorLinkBox").classList.add("hidden");
+  $("operatorInviteMsg").textContent = "";
+};
+$("sendOperatorInvite").onclick = async () => {
+  const email = $("operatorInviteEmail").value.trim();
+  const teamName = $("operatorTeamName").value.trim();
+  const kind = $("operatorInviteKind").value;
+  $("operatorLinkBox").classList.add("hidden");
+  $("operatorInviteMsg").textContent = "";
+  if (!email || (kind === "manager" && !teamName)) { $("operatorInviteMsg").textContent = kind === "manager" ? "Enter the manager's email and their team name." : "Enter an email address."; return; }
+  $("sendOperatorInvite").disabled = true;
+  try {
+    const body = kind === "manager" ? { kind, email, teamName } : { kind, email };
+    const r = await api("/api/admin/invite", { method: "POST", body: JSON.stringify(body) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { $("operatorInviteMsg").textContent = d.error || "Could not create the invitation."; return; }
+    $("operatorInviteLink").value = d.url;
+    $("operatorLinkBox").classList.remove("hidden");
+    $("operatorInviteMsg").textContent = d.emailSent ? "Invitation emailed. You can also copy the link below. It expires in 7 days." : "Invitation created, but the email could not be sent. Copy and share the link below. It expires in 7 days.";
+  } catch {
+    $("operatorInviteMsg").textContent = "Could not reach clocked. Check your connection before trying again.";
+  } finally { $("sendOperatorInvite").disabled = false; }
+};
+$("copyOperatorInvite").onclick = async () => {
+  await navigator.clipboard.writeText($("operatorInviteLink").value);
+  $("operatorInviteMsg").textContent = "Invite link copied.";
+};
 
 async function applyTeam() {
   const me = await fetchMe();
@@ -1347,10 +1451,10 @@ async function applyTeamFromMe(me) {
     // Workers: no team admin tab.
     if ($("panel-team") && $("panel-team").classList.contains("active")) setDashTab("hours");
   } else {
-    // Solo: the Team tab offers to create a team.
+    // Individuals manage their own timesheets. Only the operator can start a team.
     canEditTimes = true;
-    $("tabTeam").classList.remove("hidden");
-    configureTeamUI();
+    if (me.operator) { $("tabTeam").classList.remove("hidden"); configureTeamUI(); }
+    else if ($("panel-team").classList.contains("active")) setDashTab("hours");
   }
   configureEmailCard();
   configureManualEditUI();
@@ -1867,7 +1971,7 @@ if (resendBtn) resendBtn.onclick = async () => {
   }
   const r = await api("/api/auth/send-verification-email", {
     method: "POST",
-    body: JSON.stringify({ email, callbackURL: "/" }),
+    body: JSON.stringify({ email, callbackURL: invitationCallbackURL() }),
   });
   const d = await r.json().catch(() => ({}));
   $("tokenMsg").textContent = r.ok
@@ -2401,7 +2505,7 @@ $("signout").onclick = async () => {
   setMode("signin");
   orgId = ""; orgName = ""; orgRole = ""; meEmail = "";
   orgPlanKey = ""; canEditTimes = true; emailMode = "solo";
-  window.location.assign("/");
+  window.location.assign(invitationCallbackURL());
 };
 $("month").addEventListener("change", loadHours);
 $("prev").onclick = () => shiftMonth(-1);

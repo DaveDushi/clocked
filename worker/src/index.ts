@@ -25,7 +25,7 @@ import {
   newsPageResponse,
   runMarketingAgent,
 } from "./marketing-agent";
-import { buildAndSendReport, sendContactSales, sendMonthlyReports } from "./email";
+import { buildAndSendReport, sendMonthlyReports } from "./email";
 import { handleActivityIngest } from "./activity";
 import { handleIngest } from "./ingest";
 import {
@@ -46,7 +46,8 @@ import {
 import { previousMonthPeriod, wallToUtc } from "./time";
 import { orgPlan, planCap, planLabel } from "./plans";
 import { ensureTeamOrg } from "./teams";
-import { handleAdminApprove, isApproved, requestApproval } from "./approval";
+import { handleAdminApprove, isApproved } from "./approval";
+import { handleAcceptIndividualInvitation, handleCreateInvitation, handleRequestAccess, isOperator } from "./onboarding";
 import { clientIp, rateLimitAllowDurable } from "./rate-limit";
 import {
   isSameOriginRequest,
@@ -158,31 +159,12 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     return new Response("clocked-worker ok\n", { status: 200 });
   }
 
-  // Public "Contact sales" lead form — durable rate-limit to curb Resend abuse.
-  if (req.method === "POST" && url.pathname === "/api/contact-sales") {
-    if (!(await rateLimitAllowDurable(env.DB, `contact-sales:${ip}`, 3, 60 * 60_000))) {
+  // Public access requests notify the operator without creating an account.
+  if (req.method === "POST" && url.pathname === "/api/request-access") {
+    if (!(await rateLimitAllowDurable(env.DB, `request-access:${ip}`, 3, 60 * 60_000))) {
       return json({ error: "too many requests" }, 429);
     }
-    const body = (await req.json().catch(() => ({}))) as {
-      name?: unknown;
-      email?: unknown;
-      company?: unknown;
-      teamSize?: unknown;
-      message?: unknown;
-    };
-    const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
-    const name = str(body.name, 200);
-    const email = str(body.email, 200);
-    if (!name || !email) return json({ error: "name and email are required" }, 400);
-    if (!isEmail(email)) return json({ error: "invalid email" }, 400);
-    const result = await sendContactSales(env, {
-      name,
-      email,
-      company: str(body.company, 200),
-      teamSize: str(body.teamSize, 100),
-      message: str(body.message, 4000),
-    });
-    return json(result.ok ? { ok: true } : { error: result.error || "send failed" }, result.ok ? 200 : 500);
+    return handleRequestAccess(req, env);
   }
 
   // Operator approve link from the new-signup email (HMAC-signed, no session).
@@ -259,17 +241,35 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const user = await sessionUser(req, env);
     if (!user) return json({ error: "unauthorized" }, 401);
     const approved = user.emailVerified && (await isApproved(env, user.id));
-    if (user.emailVerified && !approved) await requestApproval(env, user);
     const orgs = approved ? await membershipsFor(env, user.id) : [];
     const manager = orgs.some((o) => isManagerRole(o.role));
     // Team workers (non-managers) may not self-edit times — managers adjust for them.
     const canEditTimes = orgs.length === 0 || manager;
     return json({
       user: { id: user.id, email: user.email, emailVerified: user.emailVerified, approved },
+      operator: approved && isOperator(user),
       orgs,
       manager,
       canEditTimes,
     });
+  }
+
+  if (url.pathname === "/api/admin/invite" && req.method === "POST") {
+    const user = await requireActiveUser(req, env);
+    if (user instanceof Response) return user;
+    if (!(await rateLimitAllowDurable(env.DB, `operator-invite:${user.id}`, 20, 60 * 60_000))) {
+      return json({ error: "too many requests" }, 429);
+    }
+    return handleCreateInvitation(req, env, user);
+  }
+
+  if (url.pathname === "/api/invitations/individual/accept" && req.method === "POST") {
+    const user = await sessionUser(req, env);
+    if (!user) return json({ error: "unauthorized" }, 401);
+    if (!(await rateLimitAllowDurable(env.DB, `individual-invite-accept:${user.id}`, 30, 60 * 60_000))) {
+      return json({ error: "too many requests" }, 429);
+    }
+    return handleAcceptIndividualInvitation(req, env, user);
   }
 
   if (url.pathname === "/api/team/members" && req.method === "GET") {
@@ -356,6 +356,8 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   if (req.method === "POST" && url.pathname === "/api/team/create") {
     const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
+    const ownsTeam = (await membershipsFor(env, user.id)).some((org) => org.role.split(",").includes("owner"));
+    if (!isOperator(user) && !ownsTeam) return json({ error: "Ask the operator for a team manager invitation." }, 403);
     if (!(await rateLimitAllowDurable(env.DB, `team-create:${user.id}`, 10, 60 * 60_000))) {
       return json({ error: "too many requests" }, 429);
     }

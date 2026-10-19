@@ -1,10 +1,12 @@
 import { betterAuth } from "better-auth";
+import { APIError } from "better-auth/api";
 import { organization } from "better-auth/plugins";
 
-import { approveUser } from "./approval";
-import { desktopAuth } from "./desktop-auth";
-import { sendAuthEmail } from "./email";
-import { effectiveMemberCap } from "./plans";
+import { approveUser, isApproved } from "./approval.js";
+import { desktopAuth } from "./desktop-auth.js";
+import { sendAuthEmail } from "./email.js";
+import { effectiveMemberCap } from "./plans.js";
+import { hasPendingInvitation, isOperator } from "./onboarding.js";
 import type { Env } from "./types";
 
 // --- Workers-native password hashing (PBKDF2 via Web Crypto) --------------
@@ -19,11 +21,11 @@ const enc = new TextEncoder();
 function b64(buf: ArrayBuffer): string {
   return btoa(String.fromCharCode(...new Uint8Array(buf)));
 }
-function unb64(s: string): Uint8Array {
+function unb64(s: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 }
 
-async function deriveBits(password: string, salt: Uint8Array, iter: number): Promise<ArrayBuffer> {
+async function deriveBits(password: string, salt: Uint8Array<ArrayBuffer>, iter: number): Promise<ArrayBuffer> {
   const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, [
     "deriveBits",
   ]);
@@ -64,13 +66,24 @@ function floorOrgMetadata(
 
 // --- better-auth instance --------------------------------------------------
 // Bindings only exist inside `fetch`, so build a fresh instance per request.
-// Public sign-up is enabled: each new account gets its own per-account API token
-// (see tokens.ts) that the desktop app uses to sync.
-export function makeAuth(env: Env, allowSignUp = true) {
+// Both password and social account creation require a pending invitation.
+export function makeAuth(env: Env) {
   return betterAuth({
     database: env.DB, // native D1 (better-auth >= 1.5), no adapter
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,
+    databaseHooks: {
+      user: {
+        create: {
+          async before(user) {
+            if (!(await hasPendingInvitation(env, user.email))) {
+              throw new APIError("FORBIDDEN", { message: "Clocked is invite-only. Ask the operator or your team manager for an invitation and use the invited email address." });
+            }
+            return { data: user };
+          },
+        },
+      },
+    },
     // Origins allowed to POST to auth endpoints (CSRF/origin check). Include every
     // host the app is legitimately served from: the configured URL, the production
     // domain on either protocol, and local dev on localhost/127.0.0.1. All are the
@@ -103,7 +116,6 @@ export function makeAuth(env: Env, allowSignUp = true) {
     },
     emailAndPassword: {
       enabled: true,
-      disableSignUp: !allowSignUp,
       // Soft: allow session creation so the dashboard can prompt verify.
       // Data APIs require a verified, approved account (see requireActiveUser).
       requireEmailVerification: false,
@@ -139,6 +151,7 @@ export function makeAuth(env: Env, allowSignUp = true) {
       desktopAuth(env),
       organization({
         creatorRole: "owner",
+        requireEmailVerificationOnInvitation: true,
         teams: { enabled: true },
         // Seat cap comes from the stored org plan (see plans.ts).
         membershipLimit: async (_user, org) => {
@@ -148,7 +161,10 @@ export function makeAuth(env: Env, allowSignUp = true) {
         },
         organizationHooks: {
           // Strip any client-supplied plan; only /api/team/create may raise seats.
-          async beforeCreateOrganization({ organization: org }) {
+          async beforeCreateOrganization({ organization: org, user }) {
+            if (!isOperator(user) || !(await isApproved(env, user.id))) {
+              throw new APIError("FORBIDDEN", { message: "Ask the operator for a team manager invitation." });
+            }
             return {
               data: {
                 ...org,
@@ -157,6 +173,11 @@ export function makeAuth(env: Env, allowSignUp = true) {
                 ),
               },
             };
+          },
+          async beforeCreateInvitation({ inviter }) {
+            if (!inviter.emailVerified || !(await isApproved(env, inviter.id))) {
+              throw new APIError("FORBIDDEN", { message: "Accept your invitation before inviting other people." });
+            }
           },
           // A manager inviting someone vouches for them, so invitees skip approval.
           async afterAcceptInvitation({ user }) {

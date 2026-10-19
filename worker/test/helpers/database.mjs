@@ -10,13 +10,30 @@ export function testDatabase() {
     sqlite.exec(readFileSync(new URL(name, migrations), "utf8"));
   }
   const DB = {
+    async exec(sql) { sqlite.exec(sql); },
+    async batch(statements) {
+      sqlite.exec("BEGIN");
+      try {
+        const results = [];
+        for (const statement of statements) results.push(await statement.run());
+        sqlite.exec("COMMIT");
+        return results;
+      } catch (error) {
+        sqlite.exec("ROLLBACK");
+        throw error;
+      }
+    },
     prepare(sql) {
       const statement = sqlite.prepare(sql);
       let values = [];
       return {
         bind(...args) { values = args; return this; },
         async first() { return statement.get(...values) ?? null; },
-        async all() { return { results: statement.all(...values) }; },
+        async all() {
+          const results = statement.all(...values);
+          const meta = sqlite.prepare("SELECT changes() AS changes, last_insert_rowid() AS last_row_id").get();
+          return { results, meta };
+        },
         async run() { return { meta: statement.run(...values) }; },
       };
     },

@@ -269,20 +269,49 @@ provider acceptance and that database write can still cause a duplicate. Switchi
 providers does not transfer delivery logs, suppression lists, or bounce handling.
 Check delivery monitoring and suppressions with the chosen provider before cutover.
 
-### Account approval
+### Invite managers and workers
 
-New accounts need your approval. After someone signs up and verifies their email,
-the dashboard tells them they're waiting, and the worker emails the operator inbox
-(`ADMIN_INBOX` in `worker/src/email.ts`) with a link to approve them. Approving
-from that link also emails the user to say they're in. People who accept a team
-invite are approved automatically, because the manager who invited them vouched
-for them.
+The landing page's **Request access** form emails `ADMIN_INBOX` with the person's
+name, reply-to email, individual or team request, and optional message and team
+details. Requests do not create accounts or grant access. Review the email,
+then send the appropriate invitation from the operator dashboard.
 
-You can also approve from the command line (this does not email the user):
+New accounts require a pending, unexpired invitation for their email address.
+This applies to email/password signup and Google account creation. Existing
+approved accounts keep access.
+
+Sign in with the verified operator account, `ADMIN_INBOX` in `worker/src/email.ts`.
+In **Invite someone**, choose **Team manager**, then enter their email and team name.
+Clocked creates a separate team and sends an invitation that expires in seven
+days. The invited manager becomes its owner when they verify their email and
+open the invitation. The operator does not become a member of that team.
+If email delivery fails, copy the saved invitation link from the same form.
+
+Choose **Individual** to invite someone without a team. After verifying their
+email and accepting the invitation, they can track time and manage their own
+timesheets and delivery settings. No team is created. They can accept a team
+invitation later. Only the operator can send these invitations or start new
+teams; individuals and workers cannot invite others. Individual invitations
+also expire after seven days.
+
+Managers invite workers from **Team** by entering an email and selecting
+**Worker**. Select **Manager** to invite another manager into that same team.
+Recipients can create an account or sign in with an existing individual account.
+Opening the invitation with the matching verified email joins the team and
+approves access automatically. Existing accounts retain their recorded time;
+their team controls timesheet delivery after they join.
+
+For accounts created before invite-only onboarding, the existing approval links
+and command still work. The command does not create an account or send email:
 
 ```sh
 npm run users:approve -- person@example.com
 ```
+
+Run `npm run verify:onboarding` in `worker` to check invite-only signup, manager
+provisioning, and an existing individual account joining a team against an
+isolated local Worker and D1 database. Add `-- --serve` to inspect the fixture.
+It has no email credentials and does not send external email.
 
 ### Manager-assigned working hours
 
@@ -342,8 +371,8 @@ against the `clocked` D1 database can run them.
 | GET    | `/preview?period=YYYY-MM`   | Cookie  | this account's report body (no email)            |
 | POST   | `/send-test?period=YYYY-MM` | Cookie  | build **and email** this account's report now (bypasses gate) |
 
-Sign-up is public: each account can mint named `clk_` Bearer tokens and only
-ever sees its own sessions. The desktop app authenticates its sync with that
+Sign-up is invite-only. Verified accounts that accepted an invitation can mint
+named `clk_` Bearer tokens. Each account only sees its own sessions. The desktop app authenticates its sync with that
 token; a global `BEARER_TOKEN` secret, if set, still works as a legacy fallback
 (those sessions land unattributed to any account).
 

@@ -204,26 +204,28 @@ export async function sendAuthEmail(
   return sendEmail(env, { ...opts, to: [opts.to] });
 }
 
-export interface SalesLead {
+export interface AccessRequest {
   name: string;
   email: string;
+  kind: "individual" | "team";
   company?: string;
   teamSize?: string;
   message?: string;
 }
 
 /**
- * Email an Enterprise "Contact sales" lead to the sales inbox. Sends from the
+ * Email an access request to the operator inbox. Sends from the
  * verified MAIL_FROM domain with
  * the lead's own address as reply-to, so hitting reply reaches them directly.
  */
-export async function sendContactSales(
+export async function sendAccessRequest(
   env: Env,
-  lead: SalesLead,
+  lead: AccessRequest,
 ): Promise<{ ok: boolean; error?: string }> {
   const fields: [string, string][] = [
     ["Name", lead.name],
     ["Email", lead.email],
+    ["Access", lead.kind === "team" ? "Team" : "Individual"],
     ["Company", lead.company || "—"],
     ["Team size", lead.teamSize || "—"],
   ];
@@ -233,7 +235,7 @@ export async function sendContactSales(
 <body style="margin:0;background:#f0f1f3;padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);">
     <tr><td style="padding:26px 28px 8px;">
-      <div style="font-size:13px;color:#6b7280;letter-spacing:.04em;text-transform:uppercase;">New enterprise lead</div>
+      <div style="font-size:13px;color:#6b7280;letter-spacing:.04em;text-transform:uppercase;">New access request</div>
       <div style="font-size:22px;font-weight:700;color:#111827;margin-top:2px;">${esc(lead.name)}</div>
     </td></tr>
     <tr><td style="padding:8px 28px 4px;">
@@ -255,10 +257,11 @@ export async function sendContactSales(
 </html>`;
 
   const text = [
-    `New enterprise lead`,
+    `New access request`,
     ``,
     `Name: ${lead.name}`,
     `Email: ${lead.email}`,
+    `Access: ${lead.kind === "team" ? "Team" : "Individual"}`,
     `Company: ${lead.company || "—"}`,
     `Team size: ${lead.teamSize || "—"}`,
     ``,
@@ -269,7 +272,7 @@ export async function sendContactSales(
   return sendEmail(env, {
     to: [ADMIN_INBOX],
     replyTo: lead.email,
-    subject: `Enterprise enquiry — ${lead.name}`,
+    subject: `Clocked access request - ${lead.name}`,
     html,
     text,
   });

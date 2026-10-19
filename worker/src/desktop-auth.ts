@@ -2,8 +2,8 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import { setSessionCookie } from "better-auth/cookies";
 import * as z from "zod";
 
-import { rateLimitAllowDurable } from "./rate-limit";
-import { userIdForToken } from "./tokens";
+import { rateLimitAllowDurable } from "./rate-limit.js";
+import { userIdForToken } from "./tokens.js";
 import type { Env } from "./types";
 
 // --- Desktop "Open timesheet" auto-login -----------------------------------

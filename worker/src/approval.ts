@@ -1,9 +1,7 @@
-// Manual account approval. Signing up and verifying an email is not enough: the
-// operator approves each new account before it can use the product. The first
-// time a verified, unapproved user loads the dashboard we email the operator a
-// signed approve link. Invitees who accept a team invite skip the queue.
+// Invite acceptance grants account access. Retain signed approval links and
+// manual approval for accounts created before invite-only onboarding.
 
-import { ADMIN_INBOX, sendAuthEmail } from "./email";
+import { sendAuthEmail } from "./email.js";
 import type { Env } from "./types";
 
 export async function isApproved(env: Env, userId: string): Promise<boolean> {
@@ -44,40 +42,6 @@ export async function checkApprovalSig(env: Env, userId: string, sig: string): P
   let diff = 0;
   for (let i = 0; i < want.length; i++) diff |= want.charCodeAt(i) ^ sig.charCodeAt(i);
   return diff === 0;
-}
-
-function approveUrl(env: Env, userId: string, sig: string): string {
-  const base = env.BETTER_AUTH_URL.replace(/\/$/, "");
-  return `${base}/admin/approve?u=${encodeURIComponent(userId)}&sig=${sig}`;
-}
-
-/**
- * Record that a verified user is waiting and email the operator once. Safe to
- * call on every dashboard load: only the first call inserts and sends.
- */
-export async function requestApproval(
-  env: Env,
-  user: { id: string; email: string },
-): Promise<void> {
-  const res = await env.DB.prepare(
-    `INSERT OR IGNORE INTO user_approval (userId, requestedAt, approvedAt)
-     VALUES (?, datetime('now'), NULL)`,
-  )
-    .bind(user.id)
-    .run();
-  if ((res.meta?.changes ?? 0) === 0) return;
-  const url = approveUrl(env, user.id, await approvalSig(env, user.id));
-  await sendAuthEmail(env, {
-    to: ADMIN_INBOX,
-    subject: `New clocked signup: ${user.email}`,
-    text: `${user.email} signed up and verified their email.\n\nApprove: ${url}\n\nIgnore this email to leave them pending.`,
-    html: simpleEmailHtml(
-      "New signup waiting",
-      `${user.email} signed up and verified their email. Ignore this email to leave them pending.`,
-      url,
-      "Review signup",
-    ),
-  });
 }
 
 /** Tell a user their account is ready. */

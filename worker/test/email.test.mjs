@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { sendEmail } from "../.tmp-test/email-provider.js";
-import { sendAuthEmail, sendContactSales, buildAndSendReport, ADMIN_INBOX } from "../.tmp-test/email.js";
+import { sendAuthEmail, sendAccessRequest, buildAndSendReport, ADMIN_INBOX } from "../.tmp-test/email.js";
 import { testDatabase } from "./helpers/database.mjs";
 
 const message = {
@@ -106,7 +106,7 @@ test("auth and sales emails both use the selected provider", async () => {
   const messages = [];
   const env = { ...sender, EMAIL_PROVIDER: "cloudflare", EMAIL: { async send(value) { messages.push(value); return { messageId: "id" }; } } };
   assert.deepEqual(await sendAuthEmail(env, { to: "new@example.test", subject: "Verify", text: "Verify link", html: "<a>Verify</a>" }), { ok: true });
-  assert.deepEqual(await sendContactSales(env, { name: "Alice <Admin>", email: "lead@example.test" }), { ok: true });
+  assert.deepEqual(await sendAccessRequest(env, { name: "Alice <Admin>", email: "lead@example.test", kind: "individual" }), { ok: true });
   assert.deepEqual(messages[0].to, ["new@example.test"]);
   assert.equal(messages[0].text, "Verify link");
   assert.equal(messages[0].attachments, undefined);
