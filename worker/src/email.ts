@@ -1,7 +1,7 @@
 import type { Env } from "./types";
 import { sendEmail } from "./email-provider.js";
 import { buildTimesheet, formatHours, isWorkDay, type HoursReport } from "./report.js";
-import { getEffectiveRecipients, listUsersWithEffectiveSchedules } from "./settings.js";
+import { listDeliveries } from "./delivery.js";
 import { isScheduleDue, periodForSchedule } from "./schedule.js";
 
 /**
@@ -283,11 +283,10 @@ export async function sendContactSales(
  * a team, or the user's own `mail_to`/account email when solo.
  */
 export async function sendMonthlyReports(env: Env, now: Date): Promise<void> {
-  const users = await listUsersWithEffectiveSchedules(env);
+  const users = await listDeliveries(env);
   for (const u of users) {
-    const { schedule } = u;
+    const { schedule, recipients } = u;
     if (!isScheduleDue(schedule, now)) continue;
-    const { recipients } = await getEffectiveRecipients(env, u.id, u.email);
     if (recipients.length === 0) continue;
     await buildAndSendReport(env, periodForSchedule(schedule, now), {
       force: false,

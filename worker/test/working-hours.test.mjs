@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { testDatabase } from "./helpers/database.mjs";
 import { effectiveWorkingHours, handleManagerWorkingHours, parseWorkingHours } from "../.tmp-test/working-hours.js";
-import { orgIdForUser, listUsersWithEffectiveSchedules } from "../.tmp-test/settings.js";
+import { orgIdForUser } from "../.tmp-test/settings.js";
+import { listDeliveries } from "../.tmp-test/delivery.js";
 
 const teamHours = { mode: "scheduled", start: "09:00", end: "17:00", days: [1, 2, 3, 4, 5] };
 const partTime = { mode: "scheduled", start: "10:00", end: "14:00", days: [1, 3, 5] };
@@ -93,6 +94,6 @@ test("tied membership dates select the same team for working hours and report de
     ('a', 5, '06:00', 'UTC'), ('b', 12, '08:00', 'Europe/Berlin');`);
   assert.deepEqual((await effectiveWorkingHours(env, "worker")).schedule, partTime);
   assert.equal(await orgIdForUser(env, "worker"), "b");
-  assert.deepEqual((await listUsersWithEffectiveSchedules(env)).find((user) => user.id === "worker").schedule,
+  assert.deepEqual((await listDeliveries(env)).find((user) => user.id === "worker").schedule,
     { day: 12, time: "08:00", timezone: "Europe/Berlin" });
 });

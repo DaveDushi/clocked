@@ -34,7 +34,7 @@ wrangler(["d1", "migrations", "apply", "clocked", "--local"]);
 const salt = randomBytes(16);
 const hash = `pbkdf2$100000$${salt.toString("base64")}$${pbkdf2Sync(password, salt, 100000, 32, "sha256").toString("base64")}`;
 const sql = [];
-for (const id of ["manager", "employee", "other-manager", "outsider"]) {
+for (const id of ["manager", "employee", "other-manager", "outsider", "solo"]) {
   sql.push(`INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt) VALUES ('${id}', '${id}', '${id}@example.test', 1, 1, 1);`);
   sql.push(`INSERT INTO account (id, accountId, providerId, userId, password, createdAt, updatedAt) VALUES ('${id}', '${id}', 'credential', '${id}', '${hash}', 1, 1);`);
   sql.push(`INSERT INTO user_approval (userId, requestedAt, approvedAt) VALUES ('${id}', datetime('now'), datetime('now'));`);
@@ -78,12 +78,40 @@ try {
   }
   assert.ok(ready, "Local Worker did not start: " + log);
   const cookies = {};
-  for (const id of ["manager", "employee", "other-manager"]) cookies[id] = await login(id);
+  for (const id of ["manager", "employee", "other-manager", "solo"]) {
+    // The configured sign-in limit is three requests per ten seconds.
+    if (id === "solo") await delay(10_100);
+    cookies[id] = await login(id);
+  }
   async function api(actor, path, schedule) {
     return fetch(base + path, { method: schedule === undefined ? "GET" : "POST", headers: {
       cookie: cookies[actor], origin: base, "content-type": "application/json",
     }, ...(schedule === undefined ? {} : { body: JSON.stringify({ schedule }) }) });
   }
+  async function delivery(actor, path, settings) {
+    return fetch(base + path, { method: settings === undefined ? "GET" : "POST", headers: {
+      cookie: cookies[actor], origin: base, "content-type": "application/json",
+    }, ...(settings === undefined ? {} : { body: JSON.stringify(settings) }) });
+  }
+  const teamSettings = "/api/team/settings?organizationId=acme";
+  const deliverySettings = {
+    recipients: ["reports@example.test"], sendDay: 12, sendTime: "09:30", sendTimezone: "Europe/Berlin",
+  };
+  assert.equal((await fetch(base + teamSettings)).status, 401);
+  assert.equal((await delivery("employee", teamSettings)).status, 403);
+  assert.equal((await delivery("other-manager", teamSettings, deliverySettings)).status, 403);
+  assert.deepEqual(await (await delivery("manager", teamSettings, deliverySettings)).json(), { ok: true, ...deliverySettings });
+  assert.deepEqual(await (await delivery("employee", "/api/settings")).json(), { ...deliverySettings, managed: true });
+  assert.equal((await delivery("employee", "/api/settings", deliverySettings)).status, 403);
+  const invalidDelivery = await delivery("manager", teamSettings, { ...deliverySettings, sendTime: "24:00" });
+  assert.equal(invalidDelivery.status, 400);
+  assert.deepEqual(await invalidDelivery.json(), { error: "invalid send time" });
+  assert.deepEqual(await (await delivery("employee", "/api/settings")).json(), { ...deliverySettings, managed: true });
+  assert.deepEqual(await (await delivery("solo", "/api/settings", deliverySettings)).json(), { ok: true, ...deliverySettings });
+  assert.deepEqual(await (await delivery("solo", "/api/settings")).json(), { ...deliverySettings, managed: false });
+  assert.deepEqual(await (await delivery("manager", teamSettings)).json(), {
+    ...deliverySettings, defaultRecipients: ["manager@example.test"],
+  });
   const path = "/api/team/working-hours?organizationId=acme";
   const hours = { mode: "scheduled", start: "09:00", end: "17:00", days: [1, 2, 3, 4, 5] };
   assert.equal((await fetch(base + path)).status, 401);
@@ -120,7 +148,7 @@ try {
     assert.equal(revoked.status, 200, await revoked.text());
     assert.equal((await desktop()).status, 401);
   }
-  console.log("PASS: real Worker/D1 cookie permissions, cross-team isolation, team schedule, member override, reset, and device policy.");
+  console.log("PASS: real Worker/D1 cookie permissions, cross-team isolation, delivery settings, team schedule, member override, reset, and device policy.");
   if (process.argv.includes("--serve")) {
     console.log(`Browser fixture: ${base}, manager@example.test or employee@example.test, password ${password}`);
     await new Promise((done) => server.on("exit", done));

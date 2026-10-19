@@ -13,3 +13,6 @@ Elapsed time covered by at least one session. Overlapping sessions from multiple
 
 **Project totals**:
 Time attributed to projects through optional activity tracking. These totals are separate from worked time based on presence.
+
+**Timesheet delivery**:
+The recipients and monthly schedule used to send an account's timesheet. A team controls delivery for its members; a solo account controls its own delivery.
