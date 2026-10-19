@@ -1,3 +1,5 @@
+import { createTimesheetView } from "./timesheet-view.js";
+
 // Self-contained landing page + dashboard (HTML + inline CSS/JS, no build step,
 // no assets). Auth is better-auth (cookies, same-origin fetch); data comes from
 // /api/hours, /api/settings, and /api/token. Served at GET /.
@@ -6,8 +8,7 @@
 // On sign-up the account is created and its per-account Bearer token is shown so
 // the desktop app can be pointed at this Worker.
 //
-// NOTE: the inline <script> lives inside this template literal — it must not
-// contain backticks or "${", so it sticks to string concatenation.
+// The lifecycle function is serialized below. Handwritten inline JS uses string concatenation.
 const HTML = /* html */ `<!doctype html>
 <html lang="en">
 <head>
@@ -1049,6 +1050,7 @@ const HTML = /* html */ `<!doctype html>
 </div>
 
 <script>
+const createTimesheetView = (${createTimesheetView.toString()});
 const $ = (id) => document.getElementById(id);
 const api = (path, opts={}) => fetch(path, { credentials:"same-origin", headers:{"content-type":"application/json"}, ...opts });
 const fmt = (min) => { const h = Math.floor(min/60), m = min%60; return h + ":" + String(m).padStart(2,"0"); };
@@ -1295,6 +1297,8 @@ async function applyTeam() {
 }
 
 async function applyTeamFromMe(me) {
+  personalTimesheet.clear(true);
+  teamTimesheet.clear(true);
   orgId = ""; orgName = ""; orgRole = ""; openMemberId = ""; emailMode = "solo";
   orgPlanKey = ""; memberCount = 0;
   canEditTimes = me.canEditTimes !== false;
@@ -1549,40 +1553,36 @@ function openMember(id, name) {
 }
 function closeMember() {
   openMemberId = "";
+  teamTimesheet.clear();
   const p = $("teamMemberPanel"); p.classList.add("hidden"); p.innerHTML = "";
 }
 
-async function loadTeamMemberHours() {
+function loadTeamMemberHours() {
   if (!openMemberId) return;
   const period = $("month").value || currentPeriod();
-  const panel = $("teamMemberPanel");
-  panel.classList.remove("hidden");
-  panel.innerHTML = "<div class='pv-head'><b>" + pvEsc(openMemberName) + " — " + pvEsc(period) + "</b><button id='tmClose' class='ghost'>Close</button></div><div class='pv-empty'>Loading…</div>";
-  $("tmClose").onclick = closeMember;
-  const r = await api("/api/team/hours?organizationId=" + encodeURIComponent(orgId) + "&userId=" + encodeURIComponent(openMemberId) + "&period=" + period);
-  if (!r.ok) {
-    panel.innerHTML = "<div class='pv-head'><b>" + pvEsc(openMemberName) + "</b><button id='tmClose' class='ghost'>Close</button></div><div class='pv-empty'>Could not load hours.</div>";
-    $("tmClose").onclick = closeMember;
-    return;
-  }
-  renderTeamMember(await r.json(), period);
+  const query = "organizationId=" + encodeURIComponent(orgId) + "&userId=" + encodeURIComponent(openMemberId);
+  return teamTimesheet.load({
+    key: orgId + ":" + openMemberId + ":" + period, period, label: openMemberName,
+    hoursUrl: "/api/team/hours?" + query + "&period=" + period,
+    editUrl: "/api/team/manual-session?" + query
+  });
 }
 
-function renderTeamMember(d, period) {
+function renderTeamMember(d, target) {
+  const period = target.period;
   const panel = $("teamMemberPanel");
-  const head = "<div class='pv-head'><b>" + pvEsc(openMemberName) + " — " + pvEsc(period) + "</b><button id='tmClose' class='ghost'>Close</button></div>";
+  const head = "<div class='pv-head'><b>" + pvEsc(target.label) + " — " + pvEsc(period) + "</b><button id='tmClose' class='ghost'>Close</button></div>";
   const max = d.days.reduce((a,x) => Math.max(a, x.minutes), 0) || 1;
   const rows = d.days.length
     ? d.days.map((x,i) => rowHtml(x, max, i, false)).join("")
     : "<tr class='empty'><td colspan='3'>No days to show for this month.</td></tr>";
   const activeDays = d.activeDays ?? d.days.filter((x) => x.minutes > 0).length;
   const summary = "<div class='muted' style='padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px'>Total <b style='color:var(--amber)'>" + fmt(d.totalMinutes) + "</b> &middot; " + activeDays + " day(s) · click a day for timeline</div>";
-  panel.innerHTML = head + summary +
+  panel.innerHTML = head + "<div id='tmHoursMsg' class='msg' role='status'></div>" + summary +
     "<div class='tablewrap'><table><thead><tr><th>Day</th><th></th><th class='num'>Hours</th></tr></thead><tbody id='tmRows'>" + rows + "</tbody></table></div>" +
     "<div id='tmTimeline' class='timeline-panel hidden' style='margin:12px;border-radius:10px'><div class='timeline-head'><div><b id='tmTlTitle'>Day</b><span class='sub' id='tmTlSub'></span></div><button id='tmTlClose' class='ghost' type='button'>Close</button></div><div id='tmTlBody'></div></div>" +
     tmEditHtml();
   $("tmClose").onclick = closeMember;
-  const tmSessions = d.sessions || [];
   const tmRows = $("tmRows");
   if (tmRows) {
     tmRows.addEventListener("click", (ev) => {
@@ -1590,29 +1590,15 @@ function renderTeamMember(d, period) {
       while (el && el !== tmRows && !(el.tagName === "TR" && el.getAttribute("data-date"))) el = el.parentNode;
       if (!el || el === tmRows) return;
       const date = el.getAttribute("data-date");
-      const all = tmRows.querySelectorAll("tr.day-row");
-      for (let i = 0; i < all.length; i++) all[i].classList.remove("selected");
-      el.classList.add("selected");
-      renderTimelineInto(date, tmSessions, d.days.find((day) => day.date === date)?.minutes ?? 0, $("tmTimeline"), $("tmTlTitle"), $("tmTlSub"), $("tmTlBody"));
+      teamTimesheet.select(el.classList.contains("selected") ? "" : date);
     });
   }
-  if ($("tmTlClose")) $("tmTlClose").onclick = () => {
-    if ($("tmTimeline")) $("tmTimeline").classList.add("hidden");
-    if (tmRows) {
-      const all = tmRows.querySelectorAll("tr.selected");
-      for (let i = 0; i < all.length; i++) all[i].classList.remove("selected");
-    }
-  };
+  if ($("tmTlClose")) $("tmTlClose").onclick = () => teamTimesheet.select("");
   wireTeamEdit(period);
-  loadTeamManual(period);
+  renderSessionList($("tmManualList"), d.sessions || [], deleteTeamManual);
 }
 
 // ---- manager adjustments to a member's timesheet -------------------------
-function teamManualUrl(period) {
-  let u = "/api/team/manual-session?organizationId=" + encodeURIComponent(orgId) + "&userId=" + encodeURIComponent(openMemberId);
-  if (period) u += "&period=" + period;
-  return u;
-}
 function tmEditHtml() {
   return "<div style='padding:14px 12px 4px;border-top:1px solid var(--border)'>" +
     "<div class='mentries-head' style='margin-bottom:8px'>Adjust timesheet</div>" +
@@ -1633,23 +1619,10 @@ function wireTeamEdit(period) {
   $("tmDate").value = period === cur ? period + "-" + pad(now.getDate()) : period + "-01";
   $("tmAdd").onclick = addTeamManual;
 }
-async function addTeamManual() {
-  const date = $("tmDate").value, start = $("tmStart").value, end = $("tmEnd").value;
-  $("tmManualMsg").textContent = ""; $("tmManualMsg").className = "msg";
-  if (!date || !start || !end) { $("tmManualMsg").textContent = "Date, clock in, and clock out are all required."; $("tmManualMsg").className = "msg err"; return; }
-  if (end <= start) { $("tmManualMsg").textContent = "Clock out must be after clock in."; $("tmManualMsg").className = "msg err"; return; }
-  $("tmAdd").disabled = true;
-  const r = await api(teamManualUrl(), { method:"POST", body: JSON.stringify({ date, start, end }) });
-  $("tmAdd").disabled = false;
-  if (r.ok) { loadTeamMemberHours(); } // rebuilds the panel with new totals + entries
-  else { const d = await r.json().catch(()=>({})); $("tmManualMsg").textContent = d.error || "Could not add entry."; $("tmManualMsg").className = "msg err"; }
+function addTeamManual() {
+  return addTimesheetSession(teamTimesheet, "tmDate", "tmStart", "tmEnd", "tmManualMsg");
 }
-async function loadTeamManual(period) {
-  const r = await api(teamManualUrl(period));
-  if (!r.ok) { $("tmManualList").innerHTML = ""; return; }
-  const d = await r.json();
-  renderTeamManual(d.entries || []);
-}
+
 function sessionSourceLabel(e) {
   return e.source === "manual" ? "manual" : "app";
 }
@@ -1698,18 +1671,8 @@ function renderSessionList(box, list, onDelete) {
   });
   box.appendChild(scroll);
 }
-function renderTeamManual(list) {
-  renderSessionList($("tmManualList"), list, deleteTeamManual);
-}
-async function deleteTeamManual(id) {
-  if (!confirm("Remove this session from the timesheet?")) return;
-  const r = await api(teamManualUrl(), { method: "DELETE", body: JSON.stringify({ id: id }) });
-  if (r.ok) { loadTeamMemberHours(); }
-  else {
-    const d = await r.json().catch(() => ({}));
-    $("tmManualMsg").textContent = d.error || "Could not delete.";
-    $("tmManualMsg").className = "msg err";
-  }
+function deleteTeamManual(id) {
+  if (confirm("Remove this session from the timesheet?")) return teamTimesheet.edit("DELETE", { id });
 }
 
 $("inviteBtn").onclick = async () => {
@@ -1956,9 +1919,65 @@ if (deleteBtn) deleteBtn.onclick = async () => {
 };
 
 // ---- hours ----
-let hoursSessions = [];
-let hoursDayMinutes = new Map();
-let selectedDay = "";
+function timesheetMessage(id, text, retry) {
+  const host = $(id);
+  if (!host) return;
+  host.textContent = text;
+  host.className = "msg" + (text ? (text === "Saved." ? " ok" : " err") : "");
+  if (retry) {
+    const button = document.createElement("button");
+    button.type = "button"; button.className = "ghost"; button.textContent = "Retry";
+    button.onclick = retry;
+    host.append(" ", button);
+  }
+}
+function timesheetBusy(prefix, pending) {
+  const add = $(prefix === "tm" ? "tmAdd" : "mAdd");
+  if (add) add.disabled = pending;
+  const list = $(prefix === "tm" ? "tmManualList" : "manualList");
+  if (list) list.querySelectorAll("button").forEach((button) => { button.disabled = pending; });
+}
+function selectTimesheetDay(date, data, team) {
+  const rows = $(team ? "tmRows" : "rows");
+  if (rows) rows.querySelectorAll("tr.day-row").forEach((row) => {
+    row.classList.toggle("selected", row.getAttribute("data-date") === date);
+  });
+  renderTimelineInto(date, data ? data.sessions || [] : [],
+    data && data.days.find((day) => day.date === date)?.minutes || 0,
+    $(team ? "tmTimeline" : "timelinePanel"), $(team ? "tmTlTitle" : "timelineTitle"),
+    $(team ? "tmTlSub" : "timelineSub"), $(team ? "tmTlBody" : "timelineBody"));
+}
+const personalTimesheet = createTimesheetView({
+  request: api,
+  loading(target, retained) {
+    if (!retained) {
+      $("rows").innerHTML = "<tr class='empty'><td colspan='3'>Loading&hellip;</td></tr>";
+      $("manualList").replaceChildren();
+      $("total").textContent = $("totalRow").textContent = "?";
+      $("statDays").textContent = $("statAvg").textContent = "?";
+      renderProjects([]);
+    }
+  },
+  render: renderPersonalTimesheet,
+  selection: (date, data) => selectTimesheetDay(date, data, false),
+  busy: (pending) => timesheetBusy("", pending),
+  message: (text, retry) => timesheetMessage("hoursMsg", text, retry)
+});
+const teamTimesheet = createTimesheetView({
+  request: api,
+  loading(target, retained) {
+    if (retained) return;
+    const panel = $("teamMemberPanel");
+    panel.classList.remove("hidden");
+    panel.innerHTML = "<div class='pv-head'><b>" + pvEsc(target.label) + " ? " + pvEsc(target.period) +
+      "</b><button id='tmClose' class='ghost'>Close</button></div><div id='tmHoursMsg' class='msg' role='status'></div><div class='pv-empty'>Loading&hellip;</div>";
+    $("tmClose").onclick = closeMember;
+  },
+  render: renderTeamMember,
+  selection: (date, data) => selectTimesheetDay(date, data, true),
+  busy: (pending) => timesheetBusy("tm", pending),
+  message: (text, retry) => timesheetMessage("tmHoursMsg", text, retry)
+});
 
 function rowHtml(x, max, i, selected) {
   const dt = new Date(x.date + "T00:00:00");
@@ -2108,56 +2127,34 @@ function renderTimelineInto(date, sessions, totalMin, panel, titleEl, subEl, bod
   panel.classList.remove("hidden");
 }
 
-function renderTimeline(date) {
-  if (!date) {
-    selectedDay = "";
-    renderTimelineInto("", hoursSessions, 0, $("timelinePanel"), $("timelineTitle"), $("timelineSub"), $("timelineBody"));
-    return;
-  }
-  selectedDay = date;
-  renderTimelineInto(date, hoursSessions, hoursDayMinutes.get(date) ?? 0, $("timelinePanel"), $("timelineTitle"), $("timelineSub"), $("timelineBody"));
-}
-
 function closeTimeline() {
-  renderTimeline("");
-  const rows = $("rows");
-  if (rows) {
-    const sel = rows.querySelectorAll("tr.selected");
-    for (let i = 0; i < sel.length; i++) sel[i].classList.remove("selected");
-  }
+  personalTimesheet.select("");
 }
-
-async function loadHours() {
+function loadHours() {
   const period = $("month").value;
   if (!period) return;
-  $("hoursMsg").textContent = ""; $("hoursMsg").className = "msg";
-  $("rows").innerHTML = "<tr class='empty'><td colspan='3'>Loading&hellip;</td></tr>";
-  closeTimeline();
-  const r = await api("/api/hours?period=" + period);
-  if (!r.ok) {
-    $("rows").innerHTML = "";
-    hoursSessions = [];
-    hoursDayMinutes = new Map();
-    $("hoursMsg").textContent = "Failed to load hours."; $("hoursMsg").className = "msg err";
-    return;
-  }
-  const d = await r.json();
-  hoursSessions = d.sessions || [];
-  hoursDayMinutes = new Map(d.days.map((day) => [day.date, day.minutes]));
+  const own = personalTimesheet.load({
+    key: meEmail + ":" + period, period, label: meEmail,
+    hoursUrl: "/api/hours?period=" + period, editUrl: "/api/manual-session"
+  });
+  const team = openMemberId ? loadTeamMemberHours() : undefined;
+  return Promise.all([own, team]);
+}
+function renderPersonalTimesheet(d, target) {
   const max = d.days.reduce((a,x) => Math.max(a, x.minutes), 0) || 1;
   $("rows").innerHTML = d.days.length
     ? d.days.map((x,i) => rowHtml(x, max, i, false)).join("")
     : "<tr class='empty'><td colspan='3'>No days to show for this month.</td></tr>";
   const tablewrap = $("tablewrap");
-  tablewrap.scrollTop = period === currentPeriod() ? tablewrap.scrollHeight : 0;
+  tablewrap.scrollTop = target.period === currentPeriod() ? tablewrap.scrollHeight : 0;
   $("total").textContent = fmt(d.totalMinutes);
   $("totalRow").textContent = fmt(d.totalMinutes);
   const activeDays = d.activeDays ?? d.days.filter((x) => x.minutes > 0).length;
   $("statDays").textContent = String(activeDays);
   $("statAvg").textContent = activeDays ? fmt(Math.round(d.totalMinutes / activeDays)) : "0:00";
   renderProjects(d.projects || []);
-  loadManualEntries();
-  if (openMemberId) loadTeamMemberHours(); // keep an open team member in sync with the month
+  if (canEditTimes) renderSessionList($("manualList"), d.sessions || [], deleteManualEntry);
+  else $("manualList").replaceChildren();
 }
 
 function renderProjects(list) {
@@ -2192,63 +2189,32 @@ function shiftMonth(delta) {
 }
 
 // ---- manual time entry ----
-$("mAdd").onclick = async () => {
+async function addTimesheetSession(view, dateId, startId, endId, messageId) {
+  const date = $(dateId).value, start = $(startId).value, end = $(endId).value;
+  const message = $(messageId);
+  message.textContent = ""; message.className = "msg";
+  if (!date || !start || !end) {
+    message.textContent = "Date, clock in, and clock out are all required."; message.className = "msg err"; return;
+  }
+  if (end <= start) {
+    message.textContent = "Clock out must be after clock in."; message.className = "msg err"; return;
+  }
+  const startInput = $(startId), endInput = $(endId), dateInput = $(dateId);
+  if (await view.edit("POST", { date, start, end })) {
+    if ($(startId) === startInput && dateInput.value === date && startInput.value === start && endInput.value === end) {
+      startInput.value = ""; endInput.value = "";
+    }
+  }
+}
+$("mAdd").onclick = () => {
   if (!canEditTimes) {
     $("manualMsg").textContent = "Your team manager controls timesheet adjustments.";
-    $("manualMsg").className = "msg err";
-    return;
+    $("manualMsg").className = "msg err"; return;
   }
-  const date = $("mDate").value, start = $("mStart").value, end = $("mEnd").value;
-  $("manualMsg").textContent = ""; $("manualMsg").className = "msg";
-  if (!date || !start || !end) { $("manualMsg").textContent = "Date, clock in, and clock out are all required."; $("manualMsg").className = "msg err"; return; }
-  if (end <= start) { $("manualMsg").textContent = "Clock out must be after clock in."; $("manualMsg").className = "msg err"; return; }
-  $("mAdd").disabled = true;
-  const r = await api("/api/manual-session", { method:"POST", body: JSON.stringify({ date, start, end }) });
-  $("mAdd").disabled = false;
-  const d = await r.json().catch(()=>({}));
-  if (r.ok) {
-    $("manualMsg").textContent = "Added " + date + ", " + start + "–" + end + "."; $("manualMsg").className = "msg ok";
-    $("mStart").value = ""; $("mEnd").value = "";
-    if (date.slice(0,7) === $("month").value) loadHours();
-    else loadManualEntries();
-  } else {
-    $("manualMsg").textContent = d.error || "Could not add entry."; $("manualMsg").className = "msg err";
-  }
+  return addTimesheetSession(personalTimesheet, "mDate", "mStart", "mEnd", "manualMsg");
 };
-
-function renderManualEntries(list) {
-  renderSessionList($("manualList"), list, deleteManualEntry);
-}
-
-async function loadManualEntries() {
-  if (!canEditTimes) {
-    if ($("manualList")) $("manualList").innerHTML = "";
-    return;
-  }
-  // Prefer sessions already loaded with /api/hours (same shape as manual-session GET).
-  if (hoursSessions && hoursSessions.length) {
-    renderManualEntries(hoursSessions);
-    return;
-  }
-  const period = $("month").value;
-  if (!period) return;
-  const r = await api("/api/manual-session?period=" + period);
-  if (!r.ok) { $("manualList").innerHTML = ""; return; }
-  const d = await r.json();
-  renderManualEntries(d.entries || []);
-}
-
-async function deleteManualEntry(id) {
-  if (!confirm("Remove this session from the timesheet?")) return;
-  $("manualMsg").textContent = ""; $("manualMsg").className = "msg";
-  const r = await api("/api/manual-session", { method:"DELETE", body: JSON.stringify({ id }) });
-  if (r.ok) {
-    $("manualMsg").textContent = "Deleted."; $("manualMsg").className = "msg ok";
-    loadHours();
-  } else {
-    const d = await r.json().catch(()=>({}));
-    $("manualMsg").textContent = d.error || "Could not delete."; $("manualMsg").className = "msg err";
-  }
+function deleteManualEntry(id) {
+  if (canEditTimes && confirm("Remove this session from the timesheet?")) return personalTimesheet.edit("DELETE", { id });
 }
 
 // ---- recipients ----
@@ -2350,6 +2316,8 @@ $("signout").onclick = async () => {
     });
   } catch (e) { /* still clear UI */ }
   // Reset client state, then full reload so no cached session UI sticks around.
+  personalTimesheet.clear(true);
+  teamTimesheet.clear(true);
   show(false);
   setMode("signin");
   orgId = ""; orgName = ""; orgRole = ""; meEmail = "";
@@ -2375,7 +2343,7 @@ if ($("rows")) {
     for (let i = 0; i < all.length; i++) all[i].classList.remove("selected");
     if (was) { closeTimeline(); return; }
     el.classList.add("selected");
-    renderTimeline(date);
+    personalTimesheet.select(date);
   });
 }
 

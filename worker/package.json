@@ -5,6 +5,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "prototype:dashboard": "node scripts/dashboard-prototype.mjs",
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite build && vite preview",
