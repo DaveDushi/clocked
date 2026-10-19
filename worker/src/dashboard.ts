@@ -1593,7 +1593,7 @@ function renderTeamMember(d, period) {
       const all = tmRows.querySelectorAll("tr.day-row");
       for (let i = 0; i < all.length; i++) all[i].classList.remove("selected");
       el.classList.add("selected");
-      renderTimelineInto(date, tmSessions, $("tmTimeline"), $("tmTlTitle"), $("tmTlSub"), $("tmTlBody"));
+      renderTimelineInto(date, tmSessions, d.days.find((day) => day.date === date)?.minutes ?? 0, $("tmTimeline"), $("tmTlTitle"), $("tmTlSub"), $("tmTlBody"));
     });
   }
   if ($("tmTlClose")) $("tmTlClose").onclick = () => {
@@ -1957,6 +1957,7 @@ if (deleteBtn) deleteBtn.onclick = async () => {
 
 // ---- hours ----
 let hoursSessions = [];
+let hoursDayMinutes = new Map();
 let selectedDay = "";
 
 function rowHtml(x, max, i, selected) {
@@ -2058,24 +2059,7 @@ function buildDayClockSvg(segs, totalMin) {
   return svg;
 }
 
-function uniqueTimelineMinutes(segs) {
-  const intervals = (segs || []).map((s) => ({
-    start: Number.isFinite(Number(s.startMs)) ? Number(s.startMs) : Number(s.startMin) * 60000,
-    end: Number.isFinite(Number(s.endMs)) ? Number(s.endMs) : Number(s.endMin) * 60000
-  })).filter((x) => Number.isFinite(x.start) && Number.isFinite(x.end) && x.end > x.start)
-    .sort((a, b) => a.start - b.start || a.end - b.end);
-  let totalMs = 0, start = 0, end = 0, open = false;
-  for (const x of intervals) {
-    if (!open) { start = x.start; end = x.end; open = true; continue; }
-    if (x.start <= end) { end = Math.max(end, x.end); continue; }
-    totalMs += end - start;
-    start = x.start; end = x.end;
-  }
-  if (open) totalMs += end - start;
-  return Math.round(totalMs / 60000);
-}
-
-function renderTimelineInto(date, sessions, panel, titleEl, subEl, body) {
+function renderTimelineInto(date, sessions, totalMin, panel, titleEl, subEl, body) {
   if (!panel || !body) return;
   if (!date) {
     panel.classList.add("hidden");
@@ -2090,7 +2074,6 @@ function renderTimelineInto(date, sessions, panel, titleEl, subEl, body) {
     });
   } catch (e) { /* keep date */ }
   if (titleEl) titleEl.textContent = dayLabel;
-  const totalMin = uniqueTimelineMinutes(segs);
   if (subEl) {
     subEl.textContent = segs.length
       ? (segs.length + " session" + (segs.length === 1 ? "" : "s") + " · " + fmt(totalMin))
@@ -2128,11 +2111,11 @@ function renderTimelineInto(date, sessions, panel, titleEl, subEl, body) {
 function renderTimeline(date) {
   if (!date) {
     selectedDay = "";
-    renderTimelineInto("", hoursSessions, $("timelinePanel"), $("timelineTitle"), $("timelineSub"), $("timelineBody"));
+    renderTimelineInto("", hoursSessions, 0, $("timelinePanel"), $("timelineTitle"), $("timelineSub"), $("timelineBody"));
     return;
   }
   selectedDay = date;
-  renderTimelineInto(date, hoursSessions, $("timelinePanel"), $("timelineTitle"), $("timelineSub"), $("timelineBody"));
+  renderTimelineInto(date, hoursSessions, hoursDayMinutes.get(date) ?? 0, $("timelinePanel"), $("timelineTitle"), $("timelineSub"), $("timelineBody"));
 }
 
 function closeTimeline() {
@@ -2154,11 +2137,13 @@ async function loadHours() {
   if (!r.ok) {
     $("rows").innerHTML = "";
     hoursSessions = [];
+    hoursDayMinutes = new Map();
     $("hoursMsg").textContent = "Failed to load hours."; $("hoursMsg").className = "msg err";
     return;
   }
   const d = await r.json();
   hoursSessions = d.sessions || [];
+  hoursDayMinutes = new Map(d.days.map((day) => [day.date, day.minutes]));
   const max = d.days.reduce((a,x) => Math.max(a, x.minutes), 0) || 1;
   $("rows").innerHTML = d.days.length
     ? d.days.map((x,i) => rowHtml(x, max, i, false)).join("")

@@ -13,12 +13,6 @@ import {
   nextLocalMidnightUtc,
 } from "./time.js";
 
-interface Row {
-  start_utc: string;
-  end_utc: string;
-  timezone: string | null;
-}
-
 interface ZonedTimeInterval extends TimeInterval {
   startTimezone: string;
   endTimezone: string;
@@ -50,11 +44,12 @@ export interface HoursReport {
 }
 
 /** Clamp sessions to a month, split them at local midnight, and group by day. */
-function intervalsByLocalDay(
-  rows: readonly Row[],
+function splitSessions(
+  rows: readonly SessionRow[],
   period: string,
   fallbackTz: string,
-): Map<string, LocalDayIntervals> {
+): { grouped: Map<string, LocalDayIntervals>; sessions: SessionSegment[] } {
+  const sessions: SessionSegment[] = [];
   const byDay = new Map<string, LocalDayIntervals>();
   for (const row of rows) {
     const tz = validTimezoneOr(row.timezone, fallbackTz);
@@ -85,10 +80,28 @@ function intervalsByLocalDay(
           intervals: [interval],
         });
       }
+      const startMin = localMinutesFromMidnight(segStart, tz);
+      const endMinRaw = localMinutesFromMidnight(segEnd, tz);
+      const endMin = endMinRaw === 0 && segEnd > segStart ? 1440 : endMinRaw;
+      sessions.push({
+        id: row.id,
+        date,
+        start: formatHM(segStart, tz),
+        end: formatHM(segEnd, tz),
+        minutes: Math.max(0, Math.round((segEnd.getTime() - segStart.getTime()) / 60000)),
+        startMs: segStart.getTime(),
+        endMs: segEnd.getTime(),
+        startMin,
+        endMin: Math.max(endMin, startMin + 1),
+        start_reason: row.start_reason,
+        end_reason: row.end_reason,
+        source: row.start_reason === "manual" ? "manual" : "app",
+        timezone: tz,
+      });
       segStart = segEnd;
     }
   }
-  return byDay;
+  return { grouped: byDay, sessions };
 }
 
 /** Query broadly enough to include a local month in every supported timezone;
@@ -177,104 +190,6 @@ interface SessionRow {
   timezone: string | null;
 }
 
-/**
- * Structured per-local-day totals for `period` ("YYYY-MM"), reusing the same
- * query and split-at-local-midnight logic as `buildReportCsv`. Dashboard rows
- * are expanded to calendar days: past months include every day, current month
- * includes day 1 through today, and future months stay empty.
- */
-export async function buildHoursReport(
-  env: Env,
-  period: string,
-  userId: string,
-  tz: string = env.REPORT_TZ,
-): Promise<HoursReport> {
-  const { start, end } = periodQueryBounds(period);
-
-  const res = await env.DB.prepare(
-    `SELECT start_utc, end_utc, timezone FROM sessions
-      WHERE user_id = ? AND end_utc > ? AND start_utc < ?
-      ORDER BY start_utc`,
-  )
-    .bind(userId, start.toISOString(), end.toISOString())
-    .all<Row>();
-
-  const grouped = intervalsByLocalDay(res.results ?? [], period, tz);
-  const days = [...grouped.values()]
-    .map(({ date, label, intervals }) => ({
-      date,
-      label,
-      minutes: unionMinutes(intervals),
-    }))
-    .sort((a, b) => a.date.localeCompare(b.date));
-  const totalMinutes = days.reduce((sum, d) => sum + d.minutes, 0);
-  const expanded = expandCalendarDays(days, period, localYMD(new Date(), tz));
-  return { period, tz, days: expanded.days, activeDays: expanded.activeDays, totalMinutes };
-}
-
-/**
- * Closed sessions for `period`, split at local midnight so each segment stays
- * within one day (matches CSV / hours accounting). Used by the dashboard
- * timeline and the manual-session list.
- */
-export async function listSessionsForPeriod(
-  env: Env,
-  period: string,
-  userId: string,
-  tz: string = env.REPORT_TZ,
-): Promise<SessionSegment[]> {
-  const { start, end } = periodQueryBounds(period);
-
-  const res = await env.DB.prepare(
-    `SELECT id, start_utc, end_utc, start_reason, end_reason, timezone FROM sessions
-      WHERE user_id = ? AND end_utc IS NOT NULL AND end_utc > ? AND start_utc < ?
-      ORDER BY start_utc`,
-  )
-    .bind(userId, start.toISOString(), end.toISOString())
-    .all<SessionRow>();
-
-  const out: SessionSegment[] = [];
-  for (const r of res.results ?? []) {
-    const sessionTz = validTimezoneOr(r.timezone, tz);
-    const localBounds = monthBoundsUtc(period, sessionTz);
-    const sessStart = Date.parse(r.start_utc);
-    const sessEnd = Date.parse(r.end_utc);
-    if (Number.isNaN(sessStart) || Number.isNaN(sessEnd) || sessEnd <= sessStart) continue;
-
-    let segStart = new Date(Math.max(sessStart, localBounds.start.getTime()));
-    const hardEnd = new Date(Math.min(sessEnd, localBounds.end.getTime()));
-    while (segStart < hardEnd) {
-      const midnight = nextLocalMidnightUtc(segStart, sessionTz);
-      const segEnd = midnight < hardEnd ? midnight : hardEnd;
-      const { y, m, d } = localYMD(segStart, sessionTz);
-      const date = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-      const startMin = localMinutesFromMidnight(segStart, sessionTz);
-      const endMinRaw = localMinutesFromMidnight(segEnd, sessionTz);
-      // Midnight end of a day is 1440, not 0 of the next day.
-      const endMin = endMinRaw === 0 && segEnd.getTime() > segStart.getTime() ? 1440 : endMinRaw;
-      const minutes = Math.max(0, Math.round((segEnd.getTime() - segStart.getTime()) / 60000));
-      const reason = r.start_reason || "app";
-      out.push({
-        id: r.id,
-        date,
-        start: formatHM(segStart, sessionTz),
-        end: formatHM(segEnd, sessionTz),
-        minutes,
-        startMs: segStart.getTime(),
-        endMs: segEnd.getTime(),
-        startMin,
-        endMin: Math.max(endMin, startMin + 1),
-        start_reason: r.start_reason,
-        end_reason: r.end_reason,
-        source: reason === "manual" ? "manual" : "app",
-        timezone: sessionTz,
-      });
-      segStart = segEnd;
-    }
-  }
-  return out;
-}
-
 /** Local wall-clock minutes since midnight in `tz` (0–1439). */
 function localMinutesFromMidnight(date: Date, tz: string): number {
   const dtf = new Intl.DateTimeFormat("en-US", {
@@ -332,38 +247,44 @@ function mergeZonedTimeIntervals(intervals: ZonedTimeInterval[]): ZonedTimeInter
   return merged;
 }
 
-/**
- * Build the CSV report body for `period` ("YYYY-MM"). A clear
- * `Date,Clock In,Clock Out,Breaks,Hours Worked` header leads; then one row per
- * worked day: earliest clock-in, latest clock-out, the gaps between sessions
- * (breaks), and total time actually worked (clock-out minus clock-in, minus the
- * breaks). Sessions are clamped to the month, split at every local midnight,
- * and merged so simultaneous devices never double-count time. A work day
- * (Mon–Fri) with no
- * sessions shows `Vacation`, and a trailing row puts the month's total under the
- * Hours Worked column. Empty months (no sessions at all) still produce no output.
- */
-export async function buildReportCsv(
-  env: Env,
-  period: string,
-  userId: string,
-  tz: string = env.REPORT_TZ,
-): Promise<string> {
+export interface Timesheet {
+  report: HoursReport;
+  sessions: SessionSegment[];
+  projects: Awaited<ReturnType<typeof projectTotalsForPeriod>>;
+  csv: string;
+}
+
+/** Load one account's month once; all presentations share the same day accounting. */
+export async function buildTimesheet({
+  env,
+  period,
+  userId,
+  timezone = env.REPORT_TZ,
+  includeProjects = true,
+  now = new Date(),
+}: {
+  env: Env;
+  period: string;
+  userId: string;
+  timezone?: string;
+  includeProjects?: boolean;
+  now?: Date;
+}): Promise<Timesheet> {
   const { start, end } = periodQueryBounds(period);
 
   const res = await env.DB.prepare(
-    `SELECT start_utc, end_utc, timezone FROM sessions
-      WHERE user_id = ? AND end_utc > ? AND start_utc < ?
+    `SELECT id, start_utc, end_utc, start_reason, end_reason, timezone FROM sessions
+      WHERE user_id = ? AND end_utc IS NOT NULL AND end_utc > ? AND start_utc < ?
       ORDER BY start_utc`,
   )
     .bind(userId, start.toISOString(), end.toISOString())
-    .all<Row>();
+    .all<SessionRow>();
 
   // Collapse each local day to the union of its sessions. This preserves real
   // gaps while ensuring overlapping sessions from multiple devices count once.
   const spanByDate = new Map<string, DaySpan>();
   const labelByDate = new Map<string, string>();
-  const grouped = intervalsByLocalDay(res.results ?? [], period, tz);
+  const { grouped, sessions } = splitSessions(res.results ?? [], period, timezone);
   for (const { date, label, intervals } of grouped.values()) {
     const merged = mergeZonedTimeIntervals(intervals);
     if (merged.length === 0) continue;
@@ -388,9 +309,6 @@ export async function buildReportCsv(
     labelByDate.set(date, label);
   }
 
-  // No work logged this month → keep the historical empty-report behavior.
-  if (spanByDate.size === 0) return "";
-
   // Expand to calendar days (past months in full, current month through today)
   // so every gap between logged days is visible for vacation marking.
   const seed = [...spanByDate].map(([date, span]) => ({
@@ -398,7 +316,27 @@ export async function buildReportCsv(
     label: labelByDate.get(date) ?? "",
     minutes: span.minutes,
   }));
-  const calendarDays = expandCalendarDays(seed, period, localYMD(new Date(), tz)).days;
+  const expanded = expandCalendarDays(
+    seed.sort((a, b) => a.date.localeCompare(b.date)), period, localYMD(now, timezone),
+  );
+  // Monthly totals include recorded days even when calendar expansion hides them.
+  const report: HoursReport = {
+    period,
+    tz: timezone,
+    days: expanded.days,
+    activeDays: expanded.activeDays,
+    totalMinutes: seed.reduce((sum, day) => sum + day.minutes, 0),
+  };
+  const projects = includeProjects ? await projectTotalsForPeriod(env, userId, period) : [];
+  return { report, sessions, projects, csv: renderCsv(expanded.days, spanByDate, projects) };
+}
+
+function renderCsv(
+  calendarDays: DayHours[],
+  spanByDate: Map<string, DaySpan>,
+  projects: Timesheet["projects"],
+): string {
+  if (spanByDate.size === 0) return "";
 
   const lines = ["Date,Clock In,Clock Out,Breaks,Hours Worked"];
   let totalMinutes = 0;
@@ -418,7 +356,6 @@ export async function buildReportCsv(
   lines.push(`,,,Total,${formatHours(totalMinutes)}`);
 
   // Optional project summary from synced app aggregates (no titles/URLs).
-  const projects = await projectTotalsForPeriod(env, userId, period);
   if (projects.length > 0) {
     lines.push("");
     lines.push("Project,Hours");

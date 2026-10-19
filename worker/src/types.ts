@@ -1,9 +1,9 @@
 // D1Database and the Workers runtime types are ambient globals
 // provided by @cloudflare/workers-types (see tsconfig "types").
-export interface Env {
+import type { EmailEnvironment } from "./email-provider";
+
+export interface Env extends EmailEnvironment {
   DB: D1Database;
-  /** Resend API key for sending timesheet emails (wrangler secret). */
-  RESEND_API_KEY: string;
   /**
    * Legacy global Bearer for unattributed ingest (wrangler secret).
    * Only honored when ALLOW_LEGACY_BEARER_TOKEN is "true"/"1". Prefer per-account clk_ tokens.
@@ -15,7 +15,6 @@ export interface Env {
   REPORT_TZ: string;
   /** Default timesheet recipient; overridden by the `mail_to` setting if set. */
   MAIL_TO: string;
-  MAIL_FROM: string;
   /** better-auth signing secret (wrangler secret). */
   BETTER_AUTH_SECRET: string;
   /** Public base URL of this worker, e.g. https://clocked-worker.<sub>.workers.dev */

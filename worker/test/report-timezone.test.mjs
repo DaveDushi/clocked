@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildReportCsv, timezoneForLocalDate } from "../.tmp-test/report.js";
+import { buildTimesheet, timezoneForLocalDate } from "../.tmp-test/report.js";
 
 function envWithSessions(sessions) {
   return {
@@ -33,7 +33,7 @@ test("CSV report uses the explicitly supplied user timezone", async () => {
     },
   ]);
 
-  const csv = await buildReportCsv(env, "2026-09", "user-1", "Asia/Jerusalem");
+  const { csv } = await buildTimesheet({ env, period: "2026-09", userId: "user-1", timezone: "Asia/Jerusalem" });
 
   assert.match(csv, /Tuesday, September 1, 2026.*03:30,05:00/);
   assert.doesNotMatch(csv, /00:30,02:00/);
@@ -53,7 +53,7 @@ test("CSV renders travel days in the timezone captured on each session", async (
     },
   ]);
 
-  const csv = await buildReportCsv(env, "2026-09", "traveler", "UTC");
+  const { csv } = await buildTimesheet({ env, period: "2026-09", userId: "traveler", timezone: "UTC" });
 
   assert.match(csv, /Tuesday, September 1, 2026.*09:00,10:00/);
   assert.match(csv, /Thursday, September 10, 2026.*16:00,17:00/);

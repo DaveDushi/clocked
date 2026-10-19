@@ -25,12 +25,10 @@ import {
   runMarketingAgent,
 } from "./marketing-agent";
 import { buildAndSendReport, sendContactSales, sendMonthlyReports } from "./email";
-import { handleActivityIngest, projectTotalsForPeriod } from "./activity";
+import { handleActivityIngest } from "./activity";
 import { handleIngest } from "./ingest";
 import {
-  buildHoursReport,
-  buildReportCsv,
-  listSessionsForPeriod,
+  buildTimesheet,
   timezoneForLocalDate,
 } from "./report";
 import {
@@ -269,9 +267,9 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const schedule = await getEffectiveSendSchedule(env, user.id);
     const period = resolvePeriod(url, schedule.timezone);
     if (!period) return json({ error: "invalid period" }, 400);
-    const report = await buildHoursReport(env, period, user.id, schedule.timezone);
-    const projects = await projectTotalsForPeriod(env, user.id, period);
-    const sessions = await listSessionsForPeriod(env, period, user.id, schedule.timezone);
+    const { report, projects, sessions } = await buildTimesheet({
+      env, period, userId: user.id, timezone: schedule.timezone,
+    });
     return json({ ...report, projects, sessions });
   }
 
@@ -324,12 +322,13 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const schedule = await getOrgSendSchedule(env, orgId);
     const period = resolvePeriod(url, schedule.timezone);
     if (!period) return json({ error: "invalid period" }, 400);
+    const { report, sessions, csv } = await buildTimesheet({
+      env, period, userId: targetId, timezone: schedule.timezone,
+      includeProjects: url.pathname === "/api/team/preview",
+    });
     if (url.pathname === "/api/team/preview") {
-      const csv = await buildReportCsv(env, period, targetId, schedule.timezone);
       return new Response(csv, { status: 200, headers: { "content-type": "text/csv" } });
     }
-    const report = await buildHoursReport(env, period, targetId, schedule.timezone);
-    const sessions = await listSessionsForPeriod(env, period, targetId, schedule.timezone);
     return json({ ...report, sessions });
   }
 
@@ -513,7 +512,9 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const schedule = await getEffectiveSendSchedule(env, user.id);
     const period = resolvePeriod(url, schedule.timezone);
     if (!period) return json({ error: "invalid period" }, 400);
-    const csv = await buildReportCsv(env, period, user.id, schedule.timezone);
+    const { csv } = await buildTimesheet({
+      env, period, userId: user.id, timezone: schedule.timezone,
+    });
     return new Response(csv, { status: 200, headers: { "content-type": "text/csv" } });
   }
 
@@ -712,7 +713,9 @@ async function handleManualSession(
   if (req.method === "GET") {
     const period = resolvePeriod(url, timezone);
     if (!period) return json({ error: "invalid period" }, 400);
-    const entries = await listSessionsForPeriod(env, period, userId, timezone);
+    const { sessions: entries } = await buildTimesheet({
+      env, period, userId, timezone, includeProjects: false,
+    });
     return json({ entries });
   }
 

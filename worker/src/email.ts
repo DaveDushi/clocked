@@ -1,8 +1,8 @@
 import type { Env } from "./types";
-import { projectTotalsForPeriod } from "./activity";
-import { buildReportCsv, buildHoursReport, formatHours, isWorkDay, type HoursReport } from "./report";
-import { getEffectiveRecipients, listUsersWithEffectiveSchedules } from "./settings";
-import { isScheduleDue, periodForSchedule } from "./schedule";
+import { sendEmail } from "./email-provider.js";
+import { buildTimesheet, formatHours, isWorkDay, type HoursReport } from "./report.js";
+import { getEffectiveRecipients, listUsersWithEffectiveSchedules } from "./settings.js";
+import { isScheduleDue, periodForSchedule } from "./schedule.js";
 
 /**
  * Referral footer on outgoing timesheets. These land in clients'/managers'
@@ -13,11 +13,6 @@ const MARKETING_URL =
   "https://clocked.daviddusi.com/?utm_source=timesheet_email&utm_medium=email&utm_campaign=footer";
 const MARKETING_FOOTER_TEXT =
   "— Sent automatically by clocked, automatic time tracking for Windows. https://clocked.daviddusi.com";
-
-/** UTF-8-safe base64 (btoa alone mangles non-ASCII in session labels). */
-function toBase64(s: string): string {
-  return btoa(String.fromCharCode(...new TextEncoder().encode(s)));
-}
 
 /** "2026-06" -> "June 2026". */
 function monthTitle(period: string): string {
@@ -138,11 +133,10 @@ export interface SendResult {
 /**
  * Build and email one account's report for `period`. Unless `force` is set
  * (manual test), skips (period, user) pairs already recorded in `sent_reports`
- * and records success there for exactly-once monthly delivery. Recipient is the
+ * and records successful submission there. Recipient is the
  * user's `mail_to` override, falling back to their account email.
  *
- * Sends via the Resend REST API (`POST https://api.resend.com/emails`) from the
- * verified MAIL_FROM domain; `to` may hold several recipients (one email each).
+ * Sends through the configured email provider from the verified MAIL_FROM domain.
  */
 export async function buildAndSendReport(
   env: Env,
@@ -152,10 +146,6 @@ export async function buildAndSendReport(
   const { userId, to } = opts;
   const timezone = opts.timezone ?? env.REPORT_TZ;
 
-  if (!env.RESEND_API_KEY) {
-    console.error("buildAndSendReport: RESEND_API_KEY not configured");
-    return { ok: false, period, rows: 0, error: "email not configured" };
-  }
   if (!to.length) {
     return { ok: false, period, rows: 0, error: "no recipients" };
   }
@@ -169,10 +159,8 @@ export async function buildAndSendReport(
     if (existing) return { ok: true, period, rows: 0, skipped: true };
   }
 
-  const csv = await buildReportCsv(env, period, userId, timezone);
+  const { csv, report, projects } = await buildTimesheet({ env, period, userId, timezone });
   const rows = csv ? csv.trimEnd().split("\n").length : 0;
-  const report = await buildHoursReport(env, period, userId, timezone);
-  const projects = await projectTotalsForPeriod(env, userId, period);
   const body =
     rows > 0
       ? renderReportEmail(period, report, projects)
@@ -181,39 +169,18 @@ export async function buildAndSendReport(
           text: `No sessions recorded for this month.\n\n${MARKETING_FOOTER_TEXT}`,
         };
 
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.RESEND_API_KEY}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        from: `clocked <${env.MAIL_FROM}>`,
-        to,
-        subject: `Hours — ${monthTitle(period)}`,
-        html: body.html,
-        text: body.text,
-        attachments:
-          rows > 0
-            ? [
-                {
-                  content: toBase64(csv), // Resend requires base64
-                  filename: `clocked-${period}.csv`,
-                },
-              ]
-            : undefined,
-      }),
-    });
-    if (!res.ok) {
-      const detail = await res.text();
-      console.error(`buildAndSendReport resend ${res.status}: ${detail.slice(0, 200)}`);
-      return { ok: false, period, rows, error: "email send failed" };
-    }
-  } catch (e) {
-    console.error("buildAndSendReport error:", String((e as Error)?.message ?? e));
-    return { ok: false, period, rows, error: "email send failed" };
-  }
+  const sent = await sendEmail(env, {
+    to,
+    subject: `Hours — ${monthTitle(period)}`,
+    html: body.html,
+    text: body.text,
+    attachments: rows > 0 ? [{
+      content: new TextEncoder().encode(csv),
+      filename: `clocked-${period}.csv`,
+      contentType: "text/csv; charset=utf-8",
+    }] : undefined,
+  });
+  if (!sent.ok) return { ...sent, period, rows };
 
   if (!opts.force) {
     await env.DB.prepare(
@@ -229,40 +196,12 @@ export async function buildAndSendReport(
 /** Operator inbox: sales leads and new-signup approvals. */
 export const ADMIN_INBOX = "ddusi@easytomanage.com";
 
-/** Low-level Resend send for auth/transactional mail (verify, reset, invites). */
+/** Send auth/transactional mail through the configured provider. */
 export async function sendAuthEmail(
   env: Env,
   opts: { to: string; subject: string; text: string; html: string },
 ): Promise<{ ok: boolean; error?: string }> {
-  if (!env.RESEND_API_KEY) {
-    console.error("sendAuthEmail: RESEND_API_KEY not configured");
-    return { ok: false, error: "email not configured" };
-  }
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.RESEND_API_KEY}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        from: `clocked <${env.MAIL_FROM}>`,
-        to: [opts.to],
-        subject: opts.subject,
-        html: opts.html,
-        text: opts.text,
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      console.error(`sendAuthEmail resend ${res.status}: ${body.slice(0, 200)}`);
-      return { ok: false, error: "email send failed" };
-    }
-  } catch (e) {
-    console.error("sendAuthEmail error:", String((e as Error)?.message ?? e));
-    return { ok: false, error: "email send failed" };
-  }
-  return { ok: true };
+  return sendEmail(env, { ...opts, to: [opts.to] });
 }
 
 export interface SalesLead {
@@ -275,18 +214,13 @@ export interface SalesLead {
 
 /**
  * Email an Enterprise "Contact sales" lead to the sales inbox. Sends from the
- * verified MAIL_FROM domain (Resend requires the from-address be verified) with
+ * verified MAIL_FROM domain with
  * the lead's own address as reply-to, so hitting reply reaches them directly.
  */
 export async function sendContactSales(
   env: Env,
   lead: SalesLead,
 ): Promise<{ ok: boolean; error?: string }> {
-  if (!env.RESEND_API_KEY) {
-    console.error("sendContactSales: RESEND_API_KEY not configured");
-    return { ok: false, error: "email not configured" };
-  }
-
   const fields: [string, string][] = [
     ["Name", lead.name],
     ["Email", lead.email],
@@ -332,32 +266,13 @@ export async function sendContactSales(
     lead.message || "—",
   ].join("\n");
 
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.RESEND_API_KEY}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        from: `clocked <${env.MAIL_FROM}>`,
-        to: [ADMIN_INBOX],
-        reply_to: lead.email,
-        subject: `Enterprise enquiry — ${lead.name}`,
-        html,
-        text,
-      }),
-    });
-    if (!res.ok) {
-      const detail = await res.text();
-      console.error(`sendContactSales resend ${res.status}: ${detail.slice(0, 200)}`);
-      return { ok: false, error: "email send failed" };
-    }
-  } catch (e) {
-    console.error("sendContactSales error:", String((e as Error)?.message ?? e));
-    return { ok: false, error: "email send failed" };
-  }
-  return { ok: true };
+  return sendEmail(env, {
+    to: [ADMIN_INBOX],
+    replyTo: lead.email,
+    subject: `Enterprise enquiry — ${lead.name}`,
+    html,
+    text,
+  });
 }
 
 /**

@@ -18,7 +18,7 @@ that emails a monthly report — whether or not your laptop is awake at month-en
 Desktop tray app (Rust)                     Cloudflare Worker (TypeScript)
   wake / unlock  -> clock in                  POST /sessions -> D1 (upsert by id)
   sleep / lock   -> clock out                 cron (per-user day, time, timezone)
-  local SQLite (source of truth)   --HTTPS--> Resend: monthly timesheet email
+  local SQLite (source of truth)   --HTTPS--> email provider: monthly timesheet
 ```
 
 ### Why it exists
@@ -200,21 +200,74 @@ npx wrangler d1 migrations apply clocked --remote
 #    Per-account clk_ tokens are preferred. A legacy global BEARER_TOKEN is only
 #    honored if you also set ALLOW_LEGACY_BEARER_TOKEN=true (not recommended).
 npx wrangler secret put BETTER_AUTH_SECRET
+# Default email provider. See "Switch email providers" below for alternatives.
 npx wrangler secret put RESEND_API_KEY
 
 # 4. Edit wrangler.jsonc:
 #      REPORT_TZ       -> your IANA timezone, e.g. "America/New_York"
 #      BETTER_AUTH_URL -> this Worker's public URL (used for sign-up/session cookies)
-#      MAIL_FROM       -> an address on your Cloudflare-managed sending domain
+#      MAIL_FROM       -> an address on your provider-verified sending domain
 #      MAIL_TO         -> default recipient (each account can override it in the dashboard)
-#
-#    Prerequisites for the send_email binding:
-#      - Email Routing enabled on the account
-#      - MAIL_TO verified as an Email Routing destination
-#      - the MAIL_FROM domain verified for sending
 
-npx wrangler deploy
+npm run deploy
 ```
+
+### Switch email providers
+
+All outgoing email uses `worker/src/email-provider.ts`, including verification,
+password resets, invitations, account approvals, sales enquiries, and timesheets
+with CSV attachments. Set `EMAIL_PROVIDER` in `worker/wrangler.jsonc` to `resend`,
+`cloudflare`, or `ses`. If omitted, it defaults to Resend. For local development,
+set it in `.dev.vars`. An invalid provider or missing credentials returns an error.
+
+To migrate from Resend to Cloudflare Email Sending:
+
+1. In the Cloudflare account that hosts this Worker, open **Compute > Email
+   Service > Email Sending** and onboard the sending domain used by `MAIL_FROM`.
+   The domain must use Cloudflare DNS. Wait for the required DNS records to verify.
+   Sending to arbitrary recipients requires Workers Paid; recipient verification
+   is not required once the sending domain is onboarded.
+2. Uncomment `"send_email": [{ "name": "EMAIL" }]` in `worker/wrangler.jsonc`.
+   Set `"EMAIL_PROVIDER": "cloudflare"`. Keep `MAIL_FROM` on the verified domain.
+   This binding uses the Worker's account and needs no email API key.
+3. Run `npm test`, `npm run typecheck`, and `npm run deploy` from `worker`.
+4. Use the dashboard to send a test report to an address you control. Check its
+   HTML, plain text, and CSV attachment. Test a verification or password-reset
+   email and check delivery in Cloudflare's outbound email activity logs.
+5. After confirming delivery, remove the unused Resend secret if desired. To
+   roll back, restore the secret, set `EMAIL_PROVIDER` to `resend`, and redeploy.
+
+For local Cloudflare sending, `remote: true` on the binding connects to the live
+service and sends real emails. Without it, local simulation does not prove inbox
+delivery. Check the account's daily quota before a large report run. Cloudflare
+currently limits each message to 50 recipients and 5 MiB including attachments.
+See [Cloudflare setup](https://developers.cloudflare.com/email-service/get-started/send-emails/)
+and [sending limits](https://developers.cloudflare.com/email-service/platform/limits/).
+
+To use Amazon SES, verify the sender domain in the intended AWS region, enable
+DKIM, and request production access to send to unverified recipients. Set
+`EMAIL_PROVIDER` to `ses` and `SES_REGION` in Wrangler vars, for example
+`eu-central-1`. Store credentials as secrets:
+
+```sh
+npx wrangler secret put SES_ACCESS_KEY_ID
+npx wrangler secret put SES_SECRET_ACCESS_KEY
+# Only for temporary credentials; these must be refreshed before expiry:
+npx wrangler secret put SES_SESSION_TOKEN
+```
+
+Use credentials authorized for `ses:SendEmail` on your verified sending identity.
+Deploy and test as above. The adapter signs SES v2 requests with SigV4 using
+`aws4fetch`. It supports HTML, text, reply-to, multiple recipients, and attachments.
+See [SES production access](https://docs.aws.amazon.com/ses/latest/dg/request-production-access.html).
+
+Providers submit messages once per call. There is no automatic retry or fallback
+to another provider, because an ambiguous timeout can mean the email was already
+accepted. A successful result means provider acceptance, not inbox delivery.
+Report submissions are recorded in `sent_reports` after success; a crash between
+provider acceptance and that database write can still cause a duplicate. Switching
+providers does not transfer delivery logs, suppression lists, or bounce handling.
+Check delivery monitoring and suppressions with the chosen provider before cutover.
 
 ### Account approval
 
