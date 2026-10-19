@@ -62,8 +62,8 @@ export function llmsTxtResponse(): Response {
 
 ## Product
 - Desktop: open-source Windows tray app (Rust). Clocks in/out on unlock, lock, sleep, idle, quit.
-- Cloud: Cloudflare Worker + D1. Sync sessions, dashboard, team plans, monthly timesheet email (Resend).
-- Model: free/open desktop; paid hosted sync + email. Self-host Worker supported.
+- Cloud: Cloudflare Worker + D1. Sync sessions, dashboard, teams, monthly timesheet email (Resend).
+- Model: free. Open-source desktop and free hosted sync + email. Self-host Worker supported.
 
 ## Links
 - Home: ${SITE}/
@@ -73,10 +73,7 @@ export function llmsTxtResponse(): Response {
 - Health: ${SITE}/health
 
 ## Pricing (hosted)
-- Solo: personal plan (~25¢/day framing on site)
-- Team: up to 5 members
-- Team+: up to 30 members
-- Enterprise: contact sales
+- Free. Sign up to get sync, dashboard, email reports, and teams of up to 50 members.
 
 ## Optional browser extension
 - Chrome/Edge companion: sends active tab hostname to the desktop bridge (localhost only).
@@ -108,7 +105,7 @@ export function pressPageResponse(): Response {
 <meta name="description" content="Press kit for clocked: automatic Windows time tracking. Boilerplate, facts, links, and brand notes." />
 <link rel="canonical" href="${SITE}/press" />
 <meta property="og:title" content="Press kit — clocked" />
-<meta property="og:description" content="Automatic Windows time tracking. No timers. Open-source desktop, paid cloud." />
+<meta property="og:description" content="Automatic Windows time tracking. No timers. Open-source desktop, free cloud." />
 <meta property="og:image" content="${SITE}/og.jpg" />
 <meta property="og:url" content="${SITE}/press" />
 <meta name="twitter:card" content="summary_large_image" />
@@ -148,7 +145,7 @@ export function pressPageResponse(): Response {
 
   <h2>Boilerplate</h2>
   <div class="card">
-    <p><strong>clocked</strong> is automatic time tracking for Windows. A lightweight tray app clocks you in and out from real machine events — unlock, lock, sleep, and idle — so freelancers and small teams get honest hours without babysitting a timer. Sessions store locally, sync to the cloud, and produce a monthly timesheet by email even if the laptop was asleep at month-end. The desktop app is open source; hosted cloud sync and reporting is a simple paid service (self-hosting is supported).</p>
+    <p><strong>clocked</strong> is automatic time tracking for Windows. A lightweight tray app clocks you in and out from real machine events — unlock, lock, sleep, and idle — so freelancers and small teams get honest hours without babysitting a timer. Sessions store locally, sync to the cloud, and produce a monthly timesheet by email even if the laptop was asleep at month-end. The desktop app is open source; hosted cloud sync and reporting is free with an account (self-hosting is supported).</p>
   </div>
 
   <h2>One-liner</h2>
@@ -159,7 +156,7 @@ export function pressPageResponse(): Response {
     <ul>
       <li><strong>Platform:</strong> Windows desktop (tray) + web dashboard</li>
       <li><strong>Desktop stack:</strong> Rust, local SQLite</li>
-      <li><strong>Cloud stack:</strong> Cloudflare Workers, D1, better-auth, Stripe, Resend</li>
+      <li><strong>Cloud stack:</strong> Cloudflare Workers, D1, better-auth, Resend</li>
       <li><strong>License:</strong> MIT (desktop / repo)</li>
       <li><strong>Site:</strong> <a href="${SITE}/">${SITE}/</a></li>
       <li><strong>Download:</strong> <a href="${SITE}/download">${SITE}/download</a></li>
@@ -184,7 +181,7 @@ export function pressPageResponse(): Response {
   <h2>Contact</h2>
   <div class="card">
     <p>Product issues: GitHub Issues on the public repo.</p>
-    <p>Enterprise / sales: use <strong>Contact sales</strong> on the homepage pricing section.</p>
+    <p>Larger teams: use <strong>Talk to us</strong> on the homepage pricing section.</p>
   </div>
 </div>
 </body>

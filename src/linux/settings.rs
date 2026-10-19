@@ -21,7 +21,7 @@ pub(super) fn show(current: &Config, autostart: bool) -> Option<Update> {
     gtk::pack(area, page, true);
 
     let intro =
-        gtk::wrapping_label("Configure tracking here. Changes are applied as soon as you save.");
+        gtk::wrapping_label("Configure tracking here. Changes apply when you save. Team-assigned working hours override personal hours after sync; your personal hours are kept for when the assignment ends.");
     gtk::pack(page, intro, false);
 
     let form = gtk::grid(8, 12);
@@ -38,8 +38,8 @@ pub(super) fn show(current: &Config, autostart: bool) -> Option<Update> {
     gtk::grid_attach(form, idle, 0, 3, 1);
     gtk::grid_attach(form, target, 1, 3, 1);
 
-    gtk::grid_attach(form, gtk::label("Work start (HH:MM)"), 0, 4, 1);
-    gtk::grid_attach(form, gtk::label("Work end (HH:MM)"), 1, 4, 1);
+    gtk::grid_attach(form, gtk::label("Personal work start (HH:MM)"), 0, 4, 1);
+    gtk::grid_attach(form, gtk::label("Personal work end (HH:MM)"), 1, 4, 1);
     let work_start = gtk::entry(&current.work_start, "09:00", false);
     let work_end = gtk::entry(&current.work_end, "17:00", false);
     gtk::grid_attach(form, work_start, 0, 5, 1);

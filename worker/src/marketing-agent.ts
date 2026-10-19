@@ -37,8 +37,8 @@ const TIP_POOL: Tip[] = [
     x: "Your laptop can be asleep at month-end. clocked still emails the timesheet from the cloud. https://clocked.daviddusi.com",
   },
   {
-    title: "Open-source desktop, paid cloud",
-    body: "The tray app is open source. Hosted sync, dashboard, and email are the convenience layer — or self-host the Worker.",
+    title: "Open-source desktop, free cloud",
+    body: "The tray app is open source. Hosted sync, dashboard, and email are free with an account — or self-host the Worker.",
     x: "Open-source Windows tray time tracker + optional cloud sync. Not spyware — power & input events only. https://clocked.daviddusi.com https://github.com/DaveDushi/clocked",
   },
   {

@@ -11,7 +11,7 @@ that emails a monthly report — whether or not your laptop is awake at month-en
 | | |
 |--|--|
 | **Desktop** | Open source (MIT), Windows/macOS/Linux tray, local SQLite source of truth |
-| **Cloud** | Optional paid host for sync, dashboard, teams, email timesheets |
+| **Cloud** | Optional free hosted account for sync, dashboard, teams, email timesheets |
 | **Self-host** | Point the app at your own Worker |
 
 ```
@@ -216,26 +216,50 @@ npx wrangler secret put RESEND_API_KEY
 npx wrangler deploy
 ```
 
-### Complimentary access
+### Account approval
 
-The paywall can be bypassed for selected signup emails. After applying migration
-`0016_complimentary_access.sql` and deploying this version once, manage the
-production list from the `worker` directory without another deploy:
+New accounts need your approval. After someone signs up and verifies their email,
+the dashboard tells them they're waiting, and the worker emails the operator inbox
+(`ADMIN_INBOX` in `worker/src/email.ts`) with a link to approve them. Approving
+from that link also emails the user to say they're in. People who accept a team
+invite are approved automatically, because the manager who invited them vouched
+for them.
+
+You can also approve from the command line (this does not email the user):
 
 ```sh
-npm run access:grant -- person@example.com
-npm run access:list
-npm run access:revoke -- person@example.com
+npm run users:approve -- person@example.com
 ```
 
-Emails are normalized to lowercase and can be granted before or after the person
-signs up. Add `--local` to any command to manage the local development database
-instead of production. Complimentary users still need to verify their email.
+### Manager-assigned working hours
+
+In the dashboard, open **Team > Working hours**. Choose **Team default**, set
+the shift start/end and working days, then save. Select a person in **Schedule
+for** to give them different hours. **Use team default** removes their override.
+For the team default, **Use personal settings** restores each person's desktop
+hours. **Turn off the after-hours prompt** is an explicit assignment and can
+also be set per person.
+
+Hours use each computer's local timezone. Selected days name the day a shift
+starts: Friday 22:00 to 06:00 includes Saturday morning. These settings control
+the after-hours prompt; tracking does not stop automatically at shift end.
+
+Updated desktop apps fetch assignments on sync, including startup, wake and the
+hourly sync. Use **Sync now** to fetch a change immediately. The next tracking
+decision or heartbeat applies it without a restart. Offline computers retain
+their last assignment. Personal config.toml hours remain intact and apply again
+after an assignment ends. If a person belongs to multiple teams, their earliest
+membership supplies working hours.
+
+To roll out this feature, apply D1 migration `0019_working_hours.sql`, deploy the
+Worker, and distribute the updated desktop app. Existing desktop versions keep
+using their personal hours. Run `node scripts/verify-working-hours.mjs` from
+`worker` to verify the APIs with isolated local accounts and D1 data.
 
 ### User list
 
-List every registered app account, including verification status, organizations,
-roles, and access source:
+List every registered app account, including verification and approval status,
+organizations, and roles:
 
 ```sh
 npm run users:list
@@ -261,7 +285,7 @@ against the `clocked` D1 database can run them.
 | POST   | `/api/token/regenerate`     | Cookie  | legacy revoke-all + reissue endpoint               |
 | GET    | `/api/hours?period=YYYY-MM` | Cookie  | this account's per-day hours (dashboard)         |
 | POST   | `/sessions`                 | Bearer  | ingest synced sessions for the token's account (upsert by id) |
-| POST   | `/activity`                 | Bearer  | daily app/project aggregates (no titles; paid account only) |
+| POST   | `/activity`                 | Bearer  | daily app/project aggregates (no titles) |
 | GET    | `/preview?period=YYYY-MM`   | Cookie  | this account's report body (no email)            |
 | POST   | `/send-test?period=YYYY-MM` | Cookie  | build **and email** this account's report now (bypasses gate) |
 

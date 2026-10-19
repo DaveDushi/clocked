@@ -1,5 +1,4 @@
 import { checkAuth } from "./auth";
-import { userHasProductAccess } from "./access";
 import { makeAuth } from "./auth-server";
 import { dashboardResponse } from "./dashboard";
 import {
@@ -66,21 +65,9 @@ import {
   userIdForToken,
 } from "./tokens";
 import { previousMonthPeriod, wallToUtc } from "./time";
-import {
-  effectiveMemberCap,
-  effectiveOrgPlan,
-  isPaidBillingStatusWithGrace,
-  planLabel,
-} from "./plans";
-import {
-  changeSubscriptionPlan,
-  createCheckoutSession,
-  createPortalSession,
-  ensurePersonalOrg,
-  ensureTeamOrg,
-  handleWebhook,
-  isSelfServePlan,
-} from "./billing";
+import { orgPlan, planCap, planLabel } from "./plans";
+import { ensureTeamOrg } from "./teams";
+import { handleAdminApprove, isApproved, requestApproval } from "./approval";
 import { clientIp, rateLimitAllowDurable } from "./rate-limit";
 import {
   isSameOriginRequest,
@@ -90,6 +77,7 @@ import {
   withSecurityHeaders,
 } from "./security";
 import type { Env } from "./types";
+import { effectiveWorkingHours, handleManagerWorkingHours } from "./working-hours";
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -121,7 +109,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   const ip = clientIp(req);
 
   // CSRF: cookie-authenticated mutating /api/* must be same-origin.
-  // Exempt: better-auth (own origin checks), Stripe webhook (signature),
+  // Exempt: better-auth (own origin checks),
   // desktop bearer ingest (/sessions, /activity — no cookies).
   if (
     url.pathname.startsWith("/api/") &&
@@ -129,7 +117,6 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     req.method !== "HEAD" &&
     req.method !== "OPTIONS" &&
     !url.pathname.startsWith("/api/auth/") &&
-    url.pathname !== "/api/stripe/webhook" &&
     url.pathname !== "/api/marketing/run" &&
     !isSameOriginRequest(req)
   ) {
@@ -219,22 +206,30 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     return json(result.ok ? { ok: true } : { error: result.error || "send failed" }, result.ok ? 200 : 500);
   }
 
+  // Operator approve link from the new-signup email (HMAC-signed, no session).
+  if ((req.method === "GET" || req.method === "POST") && url.pathname === "/admin/approve") {
+    if (!(await rateLimitAllowDurable(env.DB, `admin-approve:${ip}`, 30, 60 * 60_000))) {
+      return json({ error: "too many requests" }, 429);
+    }
+    return handleAdminApprove(req, env, url);
+  }
+
   // better-auth handles all its own endpoints (sign-up, sign-in, session, ...).
   if (url.pathname.startsWith("/api/auth/")) {
     return makeAuth(env).handler(req);
   }
 
   // ---- Browser (session-cookie) API: everything below is per logged-in user.
-  // `/api/me` allows unverified users so the dashboard can show the verify banner.
-  // All other data APIs require a verified email.
+  // `/api/me` allows unverified and unapproved users so the dashboard can show
+  // the right gate. All other data APIs require a verified, approved account.
 
   if (url.pathname === "/api/token" && req.method === "GET") {
-    const user = await requirePaidUser(req, env);
+    const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
     return json(await getOrCreateToken(env, user.id));
   }
   if (url.pathname === "/api/token/regenerate" && req.method === "POST") {
-    const user = await requirePaidUser(req, env);
+    const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
     if (!(await rateLimitAllowDurable(env.DB, `token-regen:${user.id}`, 5, 60 * 60_000))) {
       return json({ error: "too many requests" }, 429);
@@ -242,12 +237,12 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     return json(await rotateToken(env, user.id));
   }
   if (url.pathname === "/api/tokens" && req.method === "GET") {
-    const user = await requirePaidUser(req, env);
+    const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
     return json({ tokens: await listTokens(env, user.id) });
   }
   if (url.pathname === "/api/tokens" && req.method === "POST") {
-    const user = await requirePaidUser(req, env);
+    const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
     if (!(await rateLimitAllowDurable(env.DB, `token-mint:${user.id}`, 10, 60 * 60_000))) {
       return json({ error: "too many requests" }, 429);
@@ -262,14 +257,14 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   }
   const tokenIdMatch = /^\/api\/tokens\/([0-9a-f-]+)$/.exec(url.pathname);
   if (tokenIdMatch && req.method === "DELETE") {
-    const user = await requirePaidUser(req, env);
+    const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
     const revoked = await revokeToken(env, user.id, tokenIdMatch[1]);
     return revoked ? json({ ok: true }) : json({ error: "device token not found" }, 404);
   }
 
   if (url.pathname === "/api/hours" && req.method === "GET") {
-    const user = await requirePaidUser(req, env);
+    const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
     const schedule = await getEffectiveSendSchedule(env, user.id);
     const period = resolvePeriod(url, schedule.timezone);
@@ -284,29 +279,22 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   if (url.pathname === "/api/me" && req.method === "GET") {
     const user = await sessionUser(req, env);
     if (!user) return json({ error: "unauthorized" }, 401);
-    const orgs = user.emailVerified ? await membershipsFor(env, user.id) : [];
+    const approved = user.emailVerified && (await isApproved(env, user.id));
+    if (user.emailVerified && !approved) await requestApproval(env, user);
+    const orgs = approved ? await membershipsFor(env, user.id) : [];
     const manager = orgs.some((o) => isManagerRole(o.role));
-    const hasAccess = user.emailVerified && (await userHasProductAccess(env, user.id));
-    const waitingOnTeam =
-      user.emailVerified &&
-      !hasAccess &&
-      orgs.length > 0 &&
-      !manager;
     // Team workers (non-managers) may not self-edit times — managers adjust for them.
     const canEditTimes = orgs.length === 0 || manager;
     return json({
-      user: { id: user.id, email: user.email, emailVerified: user.emailVerified },
+      user: { id: user.id, email: user.email, emailVerified: user.emailVerified, approved },
       orgs,
       manager,
-      hasAccess,
-      needsPlan: user.emailVerified && !hasAccess && !waitingOnTeam,
-      waitingOnTeam,
       canEditTimes,
     });
   }
 
   if (url.pathname === "/api/team/members" && req.method === "GET") {
-    const user = await requirePaidUser(req, env);
+    const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
     const orgId = url.searchParams.get("organizationId") ?? "";
     if (!(await isManagerOf(env, user.id, orgId))) return json({ error: "forbidden" }, 403);
@@ -325,7 +313,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     (url.pathname === "/api/team/hours" || url.pathname === "/api/team/preview") &&
     req.method === "GET"
   ) {
-    const user = await requirePaidUser(req, env);
+    const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
     const orgId = url.searchParams.get("organizationId") ?? "";
     const targetId = url.searchParams.get("userId") ?? "";
@@ -345,8 +333,19 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     return json({ ...report, sessions });
   }
 
+  if (url.pathname === "/api/team/working-hours") {
+    const user = await requireActiveUser(req, env);
+    if (user instanceof Response) return user;
+    return handleManagerWorkingHours(req, env, user.id);
+  }
+  if (url.pathname === "/api/working-hours" && req.method === "GET") {
+    const user = await requireActiveUser(req, env);
+    if (user instanceof Response) return user;
+    return json(await effectiveWorkingHours(env, user.id));
+  }
+
   if (url.pathname === "/api/team/settings") {
-    const user = await requirePaidUser(req, env);
+    const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
     const orgId = url.searchParams.get("organizationId") ?? "";
     if (!(await isManagerOf(env, user.id, orgId))) return json({ error: "forbidden" }, 403);
@@ -388,7 +387,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   }
 
   if (url.pathname === "/api/team/manual-session") {
-    const user = await requirePaidUser(req, env);
+    const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
     const orgId = url.searchParams.get("organizationId") ?? "";
     const targetId = url.searchParams.get("userId") ?? "";
@@ -400,88 +399,26 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     return handleManualSession(req, url, env, targetId, schedule.timezone);
   }
 
-  // ---- Billing (Stripe).
-  if (req.method === "POST" && url.pathname === "/api/stripe/webhook") {
-    return handleWebhook(req, env);
-  }
-  if (req.method === "POST" && url.pathname === "/api/billing/checkout") {
-    const user = await requireVerifiedUser(req, env);
+  // Create (or reuse) a team the caller manages. Teams are free.
+  if (req.method === "POST" && url.pathname === "/api/team/create") {
+    const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
-    const body = (await req.json().catch(() => ({}))) as {
-      plan?: unknown;
-      organizationId?: unknown;
-      organizationName?: unknown;
-    };
-    const plan = typeof body.plan === "string" ? body.plan : "";
-    if (!isSelfServePlan(plan)) return json({ error: "invalid plan" }, 400);
-    const orgName =
-      typeof body.organizationName === "string" ? body.organizationName.trim().slice(0, 80) : "";
-    let targetOrg: string;
+    if (!(await rateLimitAllowDurable(env.DB, `team-create:${user.id}`, 10, 60 * 60_000))) {
+      return json({ error: "too many requests" }, 429);
+    }
+    const body = (await req.json().catch(() => ({}))) as { name?: unknown };
+    const name = typeof body.name === "string" ? body.name.trim().slice(0, 80) : "";
     try {
-      if (plan === "single") {
-        targetOrg = await ensurePersonalOrg(env, req, user);
-      } else {
-        targetOrg = typeof body.organizationId === "string" ? body.organizationId : "";
-        if (targetOrg) {
-          if (!(await isManagerOf(env, user.id, targetOrg))) {
-            return json({ error: "forbidden" }, 403);
-          }
-        } else {
-          // One-click team checkout: create workspace if needed, then Stripe.
-          targetOrg = await ensureTeamOrg(env, req, user, orgName || undefined);
-        }
-      }
-      const checkoutUrl = await createCheckoutSession(env, {
-        orgId: targetOrg,
-        plan,
-        email: user.email,
-        origin: url.origin,
-      });
-      if (!checkoutUrl) return json({ error: "checkout unavailable" }, 502);
-      return json({ url: checkoutUrl, organizationId: targetOrg });
+      const organizationId = await ensureTeamOrg(env, req, user, name || undefined);
+      return json({ ok: true, organizationId });
     } catch (e) {
-      console.error("stripe checkout error:", String((e as Error)?.message ?? e));
-      return json({ error: "checkout unavailable" }, 502);
+      console.error("team create error:", String((e as Error)?.message ?? e));
+      return json({ error: "could not create team" }, 500);
     }
-  }
-  if (req.method === "POST" && url.pathname === "/api/billing/portal") {
-    const user = await requireVerifiedUser(req, env);
-    if (user instanceof Response) return user;
-    const body = (await req.json().catch(() => ({}))) as { organizationId?: unknown };
-    const targetOrg = typeof body.organizationId === "string" ? body.organizationId : "";
-    if (!(await isManagerOf(env, user.id, targetOrg))) return json({ error: "forbidden" }, 403);
-    try {
-      const portalUrl = await createPortalSession(env, { orgId: targetOrg, origin: url.origin });
-      if (!portalUrl) return json({ error: "no subscription" }, 400);
-      return json({ url: portalUrl });
-    } catch (e) {
-      console.error("stripe portal error:", String((e as Error)?.message ?? e));
-      return json({ error: "portal unavailable" }, 502);
-    }
-  }
-
-  // Upgrade or downgrade an existing subscription (prorated). Seat-cap checked server-side.
-  if (req.method === "POST" && url.pathname === "/api/billing/change-plan") {
-    const user = await requireVerifiedUser(req, env);
-    if (user instanceof Response) return user;
-    const body = (await req.json().catch(() => ({}))) as {
-      plan?: unknown;
-      organizationId?: unknown;
-    };
-    const plan = typeof body.plan === "string" ? body.plan : "";
-    if (!isSelfServePlan(plan)) return json({ error: "invalid plan" }, 400);
-    const targetOrg = typeof body.organizationId === "string" ? body.organizationId : "";
-    if (!(await isManagerOf(env, user.id, targetOrg))) return json({ error: "forbidden" }, 403);
-    const result = await changeSubscriptionPlan(env, { orgId: targetOrg, plan });
-    if (!result.ok) {
-      const status = result.error.includes("seat") || result.error.includes("member") ? 409 : 400;
-      return json({ error: result.error }, status);
-    }
-    return json({ ok: true, plan: result.plan });
   }
 
   if (url.pathname === "/api/manual-session") {
-    const user = await requirePaidUser(req, env);
+    const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
     // Team workers cannot add/delete their own manual entries (managers use /api/team/manual-session).
     if (req.method === "POST" || req.method === "DELETE") {
@@ -501,7 +438,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
 
   // Privacy: export this account's cloud data (sessions + activity aggregates).
   if (url.pathname === "/api/export" && req.method === "GET") {
-    const user = await requirePaidUser(req, env);
+    const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
     if (!(await rateLimitAllowDurable(env.DB, `export:${user.id}`, 6, 60 * 60_000))) {
       return json({ error: "too many requests" }, 429);
@@ -509,11 +446,11 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     return handleDataExport(env, user);
   }
 
-  // Privacy: delete this account's clocked data + revoke tokens. Does not cancel Stripe
-  // (use the billing portal); does not remove better-auth user rows (session cookie
+  // Privacy: delete this account's clocked data + revoke tokens. Does not
+  // remove better-auth user rows (session cookie
   // still works until sign-out) but product data is gone.
   if (url.pathname === "/api/account/delete" && req.method === "POST") {
-    const user = await requireVerifiedUser(req, env);
+    const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
     if (!(await rateLimitAllowDurable(env.DB, `account-delete:${user.id}`, 3, 60 * 60_000))) {
       return json({ error: "too many requests" }, 429);
@@ -527,7 +464,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   }
 
   if (url.pathname === "/api/settings") {
-    const user = await requirePaidUser(req, env);
+    const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
     if (req.method === "GET") {
       const eff = await getEffectiveRecipients(env, user.id, user.email);
@@ -571,7 +508,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   }
 
   if (req.method === "GET" && url.pathname === "/preview") {
-    const user = await requirePaidUser(req, env);
+    const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
     const schedule = await getEffectiveSendSchedule(env, user.id);
     const period = resolvePeriod(url, schedule.timezone);
@@ -582,7 +519,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
 
   // Manual send — throttled (force email is expensive / abusable).
   if (req.method === "POST" && url.pathname === "/api/send") {
-    const user = await requirePaidUser(req, env);
+    const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
     if (!(await rateLimitAllowDurable(env.DB, `send:${user.id}`, 3, 60 * 60_000))) {
       return json({ error: "too many sends; try again later" }, 429);
@@ -606,6 +543,15 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   }
 
   // ---- Desktop-app (Bearer-token) API.
+  if (req.method === "GET" && url.pathname === "/desktop/working-hours") {
+    const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+    const userId = await userIdForToken(env, bearer);
+    if (!userId) return json({ error: "unauthorized" }, 401);
+    if (!(await isApproved(env, userId))) return json({ error: "account pending approval" }, 403);
+    return new Response(JSON.stringify(await effectiveWorkingHours(env, userId)), {
+      headers: { "content-type": "application/json", "cache-control": "no-store" },
+    });
+  }
   if (req.method === "POST" && url.pathname === "/sessions") {
     if (!(await rateLimitAllowDurable(env.DB, `sessions:${ip}`, 60, 60_000))) {
       return json({ error: "too many requests" }, 429);
@@ -613,12 +559,10 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
     const userId = await userIdForToken(env, bearer);
     if (userId) {
-      if (!(await userHasProductAccess(env, userId))) {
-        return json({ error: "subscription required" }, 402);
-      }
       if (!(await rateLimitAllowDurable(env.DB, `sessions:user:${userId}`, 120, 60_000))) {
         return json({ error: "too many requests" }, 429);
       }
+      if (!(await isApproved(env, userId))) return json({ error: "account pending approval" }, 403);
       return handleIngest(req, env, userId);
     }
     // Legacy global token: opt-in only (ALLOW_LEGACY_BEARER_TOKEN=true). Off by default.
@@ -636,12 +580,10 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
     const userId = await userIdForToken(env, bearer);
     if (!userId) return json({ error: "unauthorized" }, 401);
-    if (!(await userHasProductAccess(env, userId))) {
-      return json({ error: "subscription required" }, 402);
-    }
     if (!(await rateLimitAllowDurable(env.DB, `activity:user:${userId}`, 120, 60_000))) {
       return json({ error: "too many requests" }, 429);
     }
+    if (!(await isApproved(env, userId))) return json({ error: "account pending approval" }, 403);
     return handleActivityIngest(req, env, userId);
   }
 
@@ -672,30 +614,15 @@ async function sessionUser(req: Request, env: Env): Promise<SessionUser | null> 
   };
 }
 
-/** Session user with verified email, or a 401/403 Response. */
-async function requireVerifiedUser(
+/** Session user with a verified email and an approved account, or a 401/403 Response. */
+async function requireActiveUser(
   req: Request,
   env: Env,
 ): Promise<SessionUser | Response> {
   const user = await sessionUser(req, env);
   if (!user) return json({ error: "unauthorized" }, 401);
   if (!user.emailVerified) return json({ error: "email not verified" }, 403);
-  return user;
-}
-
-/**
- * Verified user with paid or complimentary access. Used for product APIs.
- * Billing/checkout stays on requireVerifiedUser so users can subscribe.
- */
-async function requirePaidUser(
-  req: Request,
-  env: Env,
-): Promise<SessionUser | Response> {
-  const user = await requireVerifiedUser(req, env);
-  if (user instanceof Response) return user;
-  if (!(await userHasProductAccess(env, user.id))) {
-    return json({ error: "subscription required" }, 402);
-  }
+  if (!(await isApproved(env, user.id))) return json({ error: "account pending approval" }, 403);
   return user;
 }
 
@@ -711,43 +638,32 @@ interface MembershipRow {
   name: string;
   metadata: string | null;
   memberCount: number;
-  billingStatus: string | null;
-  billingUpdatedAt: number | null;
 }
 
-/** Orgs the user belongs to, with paid-aware plan/cap for the dashboard. */
+/** Orgs the user belongs to, with plan/cap for the dashboard. */
 async function membershipsFor(env: Env, userId: string) {
   const res = await env.DB.prepare(
     `SELECT m.organizationId AS organizationId, m.role AS role, o.name AS name, o.metadata AS metadata,
-            (SELECT COUNT(*) FROM member m2 WHERE m2.organizationId = o.id) AS memberCount,
-            b.status AS billingStatus,
-            b.updatedAt AS billingUpdatedAt
+            (SELECT COUNT(*) FROM member m2 WHERE m2.organizationId = o.id) AS memberCount
        FROM member m JOIN organization o ON o.id = m.organizationId
-       LEFT JOIN org_billing b ON b.organizationId = o.id
       WHERE m.userId = ?
       ORDER BY o.name`,
   )
     .bind(userId)
     .all<MembershipRow>();
 
-  return Promise.all(
-    (res.results ?? []).map(async (r) => {
-      const plan = await effectiveOrgPlan(env, r.organizationId, r.metadata);
-      const cap = await effectiveMemberCap(env, r.organizationId);
-      const paid = isPaidBillingStatusWithGrace(r.billingStatus, r.billingUpdatedAt);
-      return {
-        organizationId: r.organizationId,
-        role: r.role,
-        name: r.name,
-        plan,
-        planLabel: planLabel(plan),
-        cap,
-        memberCount: r.memberCount,
-        billingStatus: r.billingStatus ?? "",
-        paid,
-      };
-    }),
-  );
+  return (res.results ?? []).map((r) => {
+    const plan = orgPlan(r.metadata);
+    return {
+      organizationId: r.organizationId,
+      role: r.role,
+      name: r.name,
+      plan,
+      planLabel: planLabel(plan),
+      cap: planCap(plan),
+      memberCount: r.memberCount,
+    };
+  });
 }
 
 function isManagerRole(role: string): boolean {

@@ -443,7 +443,7 @@ unsafe fn build_controls(hwnd: HWND) {
     label_id(
         hwnd,
         ID_LBL_START,
-        "Work start",
+        "Personal work start",
         m,
         y0 + 140,
         half,
@@ -454,7 +454,7 @@ unsafe fn build_controls(hwnd: HWND) {
     label_id(
         hwnd,
         ID_LBL_END,
-        "Work end",
+        "Personal work end",
         right,
         y0 + 140,
         half,
@@ -468,7 +468,7 @@ unsafe fn build_controls(hwnd: HWND) {
     label_id(
         hwnd,
         ID_LBL_DAYS,
-        "Work days   ?   none = after-hours prompt off",
+        "Personal days (team hours override after sync)",
         m,
         y0 + 202,
         fw,

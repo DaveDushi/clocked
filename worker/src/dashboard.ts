@@ -21,7 +21,7 @@ const HTML = /* html */ `<!doctype html>
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://clocked.daviddusi.com/" />
 <meta property="og:title" content="clocked — automatic Windows time tracking" />
-<meta property="og:description" content="Tray app tracks real work time. Cloud sync + monthly timesheet email. Open-source desktop, simple paid plans for solo and teams." />
+<meta property="og:description" content="Tray app tracks real work time. Cloud sync + monthly timesheet email. Open-source desktop, free cloud account for solo and teams." />
 <meta property="og:image" content="https://clocked.daviddusi.com/og.jpg" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="675" />
@@ -30,7 +30,7 @@ const HTML = /* html */ `<!doctype html>
 <meta name="twitter:description" content="Automatic time tracking for Windows. No timers. No spyware. Monthly timesheet by email." />
 <meta name="twitter:image" content="https://clocked.daviddusi.com/og.jpg" />
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareApplication","name":"clocked","applicationCategory":"BusinessApplication","operatingSystem":"Windows, macOS","offers":{"@type":"Offer","price":"0","priceCurrency":"USD","description":"Open-source desktop; hosted cloud plans available"},"description":"Automatic time tracking from power and session events. Local SQLite, optional project attribution, cloud sync, teams, and monthly timesheet email.","url":"https://clocked.daviddusi.com/","downloadUrl":"https://clocked.daviddusi.com/download","softwareVersion":"0.1.14","license":"https://opensource.org/licenses/MIT","codeRepository":"https://github.com/DaveDushi/clocked"}
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"clocked","applicationCategory":"BusinessApplication","operatingSystem":"Windows, macOS","offers":{"@type":"Offer","price":"0","priceCurrency":"USD","description":"Free open-source desktop app and free hosted cloud account"},"description":"Automatic time tracking from power and session events. Local SQLite, optional project attribution, cloud sync, teams, and monthly timesheet email.","url":"https://clocked.daviddusi.com/","downloadUrl":"https://clocked.daviddusi.com/download","softwareVersion":"0.1.14","license":"https://opensource.org/licenses/MIT","codeRepository":"https://github.com/DaveDushi/clocked"}
 </script>
 <link rel="icon" type="image/png" href="/favicon.ico" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -81,39 +81,6 @@ const HTML = /* html */ `<!doctype html>
   }
   .dash-panel { display:none; }
   .dash-panel.active { display:block; animation:fadein .18s ease; }
-
-  /* account / plan menu in header (keeps the page calm) */
-  .acct-menu { position:relative; flex:none; }
-  .acct-menu.hidden { display:none; }
-  .acct-chip {
-    display:inline-flex; align-items:center; gap:8px;
-    padding:6px 10px 6px 6px; border-radius:999px;
-    background:rgba(255,255,255,.03); border:1px solid var(--border);
-    color:var(--fg); font-weight:500; font-size:13px; box-shadow:none;
-  }
-  .acct-chip:hover { border-color:var(--faint); color:var(--fg); transform:none; box-shadow:none; background:rgba(255,255,255,.05); }
-  .acct-chip[aria-expanded="true"] { border-color:rgba(242,169,80,.45); box-shadow:0 0 0 3px rgba(242,169,80,.12); }
-  .acct-chip .plan-badge { margin:0; padding:3px 8px; font-size:10px; }
-  .acct-chip .acct-chevron { color:var(--muted); font-size:10px; margin-left:1px; }
-  .acct-pop {
-    position:absolute; right:0; top:calc(100% + 8px); z-index:40; width:min(280px, calc(100vw - 40px));
-    padding:12px; border-radius:14px;
-    background:linear-gradient(180deg, var(--panel), var(--panel2));
-    border:1px solid var(--border);
-    box-shadow:0 16px 40px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.04);
-    animation:pop .16s cubic-bezier(.2,.7,.2,1);
-  }
-  .acct-pop.hidden { display:none; }
-  .acct-pop-head { display:flex; flex-direction:column; gap:4px; margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid var(--border); }
-  .acct-pop-head strong { font-size:14px; }
-  .acct-pop-head .sub { font-size:12px; color:var(--muted); }
-  .acct-pop-head .plan-status-pill { align-self:flex-start; margin-top:4px; }
-  .acct-pop-actions { display:flex; flex-direction:column; gap:8px; }
-  .acct-pop-actions button { width:100%; }
-  .acct-pop #billingMsg { min-height:0; margin-top:8px; }
-  @media (max-width:480px) {
-    .acct-chip .acct-label { display:none; }
-  }
 
   .section-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:12px; }
   .section-head h3 { margin:0; font-size:16px; }
@@ -523,8 +490,7 @@ const HTML = /* html */ `<!doctype html>
   .price-head { text-align:center; margin:36px auto 18px; max-width:560px; }
   .price-head h2 { font-size:23px; margin:0 0 6px; letter-spacing:.02em; }
   .price-head p { color:var(--muted); font-size:15px; margin:0; }
-  .pricing { display:grid; grid-template-columns:repeat(2,1fr); gap:14px; max-width:680px; margin:0 auto 26px; }
-  @media (max-width:560px) { .pricing { grid-template-columns:1fr; } }
+  .pricing { display:grid; grid-template-columns:1fr; gap:14px; max-width:380px; margin:0 auto 26px; }
   .price-card {
     position:relative; overflow:hidden; display:flex; flex-direction:column;
     background:linear-gradient(180deg, var(--panel), var(--panel2));
@@ -543,11 +509,6 @@ const HTML = /* html */ `<!doctype html>
   .price-list li { position:relative; padding-left:24px; font-size:13.5px; color:var(--fg); }
   .price-list li::before { content:"✓"; position:absolute; left:0; top:0; color:var(--ok); font-weight:700; }
   .price-card button { margin-top:auto; }
-  .price-card.selected { border-color:rgba(242,169,80,.55); box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 0 0 1px rgba(242,169,80,.25), 0 10px 26px rgba(0,0,0,.3); }
-  #planGate { max-width:720px; margin:0 auto 40px; }
-  #planGate .price-head { margin-top:12px; }
-  #planGateWait { margin-bottom:18px; }
-  #planGateOrgField { max-width:420px; margin:0 auto 18px; }
   #verifyGate { max-width:520px; margin:24px auto; }
 
   .muted { color:var(--muted); }
@@ -570,54 +531,8 @@ const HTML = /* html */ `<!doctype html>
   .pv-empty { padding:16px; color:var(--muted); font-size:14px; }
 
   /* ---------- team / roster ---------- */
-  /* ---------- plan / billing card ---------- */
-  .plan-hero { display:flex; flex-direction:column; gap:14px; }
-  .plan-hero-top { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
-  .plan-badge {
-    display:inline-block; font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase;
-    color:#221503; background:linear-gradient(180deg, var(--amber), var(--amber2));
-    border-radius:999px; padding:4px 10px; font-weight:700; margin-bottom:8px;
-  }
-  .plan-badge.team { background:linear-gradient(180deg, #7db3ff, #4f7fd6); color:#06101f; }
-  .plan-badge.teamplus { background:linear-gradient(180deg, #c4a1ff, #8b5cf6); color:#140a22; }
-  .plan-title { margin:0 0 4px; font-size:18px; letter-spacing:.02em; }
-  .plan-status-pill {
-    flex:none; font-size:12px; font-weight:600; letter-spacing:.04em; text-transform:uppercase;
-    padding:6px 10px; border-radius:999px; border:1px solid var(--border); color:var(--muted); background:rgba(255,255,255,.03);
-  }
-  .plan-status-pill.ok { color:var(--ok); border-color:rgba(91,214,162,.35); background:rgba(91,214,162,.08); }
-  .plan-status-pill.warn { color:var(--amber); border-color:rgba(242,169,80,.35); background:rgba(242,169,80,.08); }
-  .plan-status-pill.bad { color:var(--err); border-color:rgba(255,112,112,.35); background:rgba(255,112,112,.08); }
-  .plan-facts {
-    display:grid; grid-template-columns:repeat(3,1fr); gap:10px;
-    padding:12px; border-radius:12px; border:1px solid var(--border); background:#0b0d13;
-  }
-  @media (max-width:560px) { .plan-facts { grid-template-columns:1fr; } }
-  .plan-fact label { display:block; font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); margin-bottom:4px; }
-  .plan-fact b { font-size:14px; color:var(--fg); font-weight:600; }
-  .plan-actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
-  .plan-actions .rspacer { flex:1; min-width:8px; }
   #teamSection { margin-top:18px; padding-top:16px; border-top:1px solid var(--border); }
   #teamSection.hidden { display:none; }
-  .upgrade-options { display:flex; flex-direction:column; gap:10px; margin-top:4px; }
-  .upgrade-opt {
-    display:flex; align-items:center; gap:12px; text-align:left; width:100%;
-    padding:12px 14px; border-radius:12px; border:1px solid var(--border); background:#0b0d13; color:var(--fg);
-  }
-  .upgrade-opt:hover { border-color:rgba(242,169,80,.45); }
-  .upgrade-opt.current { opacity:.55; border-style:dashed; cursor:default; }
-  .upgrade-opt.current:hover { border-color:var(--border); }
-  .upgrade-opt .uo-title { font-weight:600; font-size:14px; }
-  .upgrade-opt .uo-meta { font-size:12px; color:var(--muted); margin-top:2px; }
-  .upgrade-opt .uo-price { margin-left:auto; font-family:var(--mono); color:var(--amber); font-weight:600; font-size:13px; white-space:nowrap; }
-  .upgrade-opt .uo-tag {
-    margin-left:8px; font-size:10px; letter-spacing:.08em; text-transform:uppercase;
-    color:var(--muted); border:1px solid var(--border); border-radius:999px; padding:2px 7px; font-weight:600;
-  }
-  .upgrade-opt .uo-tag.up { color:var(--ok); border-color:rgba(91,214,162,.35); }
-  .upgrade-opt .uo-tag.down { color:var(--amber); border-color:rgba(242,169,80,.35); }
-  .upgrade-opt .uo-tag.cur { color:var(--muted); }
-
   .roster { display:flex; flex-direction:column; gap:8px; margin-top:14px; }
   .rosterrow { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--border); border-radius:10px; background:var(--panel2); }
   .rosterrow .rname { font-weight:500; }
@@ -627,8 +542,9 @@ const HTML = /* html */ `<!doctype html>
   .badge { font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:3px 8px; border-radius:999px; border:1px solid var(--border); color:var(--muted); }
   .badge.mgr { color:var(--amber); border-color:rgba(242,169,80,.4); }
   .invitelink { display:flex; gap:8px; margin-top:10px; }
+  .invitelink.hidden { display:none; }
   .invitelink input { flex:1; font-family:var(--mono); font-size:12px; }
-  #inviteRole, #orgPlan { width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:#0b0d13; color:var(--fg); font:inherit; }
+  #inviteRole { width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:#0b0d13; color:var(--fg); font:inherit; }
 
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation:none !important; transition:none !important; }
@@ -645,30 +561,6 @@ const HTML = /* html */ `<!doctype html>
     <div id="topAuth" class="hidden">
       <button id="navSignin" class="ghost">Sign in</button>
       <button id="navSignup">Sign up</button>
-    </div>
-    <!-- Plan lives in the header as a quiet account chip + popover -->
-    <div id="teamCard" class="acct-menu hidden">
-      <button type="button" id="acctMenuBtn" class="acct-chip" aria-haspopup="menu" aria-expanded="false" aria-controls="acctMenuPop">
-        <span id="planBadge" class="plan-badge">Solo</span>
-        <span id="acctMenuLabel" class="hidden">Solo</span>
-        <span class="acct-chevron" aria-hidden="true">▾</span>
-      </button>
-      <div id="acctMenuPop" class="acct-pop hidden" role="menu">
-        <div class="acct-pop-head">
-          <strong id="teamCardTitle">Solo plan</strong>
-          <span class="sub" id="teamCardHint">1 of 1 seats · Active</span>
-          <span id="planStatusPill" class="plan-status-pill">—</span>
-          <span class="hidden" id="planFactName"></span>
-          <span class="hidden" id="planFactSeats"></span>
-          <span class="hidden" id="planFactBilling"></span>
-          <span class="hidden" id="teamOrgName"></span>
-        </div>
-        <div class="acct-pop-actions">
-          <button id="billingBtn" class="ghost" type="button">Manage billing</button>
-          <button id="upgradeBtn" type="button">Change plan</button>
-        </div>
-        <div id="billingMsg" class="msg" role="status"></div>
-      </div>
     </div>
     <button id="signout" class="ghost hidden">Sign out</button>
   </div>
@@ -690,7 +582,7 @@ const HTML = /* html */ `<!doctype html>
         <a class="btn ghost" href="/download/extension">Chrome extension</a>
         <div class="hintline">Optional extension sends site hostnames to the local app only — no screenshots, no keylogging, no full URLs.</div>
       </div>
-      <p class="trust">MIT desktop app · local SQLite source of truth · paid hosted cloud · self-host the Worker anytime</p>
+      <p class="trust">MIT desktop app · local SQLite source of truth · free hosted cloud · self-host the Worker anytime</p>
     </div>
 
     <div class="features">
@@ -699,7 +591,7 @@ const HTML = /* html */ `<!doctype html>
       <div class="feature"><div class="k">Optional projects</div><div class="v">Opt in to attribute time to the focused app and privacy-safe context (document name or browser hostname). Window titles stay off by default.</div></div>
       <div class="feature"><div class="k">Monthly timesheet</div><div class="v">Hosted cloud emails a day-by-day CSV on your schedule. Preview anytime, add manual spans, and export or delete your cloud data.</div></div>
       <div class="feature"><div class="k">Teams</div><div class="v">Invite workers, review their hours, adjust entries as a manager, and centralize report delivery — not live surveillance.</div></div>
-      <div class="feature"><div class="k">Yours to run</div><div class="v">Point the desktop app at your own Cloudflare Worker, or use hosted clocked for accounts, dashboard, billing, and email without ops work.</div></div>
+      <div class="feature"><div class="k">Yours to run</div><div class="v">Point the desktop app at your own Cloudflare Worker, or use hosted clocked for accounts, dashboard, and email without ops work.</div></div>
     </div>
 
     <div class="how">
@@ -714,7 +606,7 @@ const HTML = /* html */ `<!doctype html>
         <div class="how-step">
           <div class="n">02</div>
           <h3>Connect cloud (optional)</h3>
-          <p>Create an account here, verify email, pick a plan, paste your sync token into Settings — or point the app at your self-hosted Worker.</p>
+          <p>Create a free account here, verify email, paste your sync token into Settings — or point the app at your self-hosted Worker.</p>
         </div>
         <div class="how-step">
           <div class="n">03</div>
@@ -726,7 +618,7 @@ const HTML = /* html */ `<!doctype html>
 
     <div class="compare">
       <h2>Hosted vs self-hosted</h2>
-      <p>The open-source desktop and a minimal Worker stay useful on their own. Hosted clocked sells convenience, accounts, teams, and managed delivery.</p>
+      <p>The open-source desktop and a minimal Worker stay useful on their own. Hosted clocked adds accounts, teams, and managed delivery for free.</p>
       <div class="compare-wrap">
         <table class="compare-table">
           <thead>
@@ -773,9 +665,9 @@ const HTML = /* html */ `<!doctype html>
               <td class="hosted-col yes">Invite, roster, shared timesheets</td>
             </tr>
             <tr>
-              <th scope="row">Billing &amp; support</th>
+              <th scope="row">Operations</th>
               <td class="no">You operate everything</td>
-              <td class="hosted-col yes">Stripe plans, hosted updates, support path</td>
+              <td class="hosted-col yes">Hosted updates, support path</td>
             </tr>
             <tr>
               <th scope="row">Best for</th>
@@ -785,7 +677,7 @@ const HTML = /* html */ `<!doctype html>
           </tbody>
         </table>
       </div>
-      <p class="compare-note">Self-host stays intentionally simple. Hosted charges for workflow, reliability, and collaboration — not for the right to track hours on your own PC.</p>
+      <p class="compare-note">Self-host stays intentionally simple. Hosted is free: sign up and connect the app.</p>
     </div>
 
     <div class="audience">
@@ -801,57 +693,25 @@ const HTML = /* html */ `<!doctype html>
     </div>
 
     <div class="price-head">
-      <h2>Simple pricing</h2>
-      <p>Open-source desktop is free forever. Hosted sync, dashboard, teams, and email reports are paid.</p>
+      <h2>Free</h2>
+      <p>The desktop app and the hosted cloud are both free. Just create an account.</p>
     </div>
     <div class="pricing">
       <div class="price-card">
-        <div class="plan-name">Solo</div>
-        <div class="price-tag"><span class="price-num">25&cent;</span><span class="price-per">/ day</span></div>
-        <div class="plan-meta">Just you &middot; ~$7.50/mo</div>
+        <div class="plan-name">Everything</div>
+        <div class="price-tag"><span class="price-num">$0</span></div>
+        <div class="plan-meta">Solo or teams of up to 50</div>
         <ul class="price-list">
           <li>Desktop sync token</li>
           <li>Hours dashboard + day timeline</li>
           <li>Manual adjustments &amp; data export</li>
           <li>Monthly timesheet email</li>
+          <li>Invite workers &amp; manager timesheet view</li>
         </ul>
-        <button class="planCta" style="width:100%">Get started</button>
-      </div>
-      <div class="price-card">
-        <div class="plan-name">Team</div>
-        <div class="price-tag"><span class="price-num">50&cent;</span><span class="price-per">/ day</span></div>
-        <div class="plan-meta">Up to 5 members</div>
-        <ul class="price-list">
-          <li>Everything in Solo</li>
-          <li>Invite workers</li>
-          <li>Manager timesheet view</li>
-          <li>Shared report delivery</li>
-        </ul>
-        <button class="planCta" style="width:100%">Get started</button>
-      </div>
-      <div class="price-card">
-        <div class="plan-name">Team+</div>
-        <div class="price-tag"><span class="price-num">$1</span><span class="price-per">/ day</span></div>
-        <div class="plan-meta">Up to 30 members</div>
-        <ul class="price-list">
-          <li>Everything in Team</li>
-          <li>Larger roster (30 seats)</li>
-          <li>Priority support</li>
-        </ul>
-        <button class="planCta" style="width:100%">Get started</button>
-      </div>
-      <div class="price-card enterprise">
-        <div class="plan-name">Enterprise</div>
-        <div class="price-tag"><span class="price-num sm">Let&rsquo;s talk</span></div>
-        <div class="plan-meta">30+ members</div>
-        <ul class="price-list">
-          <li>Everything in Team+</li>
-          <li>Unlimited seats</li>
-          <li>Custom invoicing &amp; SLA</li>
-        </ul>
-        <button id="salesCta" style="width:100%">Contact sales</button>
+        <button class="planCta" style="width:100%">Create account</button>
       </div>
     </div>
+    <p class="compare-note">Bigger team? <a href="#" id="salesCta">Talk to us</a>.</p>
 
     <div class="faq">
       <h2>FAQ</h2>
@@ -873,7 +733,7 @@ const HTML = /* html */ `<!doctype html>
       </details>
       <details>
         <summary>Which platforms?</summary>
-        <p>Native tray and menu-bar apps for Windows and macOS. Optional Chrome/Edge extension for accurate browser hostnames. The web dashboard works in any modern browser once you have a hosted plan.</p>
+        <p>Native tray and menu-bar apps for Windows and macOS. Optional Chrome/Edge extension for accurate browser hostnames. The web dashboard works in any modern browser once you have an account.</p>
       </details>
     </div>
 
@@ -882,7 +742,7 @@ const HTML = /* html */ `<!doctype html>
       · Installer via <a href="/download">/download</a>
       · <a href="/press">Press kit</a>
       · <a href="/news">News</a>
-      · Questions? Use Contact sales on Enterprise or open an issue on the repo.
+      · Questions? Open an issue on the repo.
     </p>
 
     <div id="authModal" class="modal hidden">
@@ -918,89 +778,23 @@ const HTML = /* html */ `<!doctype html>
   <!-- Dashboard (logged in) -->
   <div id="app" class="hidden">
     <div id="freshBanner" class="banner hidden">
-      <b>Account created.</b> Verify your email, pick a plan, then copy your desktop sync token.
+      <b>Account created.</b> Verify your email and we will review your account.
     </div>
-    <div id="billingBanner" class="banner hidden">
-      <b>Payment received.</b> Unlocking your dashboard&hellip;
-    </div>
-
     <!-- Verify email first (blocking). -->
     <div id="verifyGate" class="card hidden">
       <h3>Verify your email</h3>
-      <p class="hint">We sent a link to your inbox. Confirm it to choose a plan and open your dashboard.</p>
+      <p class="hint">We sent a link to your inbox. Confirm it to open your dashboard.</p>
       <button id="resendVerifyGate" class="ghost">Resend verification email</button>
       <div id="verifyGateMsg" class="msg" role="status"></div>
     </div>
 
-    <!-- Paid plan required (SaaS onboarding wall). -->
-    <div id="planGate" class="hidden">
-      <div class="price-head">
-        <h2>Choose a plan to continue</h2>
-        <p>Subscribe to unlock the dashboard, desktop sync token, and monthly timesheets.</p>
-      </div>
-      <div id="planGateWait" class="card hidden">
-        <h3>Waiting on your team</h3>
-        <p class="hint">You&rsquo;re on a team that isn&rsquo;t subscribed yet. Ask your manager to finish checkout, then refresh this page.</p>
-        <button id="planGateRefresh" class="ghost">Refresh status</button>
-      </div>
-      <div id="planGateChooser">
-        <div id="planGateOrgField" class="field">
-          <label for="planGateOrgName">Team name <span class="muted" style="text-transform:none;letter-spacing:0">(for Team / Team+)</span></label>
-          <input id="planGateOrgName" type="text" placeholder="Acme Inc." autocomplete="organization" />
-        </div>
-        <div class="pricing">
-          <div class="price-card" data-plan="single">
-            <div class="plan-name">Solo</div>
-            <div class="price-tag"><span class="price-num">25&cent;</span><span class="price-per">/ day</span></div>
-            <div class="plan-meta">Just you &middot; ~$7.50/mo</div>
-            <ul class="price-list">
-              <li>Desktop sync token</li>
-              <li>Hours dashboard + day timeline</li>
-              <li>Manual edits &amp; data export</li>
-              <li>Monthly timesheet email</li>
-            </ul>
-            <button type="button" class="gatePlanCta" data-plan="single" style="width:100%">Continue with Solo</button>
-          </div>
-          <div class="price-card" data-plan="team">
-            <div class="plan-name">Team</div>
-            <div class="price-tag"><span class="price-num">50&cent;</span><span class="price-per">/ day</span></div>
-            <div class="plan-meta">Up to 5 members</div>
-            <ul class="price-list">
-              <li>Everything in Solo</li>
-              <li>Invite workers</li>
-              <li>Manager timesheet view</li>
-              <li>Shared report delivery</li>
-            </ul>
-            <button type="button" class="gatePlanCta" data-plan="team" style="width:100%">Continue with Team</button>
-          </div>
-          <div class="price-card" data-plan="teamplus">
-            <div class="plan-name">Team+</div>
-            <div class="price-tag"><span class="price-num">$1</span><span class="price-per">/ day</span></div>
-            <div class="plan-meta">Up to 30 members</div>
-            <ul class="price-list">
-              <li>Everything in Team</li>
-              <li>Larger roster (30 seats)</li>
-              <li>Priority support</li>
-            </ul>
-            <button type="button" class="gatePlanCta" data-plan="teamplus" style="width:100%">Continue with Team+</button>
-          </div>
-          <div class="price-card enterprise" data-plan="enterprise">
-            <div class="plan-name">Enterprise</div>
-            <div class="price-tag"><span class="price-num sm">Let&rsquo;s talk</span></div>
-            <div class="plan-meta">30+ members</div>
-            <ul class="price-list">
-              <li>Everything in Team+</li>
-              <li>Unlimited seats</li>
-              <li>Custom invoicing &amp; SLA</li>
-            </ul>
-            <button type="button" id="gateSalesCta" style="width:100%">Contact sales</button>
-          </div>
-        </div>
-      </div>
-      <div id="planGateMsg" class="msg" role="status" style="text-align:center"></div>
+    <!-- Waiting for the operator to approve the account. -->
+    <div id="approvalGate" class="card hidden">
+      <h3>Your account is waiting for approval</h3>
+      <p class="hint">Thanks for signing up. We review new accounts by hand and will email you as soon as yours is approved.</p>
     </div>
 
-    <!-- Product UI — only after paid access. Tabbed to keep the page short. -->
+    <!-- Product UI — only after email verification. Tabbed to keep the page short. -->
     <div id="appMain" class="hidden">
 
     <nav class="dash-nav" id="dashNav" aria-label="Dashboard sections">
@@ -1078,6 +872,7 @@ const HTML = /* html */ `<!doctype html>
     <!-- Desktop sync -->
     <div id="panel-desktop" class="dash-panel">
       <div class="card">
+        <div id="workingHoursSummary" class="hint" role="status" style="margin-bottom:16px"></div>
         <div class="section-head">
           <h3>Desktop app</h3>
           <p class="hint">Connect the tray / menu-bar app</p>
@@ -1106,7 +901,7 @@ const HTML = /* html */ `<!doctype html>
         <div id="tokenMsg" class="msg" role="status"></div>
         <div style="margin-top:22px;padding-top:16px;border-top:1px solid var(--border)">
           <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Privacy</div>
-          <p class="hint" style="margin:0 0 10px">Download a copy of your cloud sessions and project totals, or erase them from this host. Cancel billing in Manage billing first if you also want to stop subscription charges.</p>
+          <p class="hint" style="margin:0 0 10px">Download a copy of your cloud sessions and project totals, or erase them from this host.</p>
           <div class="inline-actions">
             <button id="exportData" class="ghost" type="button">Export my data</button>
             <button id="deleteData" class="ghost del" type="button">Delete cloud data</button>
@@ -1150,7 +945,7 @@ const HTML = /* html */ `<!doctype html>
       </div>
     </div>
 
-    <!-- Team (managers on multi-seat plans) -->
+    <!-- Team (managers, or solo users who can create one) -->
     <div id="panel-team" class="dash-panel">
       <div id="teamSection" class="card hidden">
         <div class="section-head">
@@ -1177,61 +972,48 @@ const HTML = /* html */ `<!doctype html>
           <button id="copyInvite" class="ghost" type="button">Copy invite link</button>
         </div>
         <div id="roster" class="roster"></div>
+        <div style="margin-top:22px;padding-top:16px;border-top:1px solid var(--border)">
+          <h3>Working hours</h3>
+          <p class="hint">Set the team default or override it for one person. Hours use each computer's local time and control the after-hours prompt. They do not stop tracking at shift end. Updated desktop apps apply changes on their next sync.</p>
+          <label for="hoursTarget">Schedule for</label>
+          <select id="hoursTarget"><option value="">Team default</option></select>
+          <label for="hoursMode" style="margin-top:12px">Working-hours policy</label>
+          <select id="hoursMode" disabled>
+            <option value="inherit">Use personal settings</option>
+            <option value="scheduled">Set working hours</option>
+            <option value="disabled">Turn off the after-hours prompt</option>
+          </select>
+          <fieldset id="hoursFields" disabled style="border:0;padding:0;margin:12px 0">
+            <div class="row">
+              <div><label for="hoursStart">Shift starts</label><input id="hoursStart" type="time" step="60" value="09:00" /></div>
+              <div><label for="hoursEnd">Shift ends</label><input id="hoursEnd" type="time" step="60" value="17:00" /></div>
+            </div>
+            <div id="hoursDays" style="display:flex;flex-wrap:wrap;gap:12px;margin-top:12px" role="group" aria-label="Shift start days"></div>
+            <p class="hint">Choose the days a shift starts. For overnight hours, Friday 22:00 to 06:00 includes Saturday morning.</p>
+          </fieldset>
+          <button id="saveWorkingHours" type="button" disabled>Save working hours</button>
+          <div id="workingHoursMsg" class="msg" role="status"></div>
+        </div>
         <div id="teamMemberPanel" class="preview hidden"></div>
       </div>
       <div id="teamEmpty" class="card hidden">
-        <h3>Team</h3>
-        <p class="hint" style="margin:0">Upgrade to Team to invite members and review their hours.</p>
-        <div class="inline-actions">
-          <button type="button" id="teamEmptyUpgrade">Change plan</button>
+        <h3>Start a team</h3>
+        <p class="hint" style="margin:0 0 10px">Invite people, review their hours, and send everyone's timesheets from one place. Free for up to 50 members.</p>
+        <div class="row">
+          <div>
+            <label for="teamCreateName">Team name</label>
+            <input id="teamCreateName" type="text" placeholder="Acme Inc." autocomplete="organization" maxlength="80" />
+          </div>
+          <button type="button" id="teamCreateBtn">Create team</button>
         </div>
+        <div id="teamCreateMsg" class="msg" role="status"></div>
       </div>
     </div>
 
-    <!-- Change plan modal (upgrade or downgrade) -->
-    <div id="upgradeModal" class="modal hidden">
-      <div class="modal-backdrop"></div>
-      <div class="card modal-card" style="max-width:440px">
-        <button id="upgradeClose" class="ghost modal-close" aria-label="Close" type="button">&times;</button>
-        <h3 style="margin:0 0 6px" id="upgradeModalTitle">Change plan</h3>
-        <p class="hint" id="upgradeHint">Switch anytime. Downgrades require your roster to fit the new seat limit; Stripe prorates the difference.</p>
-        <div class="upgrade-options">
-          <button type="button" class="upgrade-opt" data-plan="single" data-rank="1" id="upgradeSingle">
-            <div>
-              <div class="uo-title">Solo <span class="uo-tag" data-tag></span></div>
-              <div class="uo-meta">1 seat · personal account</div>
-            </div>
-            <div class="uo-price">25&cent;/day</div>
-          </button>
-          <button type="button" class="upgrade-opt" data-plan="team" data-rank="2" id="upgradeTeam">
-            <div>
-              <div class="uo-title">Team <span class="uo-tag" data-tag></span></div>
-              <div class="uo-meta">Up to 5 members · shared timesheets</div>
-            </div>
-            <div class="uo-price">50&cent;/day</div>
-          </button>
-          <button type="button" class="upgrade-opt" data-plan="teamplus" data-rank="3" id="upgradeTeamPlus">
-            <div>
-              <div class="uo-title">Team+ <span class="uo-tag" data-tag></span></div>
-              <div class="uo-meta">Up to 30 members · priority support</div>
-            </div>
-            <div class="uo-price">$1/day</div>
-          </button>
-          <button type="button" class="upgrade-opt" data-plan="enterprise" data-rank="4" id="upgradeEnterprise">
-            <div>
-              <div class="uo-title">Enterprise <span class="uo-tag" data-tag></span></div>
-              <div class="uo-meta">30+ seats · custom invoicing</div>
-            </div>
-            <div class="uo-price">Talk to us</div>
-          </button>
-        </div>
-        <div id="upgradeMsg" class="msg" role="status"></div>
-      </div>
-    </div>
     </div><!-- /appMain -->
   </div><!-- /app -->
 
-  <!-- Sales modal lives outside landing so plan-gate (logged-in) can open it. -->
+  <!-- Contact modal for larger teams. -->
   <div id="salesModal" class="modal hidden">
     <div class="modal-backdrop"></div>
     <div class="card modal-card">
@@ -1285,11 +1067,7 @@ function show(loggedIn) {
   $("signout").classList.toggle("hidden", !loggedIn);
   $("topAuth").classList.toggle("hidden", loggedIn);
   if (!loggedIn) {
-    // Plan chip lives in the top bar (outside #app) — hide on sign-out.
-    if ($("teamCard")) $("teamCard").classList.add("hidden");
-    if (typeof closeAcctMenu === "function") closeAcctMenu();
     if ($("appMain")) $("appMain").classList.add("hidden");
-    if ($("planGate")) $("planGate").classList.add("hidden");
     if ($("verifyGate")) $("verifyGate").classList.add("hidden");
   }
 }
@@ -1307,9 +1085,6 @@ function setDashTab(name) {
 document.querySelectorAll(".dashTab").forEach((b) => {
   b.onclick = () => setDashTab(b.getAttribute("data-tab"));
 });
-if ($("teamEmptyUpgrade")) {
-  $("teamEmptyUpgrade").onclick = () => openUpgradeModal();
-}
 
 // ---- auth mode (sign up / sign in) ----
 let mode = "signup";
@@ -1326,7 +1101,7 @@ function setMode(m) {
 $("tabSignup").onclick = () => setMode("signup");
 $("tabSignin").onclick = () => setMode("signin");
 
-// ---- auth modal (opened from the top-right nav + pricing CTA) ----
+// ---- auth modal (opened from the top-right nav + landing CTAs) ----
 function openAuth(m) {
   setMode(m);
   $("authModal").classList.remove("hidden");
@@ -1337,30 +1112,16 @@ function closeAuth() { $("authModal").classList.add("hidden"); }
 $("navSignin").onclick = () => openAuth("signin");
 $("navSignup").onclick = () => openAuth("signup");
 if ($("heroSignup")) $("heroSignup").onclick = () => openAuth("signup");
-// Remember which pricing tier the visitor clicked so post-login checkout prefers it.
-let pendingPlan = "single";
 document.querySelectorAll(".planCta").forEach((b) => {
-  b.onclick = () => {
-    const card = b.closest(".price-card");
-    const nm = (card && card.querySelector(".plan-name") ? card.querySelector(".plan-name").textContent : "") || "";
-    pendingPlan = /team\+/i.test(nm) ? "teamplus" : (/solo/i.test(nm) ? "single" : "team");
-    try { sessionStorage.setItem("clocked_pending_plan", pendingPlan); } catch (e) {}
-    openAuth("signup");
-  };
+  b.onclick = () => openAuth("signup");
 });
-try {
-  const stored = sessionStorage.getItem("clocked_pending_plan");
-  if (stored === "single" || stored === "team" || stored === "teamplus") pendingPlan = stored;
-} catch (e) {}
 $("authClose").onclick = closeAuth;
 $("authModal").querySelector(".modal-backdrop").onclick = closeAuth;
 
-// ---- contact sales (Enterprise tier) ----
+// ---- contact (larger teams) ----
 function openSales() { $("salesModal").classList.remove("hidden"); setTimeout(() => $("sName").focus(), 30); }
 function closeSales() { $("salesModal").classList.add("hidden"); }
-$("salesCta").onclick = openSales;
-const gateSales = $("gateSalesCta");
-if (gateSales) gateSales.onclick = openSales;
+$("salesCta").onclick = (e) => { e.preventDefault(); openSales(); };
 $("salesClose").onclick = closeSales;
 $("salesModal").querySelector(".modal-backdrop").onclick = closeSales;
 $("sSubmit").onclick = async () => {
@@ -1387,8 +1148,6 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     closeAuth();
     closeSales();
-    closeAcctMenu();
-    if ($("upgradeModal")) closeUpgradeModal();
   }
 });
 
@@ -1446,15 +1205,12 @@ async function init() {
 
 async function afterLogin(fresh) {
   $("freshBanner").classList.toggle("hidden", !fresh);
-  const billingRet = new URLSearchParams(location.search).get("billing");
-  if (billingRet) history.replaceState({}, "", location.pathname);
-  $("billingBanner").classList.toggle("hidden", billingRet !== "success");
   const now = new Date();
   $("month").value = now.getFullYear() + "-" + pad(now.getMonth()+1);
   $("mDate").value = now.getFullYear() + "-" + pad(now.getMonth()+1) + "-" + pad(now.getDate());
   await acceptPendingInvite();
 
-  // Entitlement gate (verify → plan → product), same shape as modern SaaS apps.
+  // Verify email, then the product.
   const me = await fetchMe();
   if (!me || !me.user) {
     show(false);
@@ -1466,45 +1222,21 @@ async function afterLogin(fresh) {
     setAccessStage("verify");
     return;
   }
-  if (me.waitingOnTeam) {
-    setAccessStage("wait");
+  if (!me.user.approved) {
+    setAccessStage("approval");
     return;
   }
-  if (!me.hasAccess) {
-    setAccessStage("plan");
-    highlightPendingPlan();
-    if (billingRet === "success") pollForAccess();
-    // Optional: auto-start checkout when they clicked a landing plan CTA.
-    else if (pendingPlan === "single" || pendingPlan === "team" || pendingPlan === "teamplus") {
-      // Don't auto-redirect; show the chooser with selection highlighted.
-    }
-    return;
-  }
-
   setAccessStage("app");
   setDashTab("hours");
   await applyTeamFromMe(me);
   await Promise.all([loadToken(), loadHours(), loadEmailSettings()]);
-  if (billingRet === "success") {
-    $("billingBanner").classList.remove("hidden");
-    setTimeout(() => $("billingBanner").classList.add("hidden"), 6000);
-  }
 }
 
 /** Which post-login shell is visible. */
 function setAccessStage(stage) {
-  const verify = stage === "verify";
-  const plan = stage === "plan";
-  const wait = stage === "wait";
-  const app = stage === "app";
-  $("verifyGate").classList.toggle("hidden", !verify);
-  $("planGate").classList.toggle("hidden", !(plan || wait));
-  $("planGateChooser").classList.toggle("hidden", !plan);
-  $("planGateWait").classList.toggle("hidden", !wait);
-  $("appMain").classList.toggle("hidden", !app);
-  if (plan || wait) {
-    $("teamCard").classList.add("hidden");
-  }
+  $("verifyGate").classList.toggle("hidden", stage !== "verify");
+  $("approvalGate").classList.toggle("hidden", stage !== "approval");
+  $("appMain").classList.toggle("hidden", stage !== "app");
 }
 
 async function fetchMe() {
@@ -1513,59 +1245,6 @@ async function fetchMe() {
   return r.json();
 }
 
-function highlightPendingPlan() {
-  document.querySelectorAll("#planGate .price-card").forEach((c) => {
-    c.classList.toggle("selected", c.getAttribute("data-plan") === pendingPlan);
-  });
-}
-
-async function pollForAccess() {
-  $("planGateMsg").textContent = "Confirming payment…";
-  $("planGateMsg").className = "msg ok";
-  for (let i = 0; i < 15; i++) {
-    await new Promise((r) => setTimeout(r, 2000));
-    const me = await fetchMe();
-    if (me && me.hasAccess) {
-      $("planGateMsg").textContent = "";
-      try { sessionStorage.removeItem("clocked_pending_plan"); } catch (e) {}
-      await afterLogin(false);
-      return;
-    }
-  }
-  $("planGateMsg").textContent = "Payment is processing — click refresh in a moment, or re-open this page.";
-  $("planGateMsg").className = "msg";
-}
-
-async function startCheckout(plan) {
-  $("planGateMsg").textContent = "";
-  $("planGateMsg").className = "msg";
-  if (plan === "enterprise") { openSales(); return; }
-  if (plan !== "single" && plan !== "team" && plan !== "teamplus") return;
-  pendingPlan = plan;
-  try { sessionStorage.setItem("clocked_pending_plan", plan); } catch (e) {}
-  highlightPendingPlan();
-
-  const body = { plan };
-  if (plan === "team" || plan === "teamplus") {
-    const name = ($("planGateOrgName").value || "").trim();
-    if (name) body.organizationName = name;
-    if (orgId && isManagerRoleC(orgRole)) body.organizationId = orgId;
-  }
-  document.querySelectorAll(".gatePlanCta").forEach((b) => { b.disabled = true; });
-  $("planGateMsg").textContent = "Redirecting to secure checkout…";
-  $("planGateMsg").className = "msg";
-  const r = await api("/api/billing/checkout", { method: "POST", body: JSON.stringify(body) });
-  const d = await r.json().catch(() => ({}));
-  document.querySelectorAll(".gatePlanCta").forEach((b) => { b.disabled = false; });
-  if (r.ok && d.url) { window.location.href = d.url; return; }
-  $("planGateMsg").textContent = d.error || "Could not start checkout. Try again.";
-  $("planGateMsg").className = "msg err";
-}
-
-document.querySelectorAll(".gatePlanCta").forEach((b) => {
-  b.onclick = () => startCheckout(b.getAttribute("data-plan") || "");
-});
-if ($("planGateRefresh")) $("planGateRefresh").onclick = () => afterLogin(false);
 if ($("resendVerifyGate")) {
   $("resendVerifyGate").onclick = async () => {
     const email = meEmail || ($("email") && $("email").value) || "";
@@ -1592,7 +1271,7 @@ if ($("resendVerifyGate")) {
 // any member's timesheet. Membership actions hit better-auth's own
 // /api/auth/organization/* endpoints; hours reads hit our guarded /api/team/*.
 let orgId = "", orgName = "", orgRole = "", meEmail = "", openMemberId = "", openMemberName = "";
-let orgCap = 0, orgPlanLabel = "", orgPlanKey = "", billingStatus = "", memberCount = 0;
+let orgCap = 0, orgPlanKey = "", memberCount = 0;
 let emailMode = "solo"; // "solo" | "manager" | "member" — who controls timesheet delivery
 let canEditTimes = true; // false for team workers (non-managers)
 
@@ -1617,9 +1296,8 @@ async function applyTeam() {
 
 async function applyTeamFromMe(me) {
   orgId = ""; orgName = ""; orgRole = ""; openMemberId = ""; emailMode = "solo";
-  orgPlanKey = ""; billingStatus = ""; memberCount = 0;
+  orgPlanKey = ""; memberCount = 0;
   canEditTimes = me.canEditTimes !== false;
-  $("teamCard").classList.add("hidden");
   $("tabTeam").classList.add("hidden");
   if ($("teamMemberPanel")) { $("teamMemberPanel").classList.add("hidden"); $("teamMemberPanel").innerHTML = ""; }
   if ($("inviteLinkBox")) $("inviteLinkBox").classList.add("hidden");
@@ -1630,12 +1308,11 @@ async function applyTeamFromMe(me) {
     emailMode = "manager";
     canEditTimes = true;
     orgId = mgr.organizationId; orgName = mgr.name || ""; orgRole = mgr.role || "";
-    orgCap = mgr.cap || 0; orgPlanLabel = mgr.planLabel || "Team";
-    orgPlanKey = mgr.plan || ""; billingStatus = mgr.billingStatus || "";
+    orgCap = mgr.cap || 0;
+    orgPlanKey = mgr.plan || "";
     memberCount = mgr.memberCount || 1;
-    $("teamCard").classList.remove("hidden");
     $("tabTeam").classList.remove("hidden");
-    configureBillingUI();
+    configureTeamUI();
     updateTeamUsage(memberCount);
     if (orgPlanKey !== "single") await loadRoster();
   } else if (me.orgs && me.orgs.length) {
@@ -1644,16 +1321,18 @@ async function applyTeamFromMe(me) {
     const mem = me.orgs[0];
     orgId = mem.organizationId || "";
     orgRole = mem.role || "";
-    billingStatus = mem.billingStatus || "";
     orgPlanKey = mem.plan || "";
-    // Workers: no billing strip / team admin tab.
+    // Workers: no team admin tab.
     if ($("panel-team") && $("panel-team").classList.contains("active")) setDashTab("hours");
   } else {
+    // Solo: the Team tab offers to create a team.
     canEditTimes = true;
-    if ($("panel-team") && $("panel-team").classList.contains("active")) setDashTab("hours");
+    $("tabTeam").classList.remove("hidden");
+    configureTeamUI();
   }
   configureEmailCard();
   configureManualEditUI();
+  await loadWorkingHoursSummary();
 }
 
 /** Team workers see hours read-only; solo users and managers can add manual time. */
@@ -1665,200 +1344,34 @@ function configureManualEditUI() {
   if (!canEditTimes && $("manualList")) $("manualList").innerHTML = "";
 }
 
-function isBillingActive() {
-  return billingStatus === "active" || billingStatus === "trialing" || billingStatus === "past_due";
-}
-
-/** Compact plan strip + team tab content. */
-function configureBillingUI() {
+/** Roster for team managers; a "start a team" card for solo users. */
+function configureTeamUI() {
   const single = orgPlanKey === "single" || !orgPlanKey;
-  const team = orgPlanKey === "team";
-  const teamplus = orgPlanKey === "teamplus";
-  const active = isBillingActive();
-
   $("teamSection").classList.toggle("hidden", single);
-  if ($("teamEmpty")) $("teamEmpty").classList.toggle("hidden", !single);
+  $("teamEmpty").classList.toggle("hidden", !single);
   $("inviteLinkBox").classList.add("hidden");
   $("inviteMsg").textContent = "";
   $("inviteMsg").className = "msg";
-
-  const badge = $("planBadge");
-  const planName = single ? "Solo" : teamplus ? "Team+" : team ? "Team" : (orgPlanLabel || "Plan");
-  badge.textContent = planName;
-  badge.className = "plan-badge" + (teamplus ? " teamplus" : team ? " team" : "");
-
-  $("teamCardTitle").textContent = single ? "Solo plan" : (orgName || "Team plan");
-  $("planFactName").textContent = planName;
-  $("planFactBilling").textContent = active
-    ? (billingStatus === "past_due" ? "Past due" : billingStatus === "trialing" ? "Trialing" : "Active")
-    : "Inactive";
-
-  const pill = $("planStatusPill");
-  pill.textContent = active
-    ? (billingStatus === "past_due" ? "Past due" : billingStatus === "trialing" ? "Trial" : "Active")
-    : "Inactive";
-  pill.className = "plan-status-pill " + (billingStatus === "past_due" ? "warn" : active ? "ok" : "bad");
-
-  $("billingBtn").textContent = active ? "Manage billing" : "Subscribe";
-  $("upgradeBtn").classList.remove("hidden");
-  $("upgradeBtn").textContent = "Change plan";
-
-  if ($("acctMenuLabel")) $("acctMenuLabel").textContent = planName;
-
-  refreshPlanPicker();
-  refreshPlanStripMeta();
+  $("teamCreateMsg").textContent = "";
+  $("teamCreateMsg").className = "msg";
 }
 
-/** Rank for comparing plans (higher = more seats / price). */
-function planRank(key) {
-  if (key === "teamplus" || key === "enterprise") return key === "enterprise" ? 4 : 3;
-  if (key === "team") return 2;
-  return 1; // single / unknown
-}
-
-/** Paint change-plan options: show upgrade/downgrade tags; mark current. */
-function refreshPlanPicker() {
-  const cur = orgPlanKey === "teamplus" ? "teamplus" : orgPlanKey === "team" ? "team" : "single";
-  const curRank = planRank(cur);
-  document.querySelectorAll(".upgrade-opt[data-plan]").forEach((btn) => {
-    const p = btn.getAttribute("data-plan") || "";
-    const rank = Number(btn.getAttribute("data-rank") || planRank(p));
-    const isCurrent = p === cur || (p === "single" && cur === "single" && (orgPlanKey === "single" || !orgPlanKey));
-    const isEnt = p === "enterprise";
-    const tag = btn.querySelector("[data-tag]");
-    btn.classList.toggle("current", isCurrent && !isEnt);
-    btn.disabled = isCurrent && !isEnt;
-    if (!tag) return;
-    if (isCurrent && !isEnt) {
-      tag.textContent = "Current";
-      tag.className = "uo-tag cur";
-    } else if (isEnt) {
-      tag.textContent = "Sales";
-      tag.className = "uo-tag";
-    } else if (rank > curRank) {
-      tag.textContent = "Upgrade";
-      tag.className = "uo-tag up";
-    } else {
-      tag.textContent = "Downgrade";
-      tag.className = "uo-tag down";
-    }
-  });
-  if ($("upgradeHint")) {
-    $("upgradeHint").textContent =
-      "Switch anytime. Downgrades need your roster to fit the new seat limit; Stripe prorates the difference.";
-  }
-}
-
-function refreshPlanStripMeta() {
-  const single = orgPlanKey === "single" || !orgPlanKey;
-  const seats = $("planFactSeats").textContent || (single ? "1 of 1" : "—");
-  const billing = $("planFactBilling").textContent || "—";
-  $("teamCardHint").textContent = seats + " seats · " + billing;
-}
-
-function closeAcctMenu() {
-  if (!$("acctMenuPop")) return;
-  $("acctMenuPop").classList.add("hidden");
-  if ($("acctMenuBtn")) $("acctMenuBtn").setAttribute("aria-expanded", "false");
-}
-function toggleAcctMenu() {
-  const open = $("acctMenuPop").classList.toggle("hidden") === false;
-  $("acctMenuBtn").setAttribute("aria-expanded", open ? "true" : "false");
-}
-if ($("acctMenuBtn")) {
-  $("acctMenuBtn").onclick = (e) => { e.stopPropagation(); toggleAcctMenu(); };
-}
-document.addEventListener("click", (e) => {
-  const menu = $("teamCard");
-  if (!menu || menu.classList.contains("hidden")) return;
-  if (!menu.contains(e.target)) closeAcctMenu();
-});
-
-$("billingBtn").onclick = async () => {
-  const active = isBillingActive();
-  $("billingMsg").textContent = ""; $("billingMsg").className = "msg";
-  $("billingBtn").disabled = true;
-  const path = active ? "/api/billing/portal" : "/api/billing/checkout";
-  const plan = orgPlanKey === "teamplus" ? "teamplus" : orgPlanKey === "team" ? "team" : "single";
-  const payload = active ? { organizationId: orgId } : { plan: plan, organizationId: orgId };
-  const r = await api(path, { method: "POST", body: JSON.stringify(payload) });
+$("teamCreateBtn").onclick = async () => {
+  const name = ($("teamCreateName").value || "").trim();
+  $("teamCreateMsg").textContent = ""; $("teamCreateMsg").className = "msg";
+  $("teamCreateBtn").disabled = true;
+  const r = await api("/api/team/create", { method: "POST", body: JSON.stringify({ name }) });
   const d = await r.json().catch(() => ({}));
-  $("billingBtn").disabled = false;
-  if (r.ok && d.url) { window.location.href = d.url; return; }
-  $("billingMsg").textContent = d.error || "Could not open billing.";
-  $("billingMsg").className = "msg err";
+  $("teamCreateBtn").disabled = false;
+  if (!r.ok) {
+    $("teamCreateMsg").textContent = d.error || "Could not create team.";
+    $("teamCreateMsg").className = "msg err";
+    return;
+  }
+  $("teamCreateName").value = "";
+  await applyTeam();
+  setDashTab("team");
 };
-
-function openUpgradeModal() {
-  closeAcctMenu();
-  refreshPlanPicker();
-  $("upgradeMsg").textContent = "";
-  $("upgradeMsg").className = "msg";
-  $("upgradeModal").classList.remove("hidden");
-}
-function closeUpgradeModal() { $("upgradeModal").classList.add("hidden"); }
-$("upgradeBtn").onclick = openUpgradeModal;
-$("upgradeClose").onclick = closeUpgradeModal;
-$("upgradeModal").querySelector(".modal-backdrop").onclick = closeUpgradeModal;
-
-async function startPlanChange(plan) {
-  if (plan === "enterprise") {
-    closeUpgradeModal();
-    openSales();
-    return;
-  }
-  if (!orgId) {
-    $("upgradeMsg").textContent = "No workspace found for billing.";
-    $("upgradeMsg").className = "msg err";
-    return;
-  }
-  const cur = orgPlanKey === "teamplus" ? "teamplus" : orgPlanKey === "team" ? "team" : "single";
-  if (plan === cur) return;
-
-  const goingDown = planRank(plan) < planRank(cur);
-  $("upgradeMsg").textContent = goingDown ? "Downgrading plan…" : "Upgrading plan…";
-  $("upgradeMsg").className = "msg";
-  document.querySelectorAll(".upgrade-opt").forEach((b) => { b.disabled = true; });
-
-  // Prefer in-place subscription change (prorated). Fall back to Checkout if none yet.
-  let r = await api("/api/billing/change-plan", {
-    method: "POST",
-    body: JSON.stringify({ plan: plan, organizationId: orgId }),
-  });
-  let d = await r.json().catch(() => ({}));
-
-  if (!r.ok && (d.error === "no active subscription" || d.error === "subscription is not active")) {
-    r = await api("/api/billing/checkout", {
-      method: "POST",
-      body: JSON.stringify({ plan: plan, organizationId: orgId }),
-    });
-    d = await r.json().catch(() => ({}));
-    document.querySelectorAll(".upgrade-opt").forEach((b) => { b.disabled = false; });
-    refreshPlanPicker();
-    if (r.ok && d.url) { window.location.href = d.url; return; }
-    $("upgradeMsg").textContent = d.error || "Could not start checkout.";
-    $("upgradeMsg").className = "msg err";
-    return;
-  }
-
-  document.querySelectorAll(".upgrade-opt").forEach((b) => { b.disabled = false; });
-  if (r.ok) {
-    $("upgradeMsg").textContent = goingDown ? "Downgraded. Refreshing…" : "Upgraded. Refreshing…";
-    $("upgradeMsg").className = "msg ok";
-    closeUpgradeModal();
-    await afterLogin(false);
-    return;
-  }
-  refreshPlanPicker();
-  $("upgradeMsg").textContent = d.error || "Could not change plan.";
-  $("upgradeMsg").className = "msg err";
-}
-document.querySelectorAll(".upgrade-opt").forEach((b) => {
-  b.onclick = () => {
-    if (b.disabled || b.classList.contains("current")) return;
-    startPlanChange(b.getAttribute("data-plan") || "");
-  };
-});
 
 // Point the timesheet-email card at the right owner: managers edit the team's
 // destination, members see it read-only, solo users edit their own.
@@ -1886,17 +1399,11 @@ function updateTeamUsage(count) {
   memberCount = count;
   const unlimited = orgCap >= 1000000;
   const cap = unlimited ? null : (orgCap || 1);
-  if (orgPlanKey === "single" || !orgPlanKey) {
-    $("planFactSeats").textContent = "1 of 1";
-  } else {
-    $("planFactSeats").textContent = count + " of " + (cap == null ? "∞" : String(cap));
-    const full = cap != null && count >= cap;
-    if ($("inviteBtn")) {
-      $("inviteBtn").disabled = full;
-      $("inviteBtn").title = full ? "Upgrade your plan to invite more members" : "";
-    }
-  }
-  refreshPlanStripMeta();
+  if (orgPlanKey === "single" || !orgPlanKey) return;
+  $("teamSectionHint").textContent = count + (cap == null ? "" : " of " + cap) + " members";
+  const full = cap != null && count >= cap;
+  $("inviteBtn").disabled = full;
+  $("inviteBtn").title = full ? "Your team is full" : "";
 }
 
 async function loadRoster() {
@@ -1907,6 +1414,101 @@ async function loadRoster() {
   const d = await r.json();
   renderRoster(d.members || []);
   updateTeamUsage((d.members || []).length);
+  const target = $("hoursTarget");
+  const previous = target.value;
+  target.replaceChildren(new Option("Team default", ""));
+  (d.members || []).forEach((member) => target.add(new Option(member.name || member.email, member.id)));
+  target.value = Array.from(target.options).some((option) => option.value === previous) ? previous : "";
+  await loadWorkingHoursEditor();
+}
+
+// Working hours have their own controls so report delivery changes cannot overwrite them.
+let hoursLoadVersion = 0;
+const HOURS_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+HOURS_DAYS.forEach((day, i) => {
+  const label = document.createElement("label"); label.className = "check";
+  const input = document.createElement("input"); input.type = "checkbox"; input.value = String(i + 1);
+  input.checked = i < 5;
+  label.append(input, document.createTextNode(day)); $("hoursDays").appendChild(label);
+});
+function workingHoursPath() {
+  return "/api/team/working-hours?organizationId=" + encodeURIComponent(orgId) +
+    ($("hoursTarget").value ? "&userId=" + encodeURIComponent($("hoursTarget").value) : "");
+}
+function syncWorkingHoursFields() {
+  $("hoursFields").disabled = $("hoursMode").disabled || $("hoursMode").value !== "scheduled";
+  $("hoursFields").classList.toggle("hidden", $("hoursMode").value !== "scheduled");
+}
+async function loadWorkingHoursEditor() {
+  const version = ++hoursLoadVersion;
+  $("hoursMode").disabled = true; $("saveWorkingHours").disabled = true;
+  syncWorkingHoursFields();
+  $("workingHoursMsg").textContent = "Loading working hours...";
+  $("workingHoursMsg").className = "msg";
+  $("hoursMode").options[0].textContent = $("hoursTarget").value ? "Use team default" : "Use personal settings";
+  try {
+    const response = await api(workingHoursPath());
+    const data = await response.json();
+    if (version !== hoursLoadVersion) return;
+    if (!response.ok) throw new Error(data.error || "Could not load working hours.");
+    const schedule = data.schedule;
+    $("hoursMode").value = schedule ? schedule.mode : "inherit";
+    $("hoursStart").value = schedule && schedule.mode === "scheduled" ? schedule.start : "09:00";
+    $("hoursEnd").value = schedule && schedule.mode === "scheduled" ? schedule.end : "17:00";
+    const days = schedule && schedule.mode === "scheduled" ? schedule.days : [1, 2, 3, 4, 5];
+    $("hoursDays").querySelectorAll("input").forEach((input) => { input.checked = days.includes(Number(input.value)); });
+    $("hoursMode").disabled = false; $("saveWorkingHours").disabled = false;
+    $("workingHoursMsg").textContent = "";
+  } catch (error) {
+    if (version !== hoursLoadVersion) return;
+    $("workingHoursMsg").textContent = error.message || "Could not load working hours.";
+    $("workingHoursMsg").className = "msg err";
+  }
+  syncWorkingHoursFields();
+}
+$("hoursTarget").onchange = loadWorkingHoursEditor;
+$("hoursMode").onchange = syncWorkingHoursFields;
+$("saveWorkingHours").onclick = async () => {
+  const mode = $("hoursMode").value;
+  const schedule = mode === "inherit" ? null : mode === "disabled" ? { mode: "disabled" } : {
+    mode: "scheduled", start: $("hoursStart").value, end: $("hoursEnd").value,
+    days: Array.from($("hoursDays").querySelectorAll("input:checked"), (input) => Number(input.value))
+  };
+  const path = workingHoursPath();
+  $("saveWorkingHours").disabled = true; $("hoursTarget").disabled = true;
+  $("hoursMode").disabled = true; syncWorkingHoursFields();
+  $("workingHoursMsg").textContent = "Saving..."; $("workingHoursMsg").className = "msg";
+  try {
+    const response = await api(path, { method: "POST", body: JSON.stringify({ schedule }) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not save working hours.");
+    $("workingHoursMsg").textContent = "Saved. Updated desktop apps apply this on their next sync, including startup, wake, or Sync now.";
+    $("workingHoursMsg").className = "msg ok";
+    await loadWorkingHoursSummary();
+  } catch (error) {
+    $("workingHoursMsg").textContent = error.message || "Could not save working hours.";
+    $("workingHoursMsg").className = "msg err";
+  } finally {
+    $("saveWorkingHours").disabled = false; $("hoursTarget").disabled = false;
+    $("hoursMode").disabled = false; syncWorkingHoursFields();
+  }
+};
+async function loadWorkingHoursSummary() {
+  const summary = $("workingHoursSummary");
+  try {
+    const response = await api("/api/working-hours");
+    if (!response.ok) throw new Error("Could not load your working hours.");
+    const data = await response.json();
+    if (!data.schedule) {
+      summary.textContent = "Working hours use your personal desktop settings. A team manager can assign a schedule.";
+    } else {
+      const schedule = data.schedule;
+      const hours = schedule.mode === "disabled" ? "After-hours prompt turned off" :
+        schedule.days.map((day) => HOURS_DAYS[day - 1]).join(", ") + ", " + schedule.start + " to " + schedule.end;
+      summary.textContent = "Managed by " + data.organizationName + (data.source === "member" ? " with an individual override. " : ". ") +
+        hours + ". Uses your computer's local time. Updated desktop apps apply changes on their next sync. Your personal settings are kept for when this assignment ends.";
+    }
+  } catch (error) { summary.textContent = "Could not load your working hours. Your desktop keeps its last synced schedule."; }
 }
 
 function renderRoster(members) {
@@ -2206,11 +1808,6 @@ async function loadToken() {
     $("verifyBanner").classList.remove("hidden");
     return;
   }
-  if (r.status === 402) {
-    // Shouldn't reach appMain without paid access; re-run gate.
-    setAccessStage("plan");
-    return;
-  }
   $("verifyBanner").classList.add("hidden");
   if (r.ok) {
     const d = await r.json();
@@ -2346,7 +1943,7 @@ if (deleteBtn) deleteBtn.onclick = async () => {
   deleteBtn.disabled = false;
   if (r.ok) {
     if (msg) {
-      msg.textContent = "Cloud data deleted. Regenerate a token if you re-subscribe.";
+      msg.textContent = "Cloud data deleted. Regenerate a token to sync again.";
       msg.className = "msg ok";
     }
     setTokenView({ token: null, prefix: null, exists: false, created: false });
@@ -2760,7 +2357,6 @@ function renderEmailReadonly(recipients, sendDay, sendTime, sendTimezone) {
 }
 
 $("signout").onclick = async () => {
-  closeAcctMenu();
   try {
     await api("/api/auth/sign-out", {
       method: "POST",
@@ -2772,7 +2368,7 @@ $("signout").onclick = async () => {
   show(false);
   setMode("signin");
   orgId = ""; orgName = ""; orgRole = ""; meEmail = "";
-  orgPlanKey = ""; billingStatus = ""; canEditTimes = true; emailMode = "solo";
+  orgPlanKey = ""; canEditTimes = true; emailMode = "solo";
   window.location.assign("/");
 };
 $("month").addEventListener("change", loadHours);

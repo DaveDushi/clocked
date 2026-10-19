@@ -18,7 +18,6 @@
 - [ ] On a Mac: build, run, confirm NSWorkspace foreground + Keychain + bridge
 - [x] Apply migration `0012_activity.sql` on remote D1 and deploy Worker (2026-07-16)
 - [ ] packaging/macos/clocked.icns + notarize secrets
-- [ ] Stripe live price IDs (still TEST in wrangler vars)
 - [ ] Optional: richer browser domain capture via extension (strict opt-in)
 - [ ] macOS call detection (media.rs still fail-closed)
 

@@ -226,8 +226,8 @@ export async function buildAndSendReport(
   return { ok: true, period, rows };
 }
 
-/** Fixed recipient for Enterprise "Contact sales" leads. */
-const SALES_INBOX = "ddusi@easytomanage.com";
+/** Operator inbox: sales leads and new-signup approvals. */
+export const ADMIN_INBOX = "ddusi@easytomanage.com";
 
 /** Low-level Resend send for auth/transactional mail (verify, reset, invites). */
 export async function sendAuthEmail(
@@ -341,7 +341,7 @@ export async function sendContactSales(
       },
       body: JSON.stringify({
         from: `clocked <${env.MAIL_FROM}>`,
-        to: [SALES_INBOX],
+        to: [ADMIN_INBOX],
         reply_to: lead.email,
         subject: `Enterprise enquiry — ${lead.name}`,
         html,

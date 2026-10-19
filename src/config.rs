@@ -1,7 +1,7 @@
 //! User configuration: `%APPDATA%\clocked\config.toml`.
 //! Holds the Cloudflare Worker sync endpoint and bearer token.
 
-use chrono::{DateTime, Datelike, Local, NaiveTime, Weekday};
+use chrono::{DateTime, Local, NaiveTime, Weekday};
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_WORKER_URL: &str = "https://clocked.daviddusi.com";
@@ -221,22 +221,18 @@ impl Config {
     pub fn within_working_hours(&self, now: DateTime<Local>) -> Option<bool> {
         let start = NaiveTime::parse_from_str(self.work_start.trim(), "%H:%M").ok()?;
         let end = NaiveTime::parse_from_str(self.work_end.trim(), "%H:%M").ok()?;
-        let days: Vec<Weekday> = self
+        let days: Vec<u32> = self
             .work_days
             .iter()
             .filter_map(|d| parse_weekday(d))
+            .map(|day| day.number_from_monday())
             .collect();
         if days.is_empty() {
             return None;
         }
-        let t = now.time();
-        let day_ok = days.contains(&now.weekday());
-        let time_ok = if start <= end {
-            t >= start && t < end
-        } else {
-            t >= start || t < end
-        };
-        Some(day_ok && time_ok)
+        Some(crate::working_hours::contains_window(
+            start, end, &days, now,
+        ))
     }
 }
 
@@ -302,7 +298,9 @@ mod tests {
             ..Config::default()
         };
         assert_eq!(c.within_working_hours(local(2024, 1, 1, 23, 0)), Some(true));
-        assert_eq!(c.within_working_hours(local(2024, 1, 1, 5, 0)), Some(true));
+        assert_eq!(c.within_working_hours(local(2024, 1, 1, 5, 0)), Some(false));
+        assert_eq!(c.within_working_hours(local(2024, 1, 6, 5, 0)), Some(true));
+        assert_eq!(c.within_working_hours(local(2024, 1, 6, 6, 0)), Some(false));
         assert_eq!(
             c.within_working_hours(local(2024, 1, 1, 12, 0)),
             Some(false)

@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { organization } from "better-auth/plugins";
 
+import { approveUser } from "./approval";
 import { desktopAuth } from "./desktop-auth";
 import { sendAuthEmail } from "./email";
 import { effectiveMemberCap } from "./plans";
@@ -51,8 +52,8 @@ async function verifyPassword({ hash, password }: { hash: string; password: stri
   return diff === 0;
 }
 
-/** Force plan metadata to the unpaid floor — Stripe webhooks elevate later. */
-function unpaidOrgMetadata(
+/** Force plan metadata to the 1-seat floor; /api/team/create promotes to a team. */
+function floorOrgMetadata(
   incoming: Record<string, unknown> | undefined,
 ): Record<string, unknown> {
   const rest = { ...(incoming || {}) };
@@ -104,7 +105,7 @@ export function makeAuth(env: Env, allowSignUp = true) {
       enabled: true,
       disableSignUp: !allowSignUp,
       // Soft: allow session creation so the dashboard can prompt verify.
-      // All data APIs require verified email (see requireVerifiedUser).
+      // Data APIs require a verified, approved account (see requireActiveUser).
       requireEmailVerification: false,
       minPasswordLength: 12,
       password: { hash: hashPassword, verify: verifyPassword },
@@ -139,23 +140,27 @@ export function makeAuth(env: Env, allowSignUp = true) {
       organization({
         creatorRole: "owner",
         teams: { enabled: true },
-        // Paid seat cap only. Unpaid orgs are hard-capped at 1 (owner).
+        // Seat cap comes from the stored org plan (see plans.ts).
         membershipLimit: async (_user, org) => {
           const id = (org as { id?: string } | null)?.id;
           if (!id) return 1;
           return effectiveMemberCap(env, id);
         },
         organizationHooks: {
-          // Strip any client-supplied plan; only Stripe may elevate seats.
+          // Strip any client-supplied plan; only /api/team/create may raise seats.
           async beforeCreateOrganization({ organization: org }) {
             return {
               data: {
                 ...org,
-                metadata: unpaidOrgMetadata(
+                metadata: floorOrgMetadata(
                   org.metadata as Record<string, unknown> | undefined,
                 ),
               },
             };
+          },
+          // A manager inviting someone vouches for them, so invitees skip approval.
+          async afterAcceptInvitation({ user }) {
+            await approveUser(env, user.id);
           },
           async beforeUpdateOrganization({ organization: patch }) {
             // Clients may not change plan via metadata — re-read and re-apply

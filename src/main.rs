@@ -27,6 +27,7 @@ mod paths;
 mod secret;
 mod sync;
 mod update;
+mod working_hours;
 
 // Shared clock/idle/after-hours policy both platform UI layers drive.
 mod engine;

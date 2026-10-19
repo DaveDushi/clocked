@@ -202,11 +202,14 @@ fn run(cfg: &Config, timeout: Duration) -> Result<usize, Box<dyn std::error::Err
         .timeout(timeout)
         .build()?;
 
+    // Pull policy even when uploads fail, so a backlog cannot strand an old schedule.
+    let policy = crate::working_hours::pull(&client, &conn, cfg);
     let mut total = 0usize;
     total += push_sessions(&client, &conn, cfg, endpoint)?;
     // Always consider track_projects so the Worker can hide dashboard/CSV project
     // rollups when the feature is off (even with no pending activity rows).
     total += push_activity(&client, &conn, cfg, endpoint)?;
+    total += policy?;
     Ok(total)
 }
 

@@ -26,7 +26,7 @@ Post the copy below from your accounts (or grant a social integration later).
 
 - **For:** freelancers, consultants, small agencies who need honest billable hours  
 - **Not for:** workplace surveillance, keylogging, “productivity scoring”  
-- **Model:** open-source desktop tray app + paid cloud sync / dashboard / email  
+- **Model:** open-source desktop tray app + free cloud sync / dashboard / email  
 - **Privacy:** hours from power/idle; optional local app attribution (window titles **off** by default)
 
 ---
@@ -37,7 +37,7 @@ Post the copy below from your accounts (or grant a social integration later).
 
 2/ Sessions live on your PC (SQLite), sync over HTTPS, and the cloud emails a monthly timesheet even if your laptop was asleep at month-end.
 
-3/ Desktop is open source. Hosted cloud is the paid bit (solo + teams). Self-host the Worker if you want.
+3/ Desktop is open source. Hosted cloud is free too (solo + teams), just sign up. Self-host the Worker if you want.
 
 4/ Try it: https://clocked.daviddusi.com  
 Download: https://clocked.daviddusi.com/download  
@@ -50,7 +50,7 @@ GitHub: https://github.com/DaveDushi/clocked
 Most time trackers ask you to babysit a timer.  
 **clocked** sits in the Windows tray and uses power/session/idle events instead — so the day is built from what the machine actually did.
 
-Local SQLite is source of truth. Cloud sync + dashboard + monthly email when you’re ready. Desktop is open source; hosted plans for solo and small teams.
+Local SQLite is source of truth. Cloud sync + dashboard + monthly email when you’re ready. Desktop is open source; the hosted cloud is free for solo and small teams.
 
 https://clocked.daviddusi.com
 
@@ -60,7 +60,7 @@ https://clocked.daviddusi.com
 
 **Show HN: clocked – automatic Windows time tracking from power/session events**
 
-Tray app clocks in/out on unlock, lock, sleep, idle. Local SQLite, optional Cloudflare Worker sync + monthly timesheet email. Desktop MIT, hosted plans for cloud.
+Tray app clocks in/out on unlock, lock, sleep, idle. Local SQLite, optional Cloudflare Worker sync + monthly timesheet email. Desktop MIT, hosted cloud free.
 
 https://clocked.daviddusi.com  
 https://github.com/DaveDushi/clocked
@@ -70,7 +70,7 @@ https://github.com/DaveDushi/clocked
 ## Product Hunt (short)
 
 **Tagline:** Automatic Windows time tracking — no timers  
-**Description:** clocked is a tray app that builds your timesheet from real PC activity (unlock, idle, sleep). Sync to the cloud and get a monthly report by email. Open-source desktop; simple paid plans for solo and teams.
+**Description:** clocked is a tray app that builds your timesheet from real PC activity (unlock, idle, sleep). Sync to the cloud and get a monthly report by email. Open-source desktop; free cloud account for solo and teams.
 
 ---
 
@@ -92,7 +92,7 @@ Body:
 Hi —  
 I built clocked so I wouldn’t have to remember to start a timer.  
 It runs in the tray, tracks from OS events, and can email a monthly timesheet.  
-Desktop is open source; cloud is optional/paid.  
+Desktop is open source; cloud is optional and free.  
 → https://clocked.daviddusi.com  
 
 ---

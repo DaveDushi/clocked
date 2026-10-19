@@ -39,6 +39,7 @@ pub struct DesktopState {
     pending_reclaim: Option<DateTime<Utc>>,
     after_hours_answer: Option<bool>,
     after_hours_date: Option<NaiveDate>,
+    managed_hours: Option<crate::working_hours::WorkingHours>,
     pending_open: Option<&'static str>,
 }
 
@@ -57,6 +58,7 @@ impl DesktopState {
         rules: Rules,
         bridge: Arc<BridgeState>,
     ) -> Self {
+        let managed_hours = crate::working_hours::cached(&conn, &config);
         Self {
             conn,
             config,
@@ -74,6 +76,7 @@ impl DesktopState {
             pending_reclaim: None,
             after_hours_answer: None,
             after_hours_date: None,
+            managed_hours,
             pending_open: None,
         }
     }
@@ -143,10 +146,7 @@ impl DesktopState {
         if self.after_hours_date != Some(now.date_naive()) {
             self.after_hours_answer = None;
         }
-        match engine::decide_open(
-            self.config.within_working_hours(now),
-            self.after_hours_answer,
-        ) {
+        match engine::decide_open(self.within_working_hours(now), self.after_hours_answer) {
             OpenDecision::ClockIn => {
                 self.pending_open = None;
                 self.after_hours_answer = None;
@@ -170,6 +170,19 @@ impl DesktopState {
         }
     }
 
+    fn within_working_hours(&mut self, now: DateTime<Local>) -> Option<bool> {
+        let managed = crate::working_hours::cached(&self.conn, &self.config);
+        if managed != self.managed_hours {
+            self.after_hours_answer = None;
+            self.after_hours_date = None;
+            self.managed_hours = managed;
+        }
+        match &self.managed_hours {
+            Some(schedule) => schedule.contains(now),
+            None => self.config.within_working_hours(now),
+        }
+    }
+
     pub fn close_event(&mut self, reason: &'static str) -> Vec<Effect> {
         self.close_event_at(reason, Utc::now())
     }
@@ -189,7 +202,7 @@ impl DesktopState {
         let Some(reason) = self.pending_open else {
             return (false, Vec::new());
         };
-        if engine::should_auto_accept_after_hours(self.config.within_working_hours(Local::now())) {
+        if engine::should_auto_accept_after_hours(self.within_working_hours(Local::now())) {
             return (false, self.accept_after_hours(reason));
         }
         (true, Vec::new())
@@ -199,7 +212,7 @@ impl DesktopState {
         let Some(reason) = self.pending_open else {
             return Vec::new();
         };
-        if engine::should_auto_accept_after_hours(self.config.within_working_hours(Local::now())) {
+        if engine::should_auto_accept_after_hours(self.within_working_hours(Local::now())) {
             return self.accept_after_hours(reason);
         }
         self.pending_open = None;
@@ -215,7 +228,7 @@ impl DesktopState {
     }
 
     pub fn maybe_enter_working_hours(&mut self) -> Vec<Effect> {
-        let within = self.config.within_working_hours(Local::now());
+        let within = self.within_working_hours(Local::now());
         if !engine::should_auto_accept_after_hours(within) {
             return Vec::new();
         }
@@ -520,6 +533,69 @@ mod tests {
         assert!(state.answer_after_hours(false).is_empty());
         assert!(!state.is_clocked_in());
         assert!(state.open_event("unlock").is_empty());
+    }
+
+    #[test]
+    fn manager_policy_changes_the_prompt_and_removal_restores_personal_settings() {
+        let mut state = state_outside_working_hours();
+        state.config.bearer_token = "clk_test_device".into();
+        let personal = state.config.clone();
+        assert_eq!(state.open_event("start"), vec![Effect::PromptAfterHours]);
+        crate::working_hours::assign_for_test(
+            &state.conn,
+            &state.config,
+            Some(crate::working_hours::WorkingHours::Disabled),
+        );
+        assert!(!state.begin_after_hours_prompt().0);
+        assert!(state.is_clocked_in());
+        assert_eq!(state.config, personal);
+        state.close_event("lock");
+        crate::working_hours::assign_for_test(&state.conn, &state.config, None);
+        assert_eq!(state.open_event("unlock"), vec![Effect::PromptAfterHours]);
+        assert_eq!(state.config, personal);
+    }
+
+    #[test]
+    fn policy_change_keeps_an_explicit_rejection_clocked_out_until_the_next_open() {
+        let mut state = state_outside_working_hours();
+        state.config.bearer_token = "clk_test_device".into();
+        state.open_event("start");
+        state.answer_after_hours(false);
+        assert!(!state.is_clocked_in());
+        crate::working_hours::assign_for_test(
+            &state.conn,
+            &state.config,
+            Some(crate::working_hours::WorkingHours::Disabled),
+        );
+        state.maybe_enter_working_hours();
+        assert!(!state.is_clocked_in());
+        state.open_event("unlock");
+        assert!(state.is_clocked_in());
+    }
+
+    #[test]
+    fn losing_a_managed_assignment_does_not_resume_an_explicit_rejection() {
+        let mut state = state_outside_working_hours();
+        state.config.bearer_token = "clk_test_device".into();
+        state.config.work_start.clear(); // Personal hours have no prompt.
+        let now = Local::now();
+        let hours = crate::working_hours::WorkingHours::Scheduled {
+            start: (now + chrono::Duration::hours(1))
+                .format("%H:%M")
+                .to_string(),
+            end: (now + chrono::Duration::hours(2))
+                .format("%H:%M")
+                .to_string(),
+            days: (1..=7).collect(),
+        };
+        crate::working_hours::assign_for_test(&state.conn, &state.config, Some(hours));
+        assert_eq!(state.open_event("start"), vec![Effect::PromptAfterHours]);
+        state.answer_after_hours(false);
+        crate::working_hours::assign_for_test(&state.conn, &state.config, None);
+        state.maybe_enter_working_hours();
+        assert!(!state.is_clocked_in());
+        state.open_event("unlock");
+        assert!(state.is_clocked_in());
     }
 
     #[test]

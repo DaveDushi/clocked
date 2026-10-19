@@ -151,7 +151,7 @@ export async function getRecipients(
 /** The (first) organization a user belongs to, or null for solo users. */
 export async function orgIdForUser(env: Env, userId: string): Promise<string | null> {
   const row = await env.DB.prepare(
-    "SELECT organizationId FROM member WHERE userId = ? ORDER BY createdAt LIMIT 1",
+    "SELECT organizationId FROM member WHERE userId = ? ORDER BY createdAt, id LIMIT 1",
   )
     .bind(userId)
     .first<{ organizationId: string }>();
@@ -257,7 +257,7 @@ export async function listUsersWithEffectiveSchedules(env: Env): Promise<Schedul
   const res = await env.DB.prepare(
     `WITH first_membership AS (
        SELECT userId, organizationId,
-              ROW_NUMBER() OVER (PARTITION BY userId ORDER BY createdAt) AS position
+              ROW_NUMBER() OVER (PARTITION BY userId ORDER BY createdAt, id) AS position
          FROM member
      )
      SELECT u.id, u.email,
