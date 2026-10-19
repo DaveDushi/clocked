@@ -1,0 +1,80 @@
+# Clocked for Android
+
+Native Kotlin and Jetpack Compose app for Android 10 or later. The app tracks the union of selected work-app activity and sends aggregate work-time intervals to the existing Clocked dashboard. App labels and package identifiers stay on the device. The app does not upload per-app durations, selections, event records, or app identities.
+
+## Build and run checks
+
+Install JDK 17 and the Android command-line tools. Set `JAVA_HOME` and `ANDROID_HOME`, then run from this directory:
+
+```sh
+sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
+./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
+```
+
+On Windows use `gradlew.bat`. Accept the SDK licenses with `sdkmanager --licenses` before the first build. Gradle 8.11.1 is bootstrapped by the included official wrapper with a pinned distribution SHA-256. CI also checks the wrapper JAR SHA-256. Android Gradle Plugin 8.9.2 uses JDK 17 and supports this compile SDK.
+
+The debug APK is `app/build/outputs/apk/debug/app-debug.apk`. The workflow `.github/workflows/mobile-android.yml` runs JVM tests, Android lint, and APK assembly on Linux without an emulator. It publishes the debug APK and check reports. Debug APKs use Android's development signing key. Production distribution requires your own protected release signing key and Play Console setup. No key or signing password belongs in this checkout.
+
+## Connect a physical phone
+
+1. Install the debug APK with `adb install -r app/build/outputs/apk/debug/app-debug.apk` or open the APK on your phone.
+2. Create a device token in Clocked dashboard Settings.
+3. Enter the HTTPS server origin and device token in the app. The server value must have no path, query, user information, or fragment.
+4. Open **Manage usage access** and allow Clocked.
+5. Select work apps. Only launchable applications visible through Android package visibility appear in the picker.
+6. Use a selected app, then switch away or lock the screen. Reopen Clocked and select **Sync now**. Collection uses a one-minute safety margin chosen by this app; retry after a minute if the latest closing event is still pending. Android does not promise a one-minute publication delay.
+7. Open the dashboard to check the combined timesheet. The local card shows completed work time on this device, not a downloaded account total.
+
+Saving connection settings does not claim server authentication succeeded. A sync reports server acceptance only after it receives accepted session IDs. An idle device with no pending sessions has no upload through which to verify a new token.
+
+## Tracking and durability
+
+`Timeline.kt` reconstructs resumed activity from `UsageStatsManager.queryEvents`, not cumulative screen-time totals. The query interval is inclusive at the start and exclusive at the end. It sorts and deduplicates events and groups simultaneous transitions before changing the work-time union. Activity state uses package and class, so multiple activity classes and selected apps in multiwindow cannot multiply time. Only resumed activities count. A visible paused activity does not count.
+
+The screen must be interactive and the keyguard hidden. Screen-off, keyguard, pause, stop, shutdown and timestamped selection changes can close a span. AOSP writes STARTUP at the first user unlock, after earlier queued screen/keyguard events. SHUTDOWN clears the previous boot's activity; the next events rebuild the new boot's gates, and STARTUP preserves them. A persisted startup-pending flag handles markers split across collections. A missing or pre-checkpoint synthesized shutdown preserves the open span through its last trusted checkpoint, never through an invented power-off time. Secure devices require unlock evidence. A non-secure live-unlocked device can seed that gate, but an observed swipe lock still overrides it. A boot-start estimate only separates state; it cannot create billable time. Events published later than the chosen safety margin can still be missed.
+
+`CollectionPolicy.collect` is the production collection transaction used by `Tracker`, broadcasts, and workers. Its injected snapshot and event source let JVM tests exercise cursor, permission, reboot, clock, selection, timezone and queue decisions. It probes retained history before filtering by the cursor, including private fingerprints of known earlier events and the delayed tail. A gap over 24 or 96 hours does not itself discard a carried span. Near-checkpoint retained closing evidence can finish that span regardless of when the next collection runs. If returned evidence starts more than 96 hours beyond the checkpoint, only the carried span's already-proven prefix survives and the missing period is reported as uncertain. All returned, fully evidenced new intervals remain eligible. Android retains events for only a few days and exposes no completeness guarantee.
+
+The checkpoint, selection/timezone histories, event fingerprints, event-frame offset, boot gates, credential, and queue share one AES-GCM encrypted `AtomicFile` under `noBackupFilesDir`. The AES key belongs to Android Keystore and cannot be exported by the app. Backups are disabled. The atomic write prevents a checkpoint from advancing without its queued intervals. An unreadable or invalidated key fails closed. Clearing app storage loses the local queue. Older vaults default missing history/frame fields; they cannot retroactively acquire fingerprint evidence for a past correction.
+
+WorkManager schedules collection and sync every 15 minutes, with exponential retry starting at 30 seconds. There is no network constraint on collection, so offline usage can still enter the durable queue. Android can delay work under Doze, standby, force stop, or manufacturer battery policies, sometimes for more than a day. Reopening triggers collection and sync. Manual sync and connection saves replace one-time work in backoff. There is no foreground service or exact alarm.
+
+The vault lock covers local transactions and nonblocking request initiation. It never covers DNS, connection, request-body writes, or response waits. `SyncEngine` captures the credential epoch and batch, checks the epoch again immediately before enqueueing, and checks it again before acknowledging a response. Already initiated requests can finish using the previous account's captured token, but cannot change the new account's queue or status. OkHttp uses a 40-second call timeout, with connect and write timeouts of 10 seconds and a read timeout of 15 seconds. A separate 45-second caller deadline cancels the call even if native DNS resolution does not respond to interruption. Broadcasts only collect and schedule work, never wait for HTTP. Pending unaccepted rows rotate behind later rows, preserving stable retry IDs.
+
+The app sends batches of at most 500 sessions to `POST /sessions` with bearer authentication. IDs are SHA-256 hashes of a random credential epoch and exact UTC interval endpoints. Retries reuse the same ID. The body contains only `id`, `start_utc`, `end_utc`, `start_reason`, `end_reason`, and IANA `timezone`. Reasons are always `app`; they reveal no app identity. Only IDs listed in `accepted` are acknowledged. Unknown IDs are ignored, partial acknowledgments retain the remaining queue, and malformed responses retain all pending sessions. Redirects are disabled so credentials do not follow another endpoint. Tokens never enter URLs or logs.
+
+Intervals split at local calendar midnight using `java.time`, including 23-hour and 25-hour DST days. Local totals union interval intersections with the current local day. Server reports must also union exact intervals from Android and desktop as required by `../CONTRACT.md`; this app does not infer or subtract another device's activity.
+
+## Boundaries and limits
+
+- Selection changes append a timestamped local history entry without resetting the cursor or open span. Delayed events use the selection that applied at their timestamp. The timeline retains resumed keys for unselected apps locally so selecting an already resumed app can begin at the change boundary without waiting for another resume. This does not upload app identities or relabel earlier usage.
+- Every server or token change starts an isolated random epoch. Even token rotation uses a fresh epoch because a token does not expose a trustworthy account identity. Changing credentials or disconnecting shows a confirmation with the unsynced session count, union duration, open-session warning, and an option to sync first. If more pending sessions arrive before confirmation is applied, deletion is refused and the user must review again. Tokens remain in the input after validation errors. The UI provides app-settings access if the encrypted vault is unreadable.
+- Permission checks run before and after querying, including `MODE_DEFAULT` fallback to the manifest grant. An observed denial clears the open span and marks the opt-out boundary. A serialized AppOps listener records observed changes. On permission return or initial account connection, replay of up to 96 hours restores current resumed activity, but exports no pre-authorization time. If no retained resume evidence exists, the app cannot invent the current activity. Android provides no historical permission-change journal through these APIs, so an entire revoke-and-regrant while the process is dead remains undetectable.
+- Post-boot unlock is required before usage queries. A null query does not advance the checkpoint. Boot count changes do not discard retained events. Timezone changes add local metadata boundaries, preserve UTC endpoints and ongoing work, and split the eventual interval with the old and new labels. The boundary is the first observed change time; historical timezone changes cannot be recovered from these activity events.
+- AOSP normally rewrites retained event timestamps when wall time diverges from its elapsed-time anchor by more than two seconds. `EventFrames` compares patterns of at least two known private event fingerprints against a probe covering both candidate frames. A unique agreeing shift moves only the unemitted cursor, open start, finite selection boundaries and finite timezone boundaries. Below-threshold clock changes maintain a sampled offset between actual wall time and the event clock; that also handles accumulated corrections. Durations come from two endpoints in one proved frame, never from adding the clock jump to a span. Every queued/synced ID, endpoint and payload remains immutable.
+- A single repeated RESUME, missing markers, or conflicting offsets cannot prove a frame. Unchanged OEM history after a material correction also does not prove how that OEM timestamps newly reported events. These cases preserve already-proven work and previously observed closing evidence in the original frame, then require fresh gate/activity evidence beyond both candidate bounds. The app does not replay ambiguous old resumes as current work. This can undercount the uncertain window and can delay recovery after a backward change. It prevents billing personal use across an erased PAUSE. Persistent notices distinguish this from successful sync. There is no supported way to repair already-uploaded timestamps under the immutable retry protocol; such rows are never silently retimed.
+- Android exposes package and class on public activity events, not a trustworthy public task-area or activity-instance identifier. Concurrent instances of one class cannot be distinguished reliably. An unrelated app resume cannot safely evict a selected activity, because both may legitimately remain resumed in split-screen. A missing closing event can therefore overcount until a matching pause, stop, screen, keyguard or shutdown event. Other missing manufacturer events and lost retention can undercount. The app does not fabricate task identifiers or claim this ambiguity is solved.
+- Only the calling Android user/profile is listed and tracked. Install and authorize Clocked separately inside a work profile to track its work apps, subject to administrator policy. Profile-local permission, screen/keyguard events, and package visibility need physical-device verification. Selecting a personal-profile copy does not select the work-profile copy of the same package.
+- The app has no per-app analytics upload or telemetry. The server receives aggregate work intervals and can infer their timing, but it receives no selected package or app label.
+- Synced local history retains 90 days. Unacknowledged sessions remain pending; repeated permanent server rejection needs user attention. The current vault rewrites the queue atomically, so a very large offline backlog increases storage and write cost.
+
+## Verification and platform references
+
+`PlatformModelTest` owns an independent shifted/unshifted platform history model. It asserts every second-review appendix regression with literal intervals, a 24-case correction matrix around both signs of 2 and 120 seconds, cumulative small corrections, immutable pending/synced payloads, aligned selection/timezone boundaries, conflicting/missing fingerprints, startup gate order, repeated reboot and unclean shutdown. Its timestamp-owner census is `app/build/reports/platform-model-census.tsv`. `CollectionPolicyTest` retains standby-gap, selection-tail, permission, null-query, timezone and multiwindow/privacy regressions. Sync, HTTP, timeline and protocol tests retain account races, bounded DNS waiting, retry IDs, union and DST coverage. The old tests that assumed fixed retained timestamps or reversed startup order were replaced rather than preserved as misleading assertions.
+
+Recheck the AOSP source model with `scripts/check-aosp.ps1`. It fetches the official Android 14 source files and Android 15/16 startup/time paths, prints relevant lines and records SHA-256 hashes under ignored `.tools/aosp/`. The premise, owner inventory, red/green regression evidence and remaining limits are in `REVIEW-2-RESOLUTION.md`. Clock samples are checked before and after OS queries, with at most one immediate retry if the sample changes. Selection actions use the last sampled frame plus elapsed time so a correction between query and tap cannot shift them twice.
+
+Physical-device checks remain necessary for usage-access UI, OEM lifecycle events, Keystore, actual reboot recovery, WorkManager delivery under battery policies, and a live account upload. No emulator or device result is implied by the JVM tests.
+
+Official references consulted on 2026-10-19 and AOSP source rechecked on 2026-10-20:
+
+- [UsageStatsManager](https://developer.android.com/reference/android/app/usage/UsageStatsManager): event retention, query boundaries, permission, and post-boot unlock availability.
+- [UsageEvents.Event](https://developer.android.com/reference/android/app/usage/UsageEvents.Event): activity, interactive screen, keyguard, shutdown, and startup semantics.
+- [PeriodicWorkRequest](https://developer.android.com/reference/androidx/work/PeriodicWorkRequest): minimum cadence, deferral, and retry behavior.
+- [Android Keystore](https://developer.android.com/privacy-and-security/keystore): app-owned non-exportable cryptographic keys.
+- [Android Gradle Plugin 8.9](https://developer.android.com/build/releases/agp-8-9-0-release-notes): compatible Gradle and JDK versions.
+- [AppOpsManager](https://developer.android.com/reference/android/app/AppOpsManager): `MODE_DEFAULT` permission handling.
+- [KeyguardManager](https://developer.android.com/reference/android/app/KeyguardManager): current keyguard and device-security checks.
+- [OkHttp client source](https://github.com/square/okhttp/blob/parent-4.12.0/okhttp/src/main/kotlin/okhttp3/OkHttpClient.kt): call, connect, write and read deadlines. The additional caller deadline is tested separately.
+
+Actual local build results are recorded in `VERIFICATION.md` after running the checks.

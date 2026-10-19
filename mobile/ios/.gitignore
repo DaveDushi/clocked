@@ -2,3 +2,5 @@ Clocked.xcodeproj/
 .build/
 DerivedData/
 *.xcuserstate
+Clocked-unsigned.app.zip
+xcodebuild.log

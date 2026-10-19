@@ -8,6 +8,12 @@ A background tray app clocks you in/out from machine **power** and **session**
 events, stores sessions locally in SQLite, and syncs them to a Cloudflare Worker
 that emails a monthly report — whether or not your laptop is awake at month-end.
 
+Native [Android](mobile/android/README.md) and [iPhone](mobile/ios/README.md)
+projects track time in selected work apps. App selections stay on the phone.
+Android syncs usage intervals that merge with desktop time; iPhone Screen Time
+milestones appear separately as duration estimates. See [mobile setup and
+verification](mobile/README.md) for build instructions and platform limits.
+
 | | |
 |--|--|
 | **Desktop** | Open source (MIT), Windows/macOS/Linux tray, local SQLite source of truth |

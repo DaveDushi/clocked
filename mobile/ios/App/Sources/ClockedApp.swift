@@ -12,8 +12,8 @@ struct ClockedApp: App {
                 .preferredColorScheme(.dark)
                 .tint(Palette.amber)
         }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await model.refresh() } }
+        .onChange(of: scenePhase) {
+            if scenePhase == .active { Task { await model.refresh() } }
         }
         // Background refresh extends monitoring and uploads queued totals. iOS
         // decides when, or whether, it runs; when it expires the task is

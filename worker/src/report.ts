@@ -30,6 +30,26 @@ interface LocalDayIntervals {
   intervals: ZonedTimeInterval[];
 }
 
+/** Give every UTC instant one timezone before assigning dates. Earlier-starting
+ * sessions win; equal starts prefer the longer interval, then timezone name.
+ * This preserves travel days while preventing devices in different timezones
+ * from counting one instant on different dates or in adjacent months. */
+function accountingIntervals(rows: readonly Row[], fallbackTz: string) {
+  const sorted = rows.map((row) => ({
+    start: Date.parse(row.start_utc), end: Date.parse(row.end_utc),
+    timezone: validTimezoneOr(row.timezone, fallbackTz),
+  })).filter((row) => Number.isFinite(row.start) && Number.isFinite(row.end) && row.end > row.start)
+    .sort((a, b) => a.start - b.start || b.end - a.end || a.timezone.localeCompare(b.timezone));
+  const intervals: { start: number; end: number; timezone: string }[] = [];
+  let coveredUntil = -Infinity;
+  for (const row of sorted) {
+    const start = Math.max(row.start, coveredUntil);
+    if (row.end > start) intervals.push({ ...row, start });
+    coveredUntil = Math.max(coveredUntil, row.end);
+  }
+  return intervals;
+}
+
 /** Gaps shorter than this are lock/unlock, suspend/resume, or app-relaunch
  * blips — not real breaks — so they're omitted from the Breaks column. Worked
  * minutes are the union of session intervals and are unaffected either way. */
@@ -56,11 +76,11 @@ function intervalsByLocalDay(
   fallbackTz: string,
 ): Map<string, LocalDayIntervals> {
   const byDay = new Map<string, LocalDayIntervals>();
-  for (const row of rows) {
-    const tz = validTimezoneOr(row.timezone, fallbackTz);
+  for (const row of accountingIntervals(rows, fallbackTz)) {
+    const tz = row.timezone;
     const { start, end } = monthBoundsUtc(period, tz);
-    const rawStart = Date.parse(row.start_utc);
-    const rawEnd = Date.parse(row.end_utc);
+    const rawStart = row.start;
+    const rawEnd = row.end;
     if (Number.isNaN(rawStart) || Number.isNaN(rawEnd) || rawEnd <= rawStart) continue;
 
     let segStart = new Date(Math.max(rawStart, start.getTime()));
@@ -233,21 +253,29 @@ export async function listSessionsForPeriod(
     .bind(userId, start.toISOString(), end.toISOString())
     .all<SessionRow>();
 
+  // Keep original session IDs for editing, but split all timeline bars on the
+  // same accounting-day boundaries used by CSV and hours totals.
+  const slices = [...intervalsByLocalDay(res.results ?? [], period, tz).values()]
+    .flatMap((day) => day.intervals.map((interval) => ({ ...interval, date: day.date })))
+    .sort((a, b) => a.start - b.start);
   const out: SessionSegment[] = [];
   for (const r of res.results ?? []) {
-    const sessionTz = validTimezoneOr(r.timezone, tz);
-    const localBounds = monthBoundsUtc(period, sessionTz);
     const sessStart = Date.parse(r.start_utc);
     const sessEnd = Date.parse(r.end_utc);
     if (Number.isNaN(sessStart) || Number.isNaN(sessEnd) || sessEnd <= sessStart) continue;
-
-    let segStart = new Date(Math.max(sessStart, localBounds.start.getTime()));
-    const hardEnd = new Date(Math.min(sessEnd, localBounds.end.getTime()));
-    while (segStart < hardEnd) {
-      const midnight = nextLocalMidnightUtc(segStart, sessionTz);
-      const segEnd = midnight < hardEnd ? midnight : hardEnd;
-      const { y, m, d } = localYMD(segStart, sessionTz);
-      const date = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    let lo = 0;
+    let hi = slices.length;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (slices[mid].end <= sessStart) lo = mid + 1;
+      else hi = mid;
+    }
+    for (let i = lo; i < slices.length && slices[i].start < sessEnd; i++) {
+      const slice = slices[i];
+      const sessionTz = slice.startTimezone;
+      const segStart = new Date(Math.max(sessStart, slice.start));
+      const segEnd = new Date(Math.min(sessEnd, slice.end));
+      const date = slice.date;
       const startMin = localMinutesFromMidnight(segStart, sessionTz);
       const endMinRaw = localMinutesFromMidnight(segEnd, sessionTz);
       // Midnight end of a day is 1440, not 0 of the next day.
@@ -269,7 +297,6 @@ export async function listSessionsForPeriod(
         source: reason === "manual" ? "manual" : "app",
         timezone: sessionTz,
       });
-      segStart = segEnd;
     }
   }
   return out;

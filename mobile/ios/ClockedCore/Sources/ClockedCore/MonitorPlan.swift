@@ -69,6 +69,8 @@ public struct MonitorPlan: Equatable, Sendable {
     ///   - active: activity names the system currently monitors.
     ///   - authGeneration: selections picked under another generation have
     ///     voided tokens and are not registered.
+    ///   - owners: the account each registration was made for.
+    ///   - owner: the connected account, or nil.
     ///
     /// Each day from today through the horizon is registered for the selection
     /// that owns it, as a one-shot interval from local midnight (or the next
@@ -78,9 +80,11 @@ public struct MonitorPlan: Equatable, Sendable {
     /// ones are stopped. Without authorization everything stops.
     public static func make(
         active: [String], registry: MonitorRegistry, schedule: SelectionSchedule,
-        now: Date, timeZone: TimeZone, authorized: Bool, authGeneration: Int
+        now: Date, timeZone: TimeZone, authorized: Bool, authGeneration: Int,
+        owners: [String: String] = [:], owner: String? = nil
     ) -> MonitorPlan {
         var plan = MonitorPlan()
+        let accountOwner = owner
         let ours = active.compactMap { name in MonitorRegistration(activityName: name).map { (name, $0) } }
         guard authorized else {
             plan.stop = ours.map(\.0).sorted()
@@ -95,8 +99,11 @@ public struct MonitorPlan: Equatable, Sendable {
             else { continue }
             // A matching registration already running is kept however little
             // of the day remains; the minimum length only applies to new ones.
+            // It must also belong to the connected account: a new account gets
+            // registrations of its own, so it never reads another's callbacks.
             let current = ours.filter {
                 $0.1.day == day && $0.1.selectionID == owner.id && registry.zones[$0.0] == timeZone.identifier
+                    && owners[$0.0] == accountOwner
             }
             if let newest = current.max(by: { $0.1.startsAt < $1.1.startsAt }) {
                 keep.insert(newest.0)

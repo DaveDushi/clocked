@@ -117,7 +117,7 @@ enum DurableFile {
     #if os(iOS)
     // Monitor callbacks can run while the phone is locked; files must stay
     // writable after the first unlock following a reboot.
-    static let writeOptions: Data.WritingOptions = [.atomic, .completeFileProtectionUntilFirstUnlock]
+    static let writeOptions: Data.WritingOptions = [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
     #else
     static let writeOptions: Data.WritingOptions = [.atomic]
     #endif

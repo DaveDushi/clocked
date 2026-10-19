@@ -140,14 +140,19 @@ public struct MeasurementLedger: Codable, Equatable, Sendable {
 
     /// - Parameter zones: the zone each registration was made in, from the
     ///   monitor registry. Falls back to the zone its `intervalDidStart` reported.
-    public func measurements(schedule: SelectionSchedule, zones: [String: String], ladder: MilestoneLadder) -> [DayMeasurement] {
+    ///   - including: when set, only callbacks of registrations it accepts are
+    ///     counted (used to restrict an account to its own registrations).
+    public func measurements(
+        schedule: SelectionSchedule, zones: [String: String], ladder: MilestoneLadder,
+        including: ((String) -> Bool)? = nil
+    ) -> [DayMeasurement] {
         struct Key: Hashable { let selectionID: String; let day: DayKey; let timeZone: String }
         var best: [Key: Int] = [:]
         var early: [Key: Int] = [:]
         var late: [Key: Int] = [:]
         let step = ladder.stepMinutes * 60
 
-        for hit in hits.values {
+        for hit in hits.values where including?(hit.activity) ?? true {
             guard let reg = MonitorRegistration(activityName: hit.activity),
                   let minutes = ladder.minutes(fromEventName: hit.event),
                   let tz = TimeZone(identifier: zones[hit.activity] ?? intervalZones[hit.activity] ?? hit.timeZone)

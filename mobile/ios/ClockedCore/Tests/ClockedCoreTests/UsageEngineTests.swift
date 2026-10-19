@@ -288,6 +288,8 @@ final class UsageEngineTests: XCTestCase {
 
         try await engine.disconnect()
         _ = try await engine.connect(origin: ServerOrigin("https://new.example")!)
+        // The app refreshes after connecting; the new account gets its own registrations.
+        _ = try await engine.reconcileMonitoring(center: r.center, authorization: .approved)
         try fire(r, minutes: 15, at: "2026-05-05 08:30")
         r.clock.set(at("2026-05-05 09:00", zone))
         _ = try await engine.sync(credential: try await credential(engine, tokenB))

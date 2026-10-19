@@ -182,14 +182,12 @@ export async function userIdForToken(env: Env, token: string): Promise<string | 
 
   // Upgrade: replace plaintext row with hashed form.
   try {
-    await env.DB.prepare("DELETE FROM api_token WHERE token = ?").bind(token).run();
-    await insertHashed(
-      env,
-      byPlain.userId,
-      token,
-      byPlain.name || "Existing device",
-      byPlain.id,
-    );
+    // Update in place. A delete/insert upgrade could recreate a token revoked
+    // by a concurrent cloud-data wipe between the lookup and this statement.
+    await env.DB.prepare(
+      `UPDATE api_token SET token = ?, token_hash = ?, token_prefix = ?
+        WHERE token = ? AND userId = ?`,
+    ).bind(`h:${tokenHash}`, tokenHash, tokenPrefix(token), token, byPlain.userId).run();
   } catch {
     /* concurrent upgrade — auth still succeeded */
   }

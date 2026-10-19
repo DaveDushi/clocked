@@ -18,6 +18,11 @@ public struct DeviceState: Codable, Equatable, Sendable {
     /// Last day of the most recent registration horizon. If it passes while
     /// the app is not running, revocation in the meantime cannot be ruled out.
     public var horizonEnd: DayKey?
+    /// Account each registration was made for, by activity name. Callbacks
+    /// carry the activity name, so this decides which account a callback
+    /// belongs to whenever it arrives and whatever the clock says. Registrations
+    /// made with no account connected have no entry until an account adopts them.
+    public var registrationOwners: [String: String] = [:]
 
     public init() {}
 }
@@ -131,6 +136,9 @@ public actor UsageEngine {
         device.ledger.prune(before: cutoff)
         device.schedule.prune(before: cutoff)
         device.registry.prune(before: cutoff)
+        device.registrationOwners = device.registrationOwners.filter {
+            (MonitorRegistration(activityName: $0.key)?.day ?? cutoff) >= cutoff
+        }
         try deviceStore.save(device)
         records.remove(files)
         return device
@@ -197,9 +205,11 @@ public actor UsageEngine {
         }
         device.wasAuthorized = authorization == .approved
 
+        let accountID = try accountStore.load()?.accountID
         let plan = MonitorPlan.make(
             active: active, registry: device.registry, schedule: device.schedule, now: now, timeZone: tz,
-            authorized: authorization == .approved, authGeneration: device.authGeneration
+            authorized: authorization == .approved, authGeneration: device.authGeneration,
+            owners: device.registrationOwners, owner: accountID
         )
         if !plan.stop.isEmpty { center.stop(plan.stop) }
         device.registry.stopped(plan.stop)
@@ -213,6 +223,7 @@ public actor UsageEngine {
             do {
                 try center.start(item.registration, interval: item.interval, timeZone: itemZone, payload: entry.payload)
                 device.registry.started(item.registration.activityName, timeZone: item.timeZone)
+                device.registrationOwners[item.registration.activityName] = accountID
                 started += 1
             } catch {
                 // Nearer days come first; stop at the first rejection (for
@@ -241,6 +252,12 @@ public actor UsageEngine {
             accountID: makeID(), origin: origin.string, deviceID: "ios-\(makeID())",
             startDay: AccountState.startDay(today: today, reservedThrough: device.reservedThrough)
         )
+        // Registrations made while no account was connected are adopted, so the
+        // first account still sees usage measured before it connected (from its
+        // start day). Registrations of an earlier account keep their owner.
+        for name in device.registry.zones.keys where device.registrationOwners[name] == nil {
+            device.registrationOwners[name] = account.accountID
+        }
         try deviceStore.save(device)
         try accountStore.save(account)
         return summary(account)
@@ -319,7 +336,15 @@ public actor UsageEngine {
         else { return .notConnected }
         let day = today
         let oldest = day.adding(days: -Self.retentionDays)
-        let measured = measurements(device).filter { $0.day >= oldest && $0.day <= day.adding(days: 1) }
+        // Only this account's own registrations count, so a callback from an
+        // earlier account's registration never reaches it, however late it
+        // arrives or wherever the clock is.
+        let owners = device.registrationOwners
+        let accountID = account.accountID
+        let measured = device.ledger.measurements(
+            schedule: device.schedule, zones: device.registry.zones, ladder: ladder,
+            including: { owners[$0] == accountID }
+        ).filter { $0.day >= oldest && $0.day <= day.adding(days: 1) }
         account.enqueue(measured, makeID: makeID)
         account.prune(before: oldest)
         // Reserve every queued day before any request, so a later account

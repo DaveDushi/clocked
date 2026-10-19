@@ -84,6 +84,17 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :ClockedAppGroup' "$APP/Info.plist" | grep -qx group.com.daviddusi.clocked
           echo "Bundle layout OK"
 
+      - name: Package unsigned app
+        run: |
+          ditto -c -k --keepParent "$DERIVED/Build/Products/Release-iphoneos/Clocked.app" mobile/ios/Clocked-unsigned.app.zip
+
+      - name: Upload unsigned app
+        uses: actions/upload-artifact@v4
+        with:
+          name: clocked-ios-unsigned-app
+          path: mobile/ios/Clocked-unsigned.app.zip
+          if-no-files-found: error
+
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
