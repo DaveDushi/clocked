@@ -56,6 +56,8 @@ public struct MonitorPlan: Equatable, Sendable {
 
     public var stop: [String] = []
     public var start: [Start] = []
+    /// Next unused registration serial after the planned starts.
+    public var nextSerial = 0
 
     /// Days ahead (including today) that are registered at once. Each day is one
     /// activity with one event per ladder step; the system rejects too many
@@ -81,9 +83,10 @@ public struct MonitorPlan: Equatable, Sendable {
     public static func make(
         active: [String], registry: MonitorRegistry, schedule: SelectionSchedule,
         now: Date, timeZone: TimeZone, authorized: Bool, authGeneration: Int,
-        owners: [String: String] = [:], owner: String? = nil
+        owners: [String: String] = [:], owner: String? = nil, nextSerial: Int = 0
     ) -> MonitorPlan {
         var plan = MonitorPlan()
+        plan.nextSerial = nextSerial
         let accountOwner = owner
         let ours = active.compactMap { name in MonitorRegistration(activityName: name).map { (name, $0) } }
         guard authorized else {
@@ -114,9 +117,12 @@ public struct MonitorPlan: Equatable, Sendable {
             let start = offset == 0 ? max(whole.start, nextMinute(now)) : whole.start
             let end = whole.end.addingTimeInterval(-60)
             guard end.timeIntervalSince(start) >= minimumInterval else { continue }
-            var reg = MonitorRegistration(selectionID: owner.id, day: day, startsAt: start)
+            var reg = MonitorRegistration(selectionID: owner.id, day: day, startsAt: start, serial: plan.nextSerial)
+            plan.nextSerial += 1
+            // Serials never repeat; this only guards state restored from elsewhere.
             while active.contains(reg.activityName) || registry.zones[reg.activityName] != nil {
-                reg = MonitorRegistration(selectionID: owner.id, day: day, startsAt: reg.startDate.addingTimeInterval(60))
+                reg = MonitorRegistration(selectionID: owner.id, day: day, startsAt: start, serial: plan.nextSerial)
+                plan.nextSerial += 1
             }
             plan.start.append(Start(registration: reg, interval: DateInterval(start: reg.startDate, end: end), timeZone: timeZone.identifier))
         }

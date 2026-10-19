@@ -102,9 +102,10 @@ public struct SelectionSchedule: Codable, Equatable, Sendable {
         return .tomorrow
     }
 
-    /// Drops entries that no longer own any day on or after `day`.
+    /// Drops entries that no longer own any day on or after `day`. A retained
+    /// entry still owns its retained days, so it stays while they do.
     public mutating func prune(before day: DayKey) {
         guard let keep = effective(on: day) else { return }
-        entries.removeAll { $0.effectiveFrom < keep.effectiveFrom }
+        entries.removeAll { $0.effectiveFrom < keep.effectiveFrom && ($0.retainedThrough.map { $0 < day } ?? true) }
     }
 }

@@ -1,4 +1,4 @@
-# Review resolution status
+﻿# Review resolution status
 
 Status of every finding in `REVIEW.md` (first review) and `REVIEW-2.md` (second review) as of 2026-10-20. Each fix has a regression test in `ClockedCore/Tests` that runs the real engine, planner, or ledger. No finding was closed by documentation alone.
 
@@ -12,6 +12,17 @@ The four reviewer tests were copied into `ClockedCore/Tests/ClockedCoreTests/Rev
 | 2 | P2: same-day reauthorization erases measured, unsynced usage | Fixed | When a selection with voided tokens has measured today and is replaced, it is kept with `retainedThrough = today`. `SelectionSchedule.owns` lets both selections own that day for accounting, while only the new one is registered. Each uploads as its own series. The phone shows the larger value, which is also what the server reports. A second choice the same day cannot remove the retained entry. | `testReview2SameDayReauthorizationPreservesUnsyncedMeasurement`, `testReview2SecondChoiceAfterRenewalKeepsMeasuredUsage`, `testVoidedOwnerWithMeasurementsKeepsOwningItsDay` |
 | 3 | P2: revocation during a suspension past the horizon reuses void tokens | Fixed with a bounded, conservative rule | The engine stores the last day of the registration horizon (`horizonEnd`). If that day has passed when reconciliation runs, the app cannot rule out a revoke and regrant in the gap. It treats the gap as a revocation and requires a fresh choice before registering anything. Refreshing within the horizon keeps the existing tokens. | `testReview2SuspendedRevocationAfterHorizonRequiresFreshTokens`, `testReview2RefreshWithinHorizonKeepsTokens` |
 | 4 | P2: refresh after 23:44 stops today's running registration | Fixed | The planner keeps an existing matching registration before it checks the 15-minute minimum. The minimum now applies only to new registrations. | `testReview2LateRefreshKeepsAnExistingValidInterval` |
+
+## Third review (`REVIEW-3.md`)
+
+The reviewer's two reproductions were copied into `ClockedCore/Tests/ClockedCoreTests/Review3Tests.swift`. Before the fixes they failed with 4 assertion failures. In the first, B recreated A's exact activity name and uploaded A's 7200 seconds. In the second, nothing was uploaded at the inclusive cutoff. After the fixes all tests pass.
+
+| # | Finding | Status | Change | Tests |
+| --- | --- | --- | --- | --- |
+| 1 | P2: after pruning and a clock rollback, a new account recreates an old account's registration name and inherits its late callbacks | Fixed | Registration names now end in a serial number (`clk3.<selection>.<start>.<yyyymmdd>.<serial>`). The serial comes from `DeviceState.nextRegistrationSerial`, which only grows, is never pruned, and does not depend on the clock. It is saved before any registration is started. Existing matching registrations are still kept by day, selection, zone, and owner, so refreshes do not mint new names. The ownership filter is unchanged. | `testReview3PrunedRegistrationIdentityCannotTransferLateCallback` (also checks B's own 900 seconds still upload), `testReview3RefreshKeepsTheSameRegistrationIdentity`, `testRegistrationNameRoundTrip` |
+| 2 | P3: pruning removes a retained selection on its last eligible day | Fixed | `SelectionSchedule.prune(before:)` keeps an entry whose `retainedThrough` is on or after the cutoff. | `testReview3RetainedSelectionSurvivesInclusiveCutoff` (uploads 7200 on the cutoff day), `testReview3RetainedSelectionExpiresTheFollowingDay`, `testPruneKeepsARetainedEntryThroughItsRetainedDay` |
+
+The serial counter lives in the app's own state. If that state is deleted (for example the app is removed and reinstalled), it starts again at zero, but so do the ownership records, and any old registrations it could collide with no longer belong to an account on the phone.
 
 ## Follow-up: late callbacks of a replaced account
 
@@ -31,7 +42,7 @@ Mutation check: removing the upload ownership filter fails the first two tests. 
 
 The first real Xcode build (GitHub Actions run 39332977539) failed in `MonitorRecord.swift`: `Data.WritingOptions` has no member `completeFileProtectionUntilFirstUnlock`. Apple's documentation names the option `completeFileProtectionUntilFirstUserAuthentication`. That is now used. The line is inside `#if os(iOS)`, which is why Linux tests and the stub typecheck could not catch it.
 
-Checking the other iOS-only declarations against Apple's documentation found one more problem. The redirect-refusing `URLSessionTaskDelegate` method lacked `@Sendable` on its completion handler. Apple's and Linux Foundation's declarations both have it, so the method was a near miss that would never be called, and redirects would have been followed. It now matches. `Scene.onChange` now uses the zero-argument closure, the only non-deprecated form Apple documents for `Scene`. These declarations were confirmed to match: `containerURL(forSecurityApplicationGroupIdentifier:)`, `UIApplication.open(_:options:) async`, `Scene.backgroundTask(_:action:)`, the `DeviceActivityMonitor` overrides, `DeviceActivityReport.init(_:filter:)`, `DeviceActivityFilter.SegmentInterval.daily(during:)`, `activitySegments`, `totalActivityDuration`, and the report scene's `content`. A real Xcode build of the current source has not run yet.
+Checking the other iOS-only declarations against Apple's documentation found one more problem. The redirect-refusing `URLSessionTaskDelegate` method lacked `@Sendable` on its completion handler. Apple's and Linux Foundation's declarations both have it, so the method was a near miss that would never be called, and redirects would have been followed. It now matches. `Scene.onChange` now uses the zero-argument closure, the only non-deprecated form Apple documents for `Scene`. These declarations were confirmed to match: `containerURL(forSecurityApplicationGroupIdentifier:)`, `UIApplication.open(_:options:) async`, `Scene.backgroundTask(_:action:)`, the `DeviceActivityMonitor` overrides, `DeviceActivityReport.init(_:filter:)`, `DeviceActivityFilter.SegmentInterval.daily(during:)`, `activitySegments`, `totalActivityDuration`, and the report scene's `content`. The corrected source subsequently passed the native Xcode build in GitHub Actions run 39333651706.
 
 ## First review (`REVIEW.md`)
 
@@ -51,7 +62,7 @@ Commands ran in the `swift:6.1-noble` container against a copy of the repository
 
 | Check | Result |
 | --- | --- |
-| `swift test --package-path mobile/ios/ClockedCore` | 88 tests, 0 failures |
+| `swift test --package-path mobile/ios/ClockedCore` | 93 tests, 0 failures |
 | `swift build --build-tests -Xswiftc -strict-concurrency=complete` | 0 warnings, 0 errors |
 | `bash mobile/ios/scripts/typecheck_bridge.sh` | Passed. Compiles the Screen Time bridge and monitor extension against stub SDK modules, with warnings as errors |
 | `python3 mobile/ios/scripts/validate_static.py` | Passed, 17 Swift files |
@@ -61,7 +72,7 @@ The server wire fixture test (`testClientBuildsTheSharedWorkerFixture`) and the 
 
 ## Not verified
 
-- **No successful Xcode build yet.** The first CI build (run 39332977539, an earlier snapshot) failed on the file-protection name fixed above. The current source has not been built with Xcode. SwiftUI views, the report extension, SDK linking, embedding, signing, and installation remain unverified until that build passes.
+- **Signing and installation remain unverified.** The corrected source passed Xcode 26.6 compilation, iOS SDK linking, and bundle layout checks in [run 39333651706](https://github.com/DaveDushi/clocked/actions/runs/39333651706). The unsigned app archive is available. See [verification evidence](../VERIFICATION.md). The registration-ownership and third-review changes came after that build. They touch only `ClockedCore` and its tests and have not been rebuilt with Xcode yet.
 - **No iPhone run.** Dated one-shot schedules with `repeats: false`, 7 activities of 48 events each, callback timing, first-unlock file access, revocation behavior, background refresh, and report rendering all need a physical device.
 
 ## Remaining limitations
@@ -72,3 +83,4 @@ These follow from what the platform exposes or from deliberate conservative choi
 - **Undetectable revocation.** A revoke and regrant that both happen while the app is closed and its registrations are still live and present cannot be detected.
 - **Undercounting.** Registrations of one day combine by maximum, so re-registration days (time zone change, renewed tokens) can undercount. Combining this way never adds the same minutes twice. A threshold that iOS reports early, but not impossibly early, can still raise a value; that cannot be detected.
 - **Early selection change.** Changing work apps before the first 15-minute step of a day drops the minutes before the change.
+

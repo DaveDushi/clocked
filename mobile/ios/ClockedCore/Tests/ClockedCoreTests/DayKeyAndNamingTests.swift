@@ -39,18 +39,23 @@ final class DayKeyTests: XCTestCase {
 
 final class NamingTests: XCTestCase {
     func testRegistrationNameRoundTrip() {
-        let r = MonitorRegistration(selectionID: "a1b2-c3", day: day("2026-05-04"), startsAt: Date(timeIntervalSince1970: 1_790_000_000.2))
-        XCTAssertEqual(r.activityName, "clk2.a1b2-c3.1790000001.20260504")
+        let r = MonitorRegistration(selectionID: "a1b2-c3", day: day("2026-05-04"), startsAt: Date(timeIntervalSince1970: 1_790_000_000.2), serial: 42)
+        XCTAssertEqual(r.activityName, "clk3.a1b2-c3.1790000001.20260504.42")
         XCTAssertEqual(MonitorRegistration(activityName: r.activityName), r)
+        XCTAssertNotEqual(MonitorRegistration(selectionID: "a1b2-c3", day: day("2026-05-04"),
+                                              startsAt: Date(timeIntervalSince1970: 1_790_000_000.2), serial: 43).activityName,
+                          r.activityName, "same selection, day, and start but another serial is another registration")
     }
 
     func testRejectsForeignNames() {
         XCTAssertNil(MonitorRegistration(activityName: "daily"))
-        XCTAssertNil(MonitorRegistration(activityName: "clk2.-bad.100.20260504"))
-        XCTAssertNil(MonitorRegistration(activityName: "clk2.ok.x.20260504"))
-        XCTAssertNil(MonitorRegistration(activityName: "clk2.ok.100.20260230"))
-        XCTAssertNil(MonitorRegistration(activityName: "clk1.ok.100"))
-        XCTAssertNil(MonitorRegistration(activityName: "clk2.ok.100.2026050"))
+        XCTAssertNil(MonitorRegistration(activityName: "clk3.-bad.100.20260504.0"))
+        XCTAssertNil(MonitorRegistration(activityName: "clk3.ok.x.20260504.0"))
+        XCTAssertNil(MonitorRegistration(activityName: "clk3.ok.100.20260230.0"))
+        XCTAssertNil(MonitorRegistration(activityName: "clk3.ok.100.2026050.0"))
+        XCTAssertNil(MonitorRegistration(activityName: "clk3.ok.100.20260504"))
+        XCTAssertNil(MonitorRegistration(activityName: "clk3.ok.100.20260504.-1"))
+        XCTAssertNil(MonitorRegistration(activityName: "clk2.ok.100.20260504"), "the older format without a serial is not ours")
     }
 
     func testLadder() {

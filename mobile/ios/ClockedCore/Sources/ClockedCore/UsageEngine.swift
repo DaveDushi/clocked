@@ -23,6 +23,8 @@ public struct DeviceState: Codable, Equatable, Sendable {
     /// belongs to whenever it arrives and whatever the clock says. Registrations
     /// made with no account connected have no entry until an account adopts them.
     public var registrationOwners: [String: String] = [:]
+    /// Serial for the next registration. Only ever grows; never pruned.
+    public var nextRegistrationSerial = 0
 
     public init() {}
 }
@@ -209,8 +211,14 @@ public actor UsageEngine {
         let plan = MonitorPlan.make(
             active: active, registry: device.registry, schedule: device.schedule, now: now, timeZone: tz,
             authorized: authorization == .approved, authGeneration: device.authGeneration,
-            owners: device.registrationOwners, owner: accountID
+            owners: device.registrationOwners, owner: accountID, nextSerial: device.nextRegistrationSerial
         )
+        // Persist the used serials before touching the system, so a crash
+        // after starting a registration can never lead to its name being reused.
+        if plan.nextSerial != device.nextRegistrationSerial {
+            device.nextRegistrationSerial = plan.nextSerial
+            try deviceStore.save(device)
+        }
         if !plan.stop.isEmpty { center.stop(plan.stop) }
         device.registry.stopped(plan.stop)
 

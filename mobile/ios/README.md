@@ -7,7 +7,7 @@ A native SwiftUI app that measures time spent in the work apps you choose, using
 Apple does not let apps read Screen Time usage directly outside the EU, so the app uses the parts that work everywhere:
 
 1. **FamilyControls** (individual authorization) and **FamilyActivityPicker**. You choose apps, categories, and websites. The app only ever holds opaque tokens.
-2. **DeviceActivityMonitor**. For each of the next 7 days the app registers a separate, non-repeating schedule for that day only (from 00:00, or the next minute for today, to 23:59), each with 48 threshold events at 15, 30, … 720 minutes of combined use and `includesPastActivity: false`. The activity name carries the selection, the day, and the start instant, so every callback says which day it measured. The monitor extension writes each callback (activity name, threshold name, time, time zone) to a file in the App Group. It never sees app identities.
+2. **DeviceActivityMonitor**. For each of the next 7 days the app registers a separate, non-repeating schedule for that day only (from 00:00, or the next minute for today, to 23:59), each with 48 threshold events at 15, 30, … 720 minutes of combined use and `includesPastActivity: false`. The activity name carries the selection, the start instant, the day, and a serial number from a counter that never resets, so every callback says which day it measured and no name is ever created twice, even after old state is pruned and the clock is set back. The monitor extension writes each callback (activity name, threshold name, time, time zone) to a file in the App Group. It never sees app identities.
 3. **DeviceActivityReport**. A report extension shows Apple's exact Screen Time total for the chosen apps inside the app. It runs in Apple's sandbox: it has no App Group, no network, and nothing in it reaches the app or the server.
 
 The synced number is a **quantized lower bound**: "at least N × 15 minutes today". It is not a timesheet:
@@ -98,7 +98,7 @@ xcodebuild build -project Clocked.xcodeproj -scheme Clocked -destination 'generi
 
 ## Limits
 
-- Not yet built or run on a Mac or device. The core package was tested on Linux; the bridge was typechecked against stub modules; the project was generated with XcodeGen on Linux. SwiftUI views, the report extension, and the iOS SDK link step compile only in CI or on a Mac.
+- The [native build](https://github.com/DaveDushi/clocked/actions/runs/39333651706) passed with Xcode 26.6 and iOS SDK 26.5. All 88 core tests passed on macOS and Linux, and the app plus both extensions compiled with the expected bundle layout. The workflow publishes an unsigned app archive. Signing, installation, and physical-device behavior remain unverified. See [verification evidence](../VERIFICATION.md).
 - Day-specific one-shot schedules use full date components with `repeats: false`. Apple documents the initializer but not this use explicitly. It needs confirmation on a device, along with 7 activities of 48 events each.
 - Screen Time decides when callbacks arrive. Uploads happen when the app opens or iOS runs background refresh, so the dashboard can lag. Background refresh is not guaranteed to run at all.
 - Thresholds stop at 12 hours a day. The last minute of each day is not monitored.

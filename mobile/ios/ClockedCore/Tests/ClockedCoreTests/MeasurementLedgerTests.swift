@@ -232,6 +232,16 @@ final class SelectionScheduleTests: XCTestCase {
         XCTAssertEqual(s.effective(on: day("2026-05-04"))?.id, "c")
     }
 
+    func testPruneKeepsARetainedEntryThroughItsRetainedDay() {
+        var s = schedule("a", from: "2026-05-01", generation: 0)
+        _ = choose(&s, "b", "2026-05-04", measured: true, generation: 1)
+        s.prune(before: day("2026-05-04"))
+        XCTAssertTrue(s.owns("a", on: day("2026-05-04")), "inclusive cutoff")
+        s.prune(before: day("2026-05-05"))
+        XCTAssertFalse(s.entries.contains { $0.id == "a" }, "gone the following day")
+        XCTAssertEqual(s.entries.map(\.id), ["b"])
+    }
+
     func testPruneKeepsTheOwnerOfTheCutoffDay() {
         var s = schedule("a", from: "2026-05-01")
         _ = choose(&s, "b", "2026-05-04", measured: true)
