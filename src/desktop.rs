@@ -40,6 +40,7 @@ pub struct DesktopState {
     after_hours_answer: Option<bool>,
     after_hours_date: Option<NaiveDate>,
     managed_hours: Option<crate::working_hours::WorkingHours>,
+    managed_inactivity: Option<crate::inactivity::InactivityPolicy>,
     pending_open: Option<&'static str>,
 }
 
@@ -58,6 +59,7 @@ impl DesktopState {
         rules: Rules,
         bridge: Arc<BridgeState>,
     ) -> Self {
+        let managed_inactivity = crate::inactivity::cached(&conn, &config);
         let managed_hours = crate::working_hours::cached(&conn, &config);
         Self {
             conn,
@@ -77,6 +79,7 @@ impl DesktopState {
             after_hours_answer: None,
             after_hours_date: None,
             managed_hours,
+            managed_inactivity,
             pending_open: None,
         }
     }
@@ -270,9 +273,19 @@ impl DesktopState {
 
     pub fn check_idle(&mut self) -> Vec<Effect> {
         let idle_secs = crate::idle::idle_duration().as_secs();
+        let managed = crate::inactivity::cached(&self.conn, &self.config);
+        if managed != self.managed_inactivity {
+            self.idle_warned = false;
+            self.managed_inactivity = managed;
+        }
+        let policy = managed.unwrap_or(crate::inactivity::InactivityPolicy {
+            timeout_secs: self.config.idle_timeout_secs,
+            warning_secs: engine::IDLE_WARN_LEAD_SECS,
+        });
         let params = engine::IdleParams {
             paused: self.paused,
-            timeout_secs: self.config.idle_timeout_secs,
+            timeout_secs: policy.timeout_secs,
+            warning_secs: policy.warning_secs,
             idle_secs,
             in_call: crate::media::in_use(),
             clocked_in: self.is_clocked_in(),
@@ -285,9 +298,7 @@ impl DesktopState {
         };
         match engine::decide_idle(&params) {
             IdleDecision::Nothing => {
-                let warn_at = params
-                    .timeout_secs
-                    .saturating_sub(engine::IDLE_WARN_LEAD_SECS);
+                let warn_at = params.timeout_secs.saturating_sub(params.warning_secs);
                 if idle_secs < warn_at {
                     self.idle_warned = false;
                 }

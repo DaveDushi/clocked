@@ -47,6 +47,7 @@ pub enum IdleDecision {
 pub struct IdleParams {
     pub paused: bool,
     pub timeout_secs: u64,
+    pub warning_secs: u64,
     pub idle_secs: u64,
     pub in_call: bool,
     pub clocked_in: bool,
@@ -99,8 +100,14 @@ pub fn decide_idle(p: &IdleParams) -> IdleDecision {
 
     // Still counting time: warn once as we approach the cutoff, unless a live
     // mic/camera means we're on a call and won't clock out.
-    let warn_at = p.timeout_secs.saturating_sub(IDLE_WARN_LEAD_SECS);
-    if p.idle_secs >= warn_at && warn_at > 0 && !p.idle_warned && !p.in_call && p.clocked_in {
+    let warn_at = p.timeout_secs.saturating_sub(p.warning_secs);
+    if p.warning_secs > 0
+        && p.idle_secs >= warn_at
+        && warn_at > 0
+        && !p.idle_warned
+        && !p.in_call
+        && p.clocked_in
+    {
         let minutes_left = (p.timeout_secs - p.idle_secs).div_ceil(60) as i64;
         return IdleDecision::Warn { minutes_left };
     }
@@ -157,6 +164,7 @@ mod tests {
         IdleParams {
             paused: false,
             timeout_secs: 900,
+            warning_secs: IDLE_WARN_LEAD_SECS,
             idle_secs: 0,
             in_call: false,
             clocked_in: true,
@@ -273,6 +281,27 @@ mod tests {
         p.in_call = false;
         p.clocked_in = false;
         assert_eq!(decide_idle(&p), IdleDecision::Nothing);
+    }
+
+    #[test]
+    fn configured_warning_uses_team_lead_and_can_be_disabled() {
+        let mut p = base();
+        p.timeout_secs = 1800;
+        p.warning_secs = 300;
+        p.idle_secs = 1499;
+        assert_eq!(decide_idle(&p), IdleDecision::Nothing);
+        p.idle_secs = 1500;
+        assert_eq!(decide_idle(&p), IdleDecision::Warn { minutes_left: 5 });
+        p.warning_secs = 0;
+        p.idle_secs = 1799;
+        assert_eq!(decide_idle(&p), IdleDecision::Nothing);
+        p.idle_secs = 1800;
+        assert_eq!(
+            decide_idle(&p),
+            IdleDecision::ClockOutIdle {
+                backdate_secs: 1800
+            }
+        );
     }
 
     #[test]

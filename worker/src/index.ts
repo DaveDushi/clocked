@@ -1,3 +1,4 @@
+import { effectiveInactivity, handleManagerInactivity } from "./inactivity";
 import { checkAuth } from "./auth";
 import { makeAuth } from "./auth-server";
 import { dashboardResponse } from "./dashboard";
@@ -312,6 +313,11 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     return json({ ...report, sessions });
   }
 
+  if (url.pathname === "/api/team/inactivity") {
+    const user = await requireActiveUser(req, env);
+    if (user instanceof Response) return user;
+    return handleManagerInactivity(req, env, user.id);
+  }
   if (url.pathname === "/api/team/working-hours") {
     const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
@@ -455,12 +461,13 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   }
 
   // ---- Desktop-app (Bearer-token) API.
-  if (req.method === "GET" && url.pathname === "/desktop/working-hours") {
+  if (req.method === "GET" && ["/desktop/working-hours", "/desktop/inactivity"].includes(url.pathname)) {
     const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
     const userId = await userIdForToken(env, bearer);
     if (!userId) return json({ error: "unauthorized" }, 401);
     if (!(await isApproved(env, userId))) return json({ error: "account pending approval" }, 403);
-    return new Response(JSON.stringify(await effectiveWorkingHours(env, userId)), {
+    return new Response(JSON.stringify(url.pathname === "/desktop/inactivity"
+      ? { policy: await effectiveInactivity(env, userId) } : await effectiveWorkingHours(env, userId)), {
       headers: { "content-type": "application/json", "cache-control": "no-store" },
     });
   }

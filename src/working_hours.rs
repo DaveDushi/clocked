@@ -81,7 +81,7 @@ struct CachedHours {
     schedule: Option<WorkingHours>,
 }
 
-fn account_key(cfg: &Config) -> String {
+pub(crate) fn account_key(cfg: &Config) -> String {
     let mut hash = Sha256::new();
     hash.update(cfg.effective_worker_url().trim_end_matches('/'));
     hash.update([0]);

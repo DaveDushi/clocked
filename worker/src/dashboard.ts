@@ -995,6 +995,24 @@ const HTML = /* html */ `<!doctype html>
           <button id="saveWorkingHours" type="button" disabled>Save working hours</button>
           <div id="workingHoursMsg" class="msg" role="status"></div>
         </div>
+        <div style="margin-top:22px;padding-top:16px;border-top:1px solid var(--border)">
+          <h3>Inactivity limit and warning</h3>
+          <p class="hint">Apply an inactivity policy to everyone on this team. Updated desktop apps apply changes on their next sync and keep them while offline. Clock-out time is backdated to the last input. Calls suppress the warning and delay clock-out.</p>
+          <label for="inactivityMode">Team inactivity policy</label>
+          <select id="inactivityMode" disabled>
+            <option value="personal">Use personal desktop settings</option>
+            <option value="team">Set team limit and warning</option>
+          </select>
+          <fieldset id="inactivityFields" disabled style="border:0;padding:0;margin:12px 0">
+            <div class="row">
+              <div><label for="inactivityLimit">Clock out after idle minutes</label><input id="inactivityLimit" type="number" min="1" max="1440" step="1" value="15" required /></div>
+              <div><label for="inactivityWarning">Warn minutes before clock-out</label><input id="inactivityWarning" type="number" min="0" max="1439" step="1" value="2" required /></div>
+            </div>
+            <p class="hint">The warning must be shorter than the limit. Set it to 0 to turn off the warning.</p>
+          </fieldset>
+          <button id="saveInactivity" type="button" disabled>Save inactivity policy</button>
+          <div id="inactivityMsg" class="msg" role="status"></div>
+        </div>
         <div id="teamMemberPanel" class="preview hidden"></div>
       </div>
       <div id="teamEmpty" class="card hidden">
@@ -1424,7 +1442,68 @@ async function loadRoster() {
   (d.members || []).forEach((member) => target.add(new Option(member.name || member.email, member.id)));
   target.value = Array.from(target.options).some((option) => option.value === previous) ? previous : "";
   await loadWorkingHoursEditor();
+  await loadInactivityEditor();
 }
+
+let inactivityLoadVersion = 0;
+function inactivityPath() { return "/api/team/inactivity?organizationId=" + encodeURIComponent(orgId); }
+function syncInactivityFields() {
+  $("inactivityFields").disabled = $("inactivityMode").disabled || $("inactivityMode").value !== "team";
+  $("inactivityFields").classList.toggle("hidden", $("inactivityMode").value !== "team");
+}
+async function loadInactivityEditor() {
+  const version = ++inactivityLoadVersion;
+  $("inactivityMode").disabled = true; $("saveInactivity").disabled = true;
+  syncInactivityFields();
+  $("inactivityMsg").textContent = "Loading inactivity policy...";
+  $("inactivityMsg").className = "msg";
+  try {
+    const response = await api(inactivityPath());
+    const data = await response.json();
+    if (version !== inactivityLoadVersion) return;
+    if (!response.ok) throw new Error(data.error || "Could not load inactivity policy.");
+    $("inactivityMode").value = data.policy ? "team" : "personal";
+    $("inactivityLimit").value = data.policy ? data.policy.timeout_secs / 60 : 15;
+    $("inactivityWarning").value = data.policy ? data.policy.warning_secs / 60 : 2;
+    $("inactivityMode").disabled = false; $("saveInactivity").disabled = false;
+    $("inactivityMsg").textContent = "";
+  } catch (error) {
+    if (version !== inactivityLoadVersion) return;
+    $("inactivityMsg").textContent = error.message || "Could not load inactivity policy.";
+    $("inactivityMsg").className = "msg err";
+  }
+  syncInactivityFields();
+}
+$("inactivityMode").onchange = syncInactivityFields;
+$("saveInactivity").onclick = async () => {
+  const team = $("inactivityMode").value === "team";
+  if (team && (!$("inactivityLimit").reportValidity() || !$("inactivityWarning").reportValidity())) return;
+  const policy = team ? { timeout_secs: Number($("inactivityLimit").value) * 60, warning_secs: Number($("inactivityWarning").value) * 60 } : null;
+  if (policy && policy.warning_secs >= policy.timeout_secs) {
+    $("inactivityMsg").textContent = "The warning must be shorter than the inactivity limit.";
+    $("inactivityMsg").className = "msg err"; return;
+  }
+  const path = inactivityPath();
+  const version = inactivityLoadVersion;
+  $("saveInactivity").disabled = true; $("inactivityMode").disabled = true; syncInactivityFields();
+  $("inactivityMsg").textContent = "Saving...";
+  try {
+    const response = await api(path, { method: "POST", body: JSON.stringify({ policy }) });
+    const data = await response.json();
+    if (version !== inactivityLoadVersion) return;
+    if (!response.ok) throw new Error(data.error || "Could not save inactivity policy.");
+    $("inactivityMsg").textContent = "Saved. Updated desktop apps apply this on their next sync.";
+    $("inactivityMsg").className = "msg ok";
+  } catch (error) {
+    if (version !== inactivityLoadVersion) return;
+    $("inactivityMsg").textContent = error.message || "Could not save inactivity policy.";
+    $("inactivityMsg").className = "msg err";
+  } finally {
+    if (version === inactivityLoadVersion) {
+      $("saveInactivity").disabled = false; $("inactivityMode").disabled = false; syncInactivityFields();
+    }
+  }
+};
 
 // Working hours have their own controls so report delivery changes cannot overwrite them.
 let hoursLoadVersion = 0;

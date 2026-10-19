@@ -16,6 +16,7 @@ mod events;
 // Foreground-app capture + rules-based classification into projects.
 mod foreground;
 mod idle;
+mod inactivity;
 mod privacy;
 mod rules;
 // "Keep running" relaunch is a Windows scheduled-task concept; on macOS the
