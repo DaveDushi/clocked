@@ -38,7 +38,8 @@ object EventFrames {
 
     fun shiftUnemitted(data: DeviceData, shift: Long) {
         if (shift == 0L) return
-        data.state = data.state.copy(cursor = Math.addExact(data.state.cursor, shift), open = data.state.open?.let { Math.addExact(it, shift) })
+        data.state = data.state.copy(cursor = Math.addExact(data.state.cursor, shift), open = data.state.open?.let { Math.addExact(it, shift) },
+            bootCuts = data.state.bootCuts.map { it.copy(at = Math.addExact(it.at, shift), checkpoint = Math.addExact(it.checkpoint, shift)) })
         for (i in data.selections.indices) {
             val change = data.selections[i]
             if (change.at != Long.MIN_VALUE) data.selections[i] = change.copy(at = Math.addExact(change.at, shift))

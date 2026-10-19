@@ -7,6 +7,7 @@ import java.time.ZoneId
 enum class Kind { RESUME, PAUSE, STOP, SCREEN_ON, SCREEN_OFF, UNLOCK, LOCK, SHUTDOWN, STARTUP }
 data class UsageEvent(val at: Long, val kind: Kind, val pkg: String = "", val activity: String = "")
 data class Interval(val start: Long, val end: Long)
+data class BootCut(val boot: Int, val at: Long, val checkpoint: Long)
 data class TrackingState(
     val cursor: Long,
     val active: Set<String> = emptySet(),
@@ -15,6 +16,7 @@ data class TrackingState(
     val running: Boolean = true,
     val open: Long? = null,
     val startupPending: Boolean = false,
+    val bootCuts: List<BootCut> = emptyList(),
 )
 data class Reconstruction(val state: TrackingState, val intervals: List<Interval>)
 data class SelectionChange(val at: Long, val packages: Set<String>)
@@ -23,7 +25,7 @@ data class ZoneChange(val at: Long, val zone: String)
 object Timeline {
     // The query is [cursor, end). No inferred end at query time: open spans wait for closing evidence.
     fun reconstruct(initial: TrackingState, end: Long, selected: Set<String>, events: List<UsageEvent>,
-        selections: List<SelectionChange> = emptyList(), startupUnlocked: Boolean = false, bootAt: Long? = null): Reconstruction {
+        selections: List<SelectionChange> = emptyList(), startupUnlocked: Boolean = false): Reconstruction {
         require(end >= initial.cursor)
         var active = initial.active.toMutableSet()
         var interactive = initial.interactive
@@ -35,13 +37,14 @@ object Timeline {
         val result = mutableListOf<Interval>()
         val groups = events.filter { it.at >= initial.cursor && it.at < end }.distinct().sortedBy { it.at }.groupBy { it.at }
         val changes = selections.filter { it.at >= initial.cursor && it.at < end }.groupBy { it.at }
-        val bootCuts = bootAt?.takeIf { it >= initial.cursor && it < end }?.let { setOf(it) }.orEmpty()
-        (groups.keys + changes.keys + bootCuts).sorted().forEach { at ->
+        val reachedCuts = initial.bootCuts.filter { it.at < end }.groupBy { maxOf(initial.cursor, it.at) }
+        (groups.keys + changes.keys + reachedCuts.keys).sorted().forEach { at ->
                 val group = groups[at].orEmpty()
                 changes[at]?.lastOrNull()?.let { selection = it.packages }
                 // A boot-start estimate only delimits uncertainty. It never emits work to that estimate.
-                if (at in bootCuts && !startupPending && group.none { it.kind == Kind.SHUTDOWN }) {
-                    if (open != null && initial.cursor > open!!) result.add(Interval(open!!, initial.cursor))
+                if (at in reachedCuts && group.none { it.kind == Kind.SHUTDOWN }) {
+                    val checkpoint = reachedCuts.getValue(at).minOf { it.checkpoint }
+                    if (open != null && checkpoint > open!!) result.add(Interval(open!!, checkpoint))
                     open = null; active.clear(); interactive = false; unlocked = startupUnlocked
                     startupPending = true; running = true
                 }
@@ -61,7 +64,8 @@ object Timeline {
                         }
                         Kind.STARTUP -> {
                             if (!startupPending) {
-                                if (open != null && initial.cursor > open!!) result.add(Interval(open!!, initial.cursor))
+                                val checkpoint = minOf(initial.cursor, initial.bootCuts.minOfOrNull { it.checkpoint } ?: initial.cursor)
+                                if (open != null && checkpoint > open!!) result.add(Interval(open!!, checkpoint))
                                 open = null; active.clear(); interactive = false; unlocked = startupUnlocked
                             }
                             // AOSP stamps this marker at unlock, after queued screen/keyguard events.
@@ -77,7 +81,8 @@ object Timeline {
                     open = null
                 }
             }
-        return Reconstruction(TrackingState(end, active, interactive, unlocked, running, open, startupPending), union(result))
+        return Reconstruction(TrackingState(end, active, interactive, unlocked, running, open, startupPending,
+            initial.bootCuts.filter { it.at >= end }), union(result))
     }
 
     fun union(intervals: List<Interval>): List<Interval> {

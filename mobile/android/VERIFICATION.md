@@ -1,6 +1,6 @@
 # Android verification record
 
-Verified in this checkout on 2026-10-20 using Windows PowerShell. This record supersedes the first-review build evidence. No emulator or physical device was used. No live account token was available, so no end-to-end server upload was attempted.
+Verified in this checkout on 2026-10-20 using Windows PowerShell. This record supersedes the first- and second-review build evidence. No emulator or physical device was used. No live account token was available, so no end-to-end server upload was attempted.
 
 ## Tools and commands
 
@@ -25,14 +25,22 @@ The included wrapper JAR SHA-256 matches the official Gradle 8.11.1 checksum end
 
 ## Results
 
-- Final second-review Gradle run: `BUILD SUCCESSFUL`, 51 actionable tasks, all 51 executed with `--rerun-tasks`, 51 seconds with populated dependency caches.
-- JVM tests: 60 passed, zero failures, errors, or skipped tests. `PlatformModelTest` has 22 tests, `CollectionPolicyTest` has 11, `SyncEngineTest` has 5, `HttpUploadTest` has 1, `TimelineTest` has 12, `ProtocolTest` has 5, and `AccountQueueTest` has 4. The platform model also executes a 24-case literal correction matrix and a four-case startup-order table inside those methods. Tests run without Android stub default-return behavior.
+- Final third-review Gradle run: `BUILD SUCCESSFUL`, 51 actionable tasks, all 51 executed with `--rerun-tasks`, 54 seconds with populated dependency caches.
+- JVM tests: 67 passed, zero failures, errors, or skipped tests. `FastBootTest` has 7 tests, `PlatformModelTest` has 22 tests, `CollectionPolicyTest` has 11, `SyncEngineTest` has 5, `HttpUploadTest` has 1, `TimelineTest` has 12, `ProtocolTest` has 5, and `AccountQueueTest` has 4. The platform model also executes a 24-case literal correction matrix and a four-case startup-order table inside those methods. Tests run without Android stub default-return behavior.
 - Android lint: zero errors, four dependency-update warnings. Dependency versions remain pinned to the successfully built set. There are no remaining application-icon, data-extraction-rule, or Kotlin-extension warnings.
 - APK assembly: succeeded. `apksigner verify` reports a valid v2 signature and one development signer.
 - APK manifest inspection: package `app.clocked.mobile`, version `1.0.0`, minimum API 29, target and compile API 35, launcher label `Clocked`, usage-stats permission present.
-- Final APK SHA-256: `c921add03e74e5a5f8277b13a18ae429118ab60576b62f19e0f0de130dbfb637`. This supersedes the initial and first-review APK hashes. The development signing key and subsequent builds can change this checksum.
+- Final APK SHA-256: `23cf0418be1d55bebd67b85216ac7ad4329e4612eb59bb9bc1ef122f6e30bc01`. This supersedes all earlier APK hashes. The development signing key and subsequent builds can change this checksum.
 - Protocol privacy test asserts the exact six session fields. Package names, app labels, selections, and per-app durations have no upload field.
 - Read the actual tracking, persistence, UI, and transport code after implementation. Source changes stay within `mobile/android/**` and `.github/workflows/mobile-android.yml`. No commit was created.
+
+## Third-review evidence
+
+The appendix's 45-second regression was added before changing production code. The focused run executed two tests: the fast case failed and the 120-second case passed. After the fix, six focused methods passed, including the 24-case elapsed/shutdown matrix and encrypted restart scenarios. A seventh method then added both signs of a proved 90-second history shift while a cut is pending. The final full run executed all 67 tests successfully, including all prior 60 tests. Tests, lint and APK assembly were forced once with `--rerun-tasks` after the final source change, and the resulting APK signature was checked once.
+
+The final fast-boot fixtures assert exact persisted rows `[3600,7140)` plus `[9700,10000)`, totaling 3,840 seconds. They reload actual AES-GCM serialized bytes from disk into a new object between collections using the production `VaultFormat` called by Android `Vault`. The 24 cases cover elapsed 0/30/45/59/60/120 seconds and missing, pre-cursor, exact-cursor and clean shutdown evidence. Additional checks preserve the original checkpoint through repeated early samples and a second rapid reboot, retain retry behavior after a null query, keep completed rows immutable across a proved history shift, consume cuts once and leave rows/IDs unchanged on another collection. No union masks duplicate rows in these assertions.
+
+`REVIEW-3-RESOLUTION.md` records the state ownership, serialization and remaining limits. Android still uses its existing Keystore key and AtomicFile path; JVM encrypted roundtrips do not test either Android service or actual process death. The parent reported hosted CI run `39333854438` green for the previous 60-test source. This local 67-test result covers the new source; no new hosted run is claimed. The parent's workflow `packages: platform-tools` input was read and left unchanged. All writes for this follow-up are under `mobile/android/`.
 
 ## Second-review evidence
 

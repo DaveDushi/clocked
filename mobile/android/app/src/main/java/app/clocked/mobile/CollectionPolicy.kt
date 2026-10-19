@@ -85,6 +85,9 @@ object CollectionPolicy {
             data.boundaryNotice = "Retained history shifted by $shift ms, proved by local event fingerprints. Unemitted state and boundaries aligned; completed sessions unchanged."
         }
         data.eventOffset = if (sameBoot) data.eventOffset + shift - drift else 0
+        // Sampling a new boot does not mean the delayed event window has reached it. Keep every
+        // unconsumed boundary with its original proof checkpoint, including rapid repeated reboots.
+        if (!sameBoot) data.state = data.state.copy(bootCuts = data.state.bootCuts + BootCut(p.boot, p.now - p.elapsed, data.state.cursor))
         val eventNow = p.now + data.eventOffset
         if (p.zone != data.zone) {
             data.zones.add(ZoneChange(maxOf(eventNow, data.state.cursor, data.zones.last().at), p.zone)); data.zone = p.zone
@@ -96,12 +99,11 @@ object CollectionPolicy {
             // must not erase it. A genuinely absent prefix only seals the already-proven part.
             if (end - data.state.cursor > RETENTION_LOOKBACK && (firstAfterCursor ?: end) - data.state.cursor > RETENTION_LOOKBACK) {
                 sealProven(data, data.state.cursor)
-                data.state = TrackingState(data.state.cursor)
+                data.state = TrackingState(data.state.cursor, bootCuts = data.state.bootCuts)
                 data.boundaryNotice = "Retained history starts far beyond the checkpoint. Proven work was kept; the missing prefix is uncertain."
             }
             val result = Timeline.reconstruct(data.state, end, data.selected, events, data.selections,
-                startupUnlocked = !p.deviceSecure && p.unlocked,
-                bootAt = if (!sameBoot) p.now - p.elapsed else null)
+                startupUnlocked = !p.deviceSecure && p.unlocked)
             result.intervals.forEach { enqueue(data, it) }; data.state = result.state
         }
         EventFrames.remember(data, events, eventNow)
@@ -133,7 +135,8 @@ object CollectionPolicy {
     }
 
     private fun sealProven(data: DeviceData, checkpoint: Long) {
-        data.state.open?.takeIf { it < checkpoint }?.let { enqueue(data, Interval(it, checkpoint)) }
+        val proven = minOf(checkpoint, data.state.bootCuts.minOfOrNull { it.checkpoint } ?: checkpoint)
+        data.state.open?.takeIf { it < proven }?.let { enqueue(data, Interval(it, proven)) }
     }
 
     private fun samples(data: DeviceData, p: PlatformSnapshot) { data.wall = p.now; data.elapsed = p.elapsed; data.boot = p.boot }
