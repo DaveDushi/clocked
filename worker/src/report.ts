@@ -16,6 +16,21 @@ import {
 interface ZonedTimeInterval extends TimeInterval {
   startTimezone: string;
   endTimezone: string;
+  /** Why recorded presence stopped at `end`, as stored with the session. */
+  endCause: BreakCause;
+}
+
+/** Recorded clock-out reason that opened a break. "entry" marks time typed into
+ * the dashboard, whose end says nothing about why the person stopped. */
+export type BreakCause =
+  | "idle" | "lock" | "suspend" | "shutdown" | "quit" | "crash" | "manual" | "entry" | "unknown";
+
+const RECORDED_CAUSES = new Set(["idle", "lock", "suspend", "shutdown", "quit", "crash", "manual"]);
+
+function breakCause(row: SessionRow): BreakCause {
+  if (row.edited_by != null) return "entry";
+  const reason = (row.end_reason ?? "").toLowerCase();
+  return RECORDED_CAUSES.has(reason) ? reason as BreakCause : "unknown";
 }
 
 interface LocalDayIntervals {
@@ -33,6 +48,24 @@ export interface DayHours {
   date: string; // "YYYY-MM-DD" (local)
   label: string; // e.g. "Monday, June 29, 2026"
   minutes: number;
+}
+
+export interface DayBreak {
+  start: string; // "HH:MM" local
+  end: string;
+  minutes: number;
+  cause: BreakCause;
+}
+
+/** A local day with at least one session. Breaks are gaps between the day's
+ * merged sessions, so overlapping devices never create or hide a break. */
+export interface RecordedDay {
+  date: string;
+  minutes: number;
+  start: string;
+  end: string;
+  breakMinutes: number;
+  breaks: DayBreak[];
 }
 
 export interface HoursReport {
@@ -71,6 +104,7 @@ function splitSessions(
         end: segEnd.getTime(),
         startTimezone: tz,
         endTimezone: tz,
+        endCause: breakCause(row),
       };
       if (existing) existing.intervals.push(interval);
       else {
@@ -97,6 +131,10 @@ function splitSessions(
         end_reason: row.end_reason,
         source: row.start_reason === "manual" ? "manual" : "app",
         timezone: tz,
+        sessionStartUtc: new Date(rawStart).toISOString(),
+        sessionEndUtc: new Date(rawEnd).toISOString(),
+        entry: row.edited_by == null ? null : row.replaces_id == null ? "added" : "edited",
+        editor: row.edited_by == null ? null : row.edited_by === row.user_id ? "self" : "other",
       });
       segStart = segEnd;
     }
@@ -106,7 +144,7 @@ function splitSessions(
 
 /** Query broadly enough to include a local month in every supported timezone;
  * each row is then clamped to its own exact local month. */
-function periodQueryBounds(period: string): { start: Date; end: Date } {
+export function periodQueryBounds(period: string): { start: Date; end: Date } {
   const [y, m] = period.split("-").map(Number);
   const nextY = m === 12 ? y + 1 : y;
   const nextM = m === 12 ? 1 : m + 1;
@@ -151,7 +189,7 @@ export async function timezoneForLocalDate(
   return fallback;
 }
 
-function validTimezoneOr(timezone: string | null | undefined, fallback: string): string {
+export function validTimezoneOr(timezone: string | null | undefined, fallback: string): string {
   if (!timezone) return fallback;
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(0);
@@ -179,15 +217,26 @@ export interface SessionSegment {
   end_reason: string | null;
   source: "manual" | "app";
   timezone: string;
+  /** Full session bounds, so an edit starts from the stored session rather
+   * than from this day's slice. */
+  sessionStartUtc: string;
+  sessionEndUtc: string;
+  /** Dashboard entries only: added as missing time, or replacing a session. */
+  entry: "added" | "edited" | null;
+  /** Who entered it: the account owner, or someone else (a team manager). */
+  editor: "self" | "other" | null;
 }
 
-interface SessionRow {
+export interface SessionRow {
   id: string;
+  user_id: string | null;
   start_utc: string;
   end_utc: string;
   start_reason: string | null;
   end_reason: string | null;
   timezone: string | null;
+  edited_by: string | null;
+  replaces_id: string | null;
 }
 
 /** Local wall-clock minutes since midnight in `tz` (0–1439). */
@@ -221,7 +270,7 @@ export function isWorkDay(date: string): boolean {
 
 /** First clock-in, last clock-out, worked minutes, and between-session breaks
  * (each `"HH:MM-HH:MM"`) for one local day. */
-interface DaySpan {
+export interface DaySpan {
   in: Date;
   inTimezone: string;
   out: Date;
@@ -242,6 +291,7 @@ function mergeZonedTimeIntervals(intervals: ZonedTimeInterval[]): ZonedTimeInter
     } else if (interval.end > last.end) {
       last.end = interval.end;
       last.endTimezone = interval.endTimezone;
+      last.endCause = interval.endCause;
     }
   }
   return merged;
@@ -250,8 +300,93 @@ function mergeZonedTimeIntervals(intervals: ZonedTimeInterval[]): ZonedTimeInter
 export interface Timesheet {
   report: HoursReport;
   sessions: SessionSegment[];
+  recordedDays: RecordedDay[];
   projects: Awaited<ReturnType<typeof projectTotalsForPeriod>>;
   csv: string;
+}
+
+export const SESSION_COLUMNS =
+  "id, user_id, start_utc, end_utc, start_reason, end_reason, timezone, edited_by, replaces_id";
+
+export interface MonthSummary {
+  report: HoursReport;
+  sessions: SessionSegment[];
+  recordedDays: RecordedDay[];
+  spanByDate: Map<string, DaySpan>;
+}
+
+/** Day accounting for one account's closed sessions in a local month. */
+export function summarizeMonth(
+  rows: readonly SessionRow[],
+  period: string,
+  timezone: string,
+  now: Date = new Date(),
+): MonthSummary {
+  // Collapse each local day to the union of its sessions. This preserves real
+  // gaps while ensuring overlapping sessions from multiple devices count once.
+  const spanByDate = new Map<string, DaySpan>();
+  const labelByDate = new Map<string, string>();
+  const recordedDays: RecordedDay[] = [];
+  const { grouped, sessions } = splitSessions(rows, period, timezone);
+  for (const { date, label, intervals } of grouped.values()) {
+    const merged = mergeZonedTimeIntervals(intervals);
+    if (merged.length === 0) continue;
+    const breaks: DayBreak[] = [];
+    let breakMs = 0;
+    for (let i = 1; i < merged.length; i++) {
+      const previous = merged[i - 1];
+      const current = merged[i];
+      const gap = current.start - previous.end;
+      if (gap >= MIN_BREAK_MS) {
+        breakMs += gap;
+        breaks.push({
+          start: formatHM(new Date(previous.end), previous.endTimezone),
+          end: formatHM(new Date(current.start), current.startTimezone),
+          minutes: Math.round(gap / 60_000),
+          cause: previous.endCause,
+        });
+      }
+    }
+    const span: DaySpan = {
+      in: new Date(merged[0].start),
+      inTimezone: merged[0].startTimezone,
+      out: new Date(merged[merged.length - 1].end),
+      outTimezone: merged[merged.length - 1].endTimezone,
+      minutes: unionMinutes(merged),
+      breaks: breaks.map((x) => `${x.start}-${x.end}`),
+    };
+    spanByDate.set(date, span);
+    labelByDate.set(date, label);
+    recordedDays.push({
+      date,
+      minutes: span.minutes,
+      start: formatHM(span.in, span.inTimezone),
+      end: formatHM(span.out, span.outTimezone),
+      breakMinutes: Math.round(breakMs / 60_000),
+      breaks,
+    });
+  }
+  recordedDays.sort((a, b) => a.date.localeCompare(b.date));
+
+  // Expand to calendar days (past months in full, current month through today)
+  // so every gap between logged days is visible for vacation marking.
+  const seed = [...spanByDate].map(([date, span]) => ({
+    date,
+    label: labelByDate.get(date) ?? "",
+    minutes: span.minutes,
+  }));
+  const expanded = expandCalendarDays(
+    seed.sort((a, b) => a.date.localeCompare(b.date)), period, localYMD(now, timezone),
+  );
+  // Monthly totals include recorded days even when calendar expansion hides them.
+  const report: HoursReport = {
+    period,
+    tz: timezone,
+    days: expanded.days,
+    activeDays: expanded.activeDays,
+    totalMinutes: seed.reduce((sum, day) => sum + day.minutes, 0),
+  };
+  return { report, sessions, recordedDays, spanByDate };
 }
 
 /** Load one account's month once; all presentations share the same day accounting. */
@@ -273,62 +408,17 @@ export async function buildTimesheet({
   const { start, end } = periodQueryBounds(period);
 
   const res = await env.DB.prepare(
-    `SELECT id, start_utc, end_utc, start_reason, end_reason, timezone FROM sessions
+    `SELECT ${SESSION_COLUMNS} FROM sessions
       WHERE user_id = ? AND end_utc IS NOT NULL AND end_utc > ? AND start_utc < ?
       ORDER BY start_utc`,
   )
     .bind(userId, start.toISOString(), end.toISOString())
     .all<SessionRow>();
 
-  // Collapse each local day to the union of its sessions. This preserves real
-  // gaps while ensuring overlapping sessions from multiple devices count once.
-  const spanByDate = new Map<string, DaySpan>();
-  const labelByDate = new Map<string, string>();
-  const { grouped, sessions } = splitSessions(res.results ?? [], period, timezone);
-  for (const { date, label, intervals } of grouped.values()) {
-    const merged = mergeZonedTimeIntervals(intervals);
-    if (merged.length === 0) continue;
-    const breaks: string[] = [];
-    for (let i = 1; i < merged.length; i++) {
-      const previous = merged[i - 1];
-      const current = merged[i];
-      if (current.start - previous.end >= MIN_BREAK_MS) {
-        breaks.push(
-          `${formatHM(new Date(previous.end), previous.endTimezone)}-${formatHM(new Date(current.start), current.startTimezone)}`,
-        );
-      }
-    }
-    spanByDate.set(date, {
-      in: new Date(merged[0].start),
-      inTimezone: merged[0].startTimezone,
-      out: new Date(merged[merged.length - 1].end),
-      outTimezone: merged[merged.length - 1].endTimezone,
-      minutes: unionMinutes(merged),
-      breaks,
-    });
-    labelByDate.set(date, label);
-  }
-
-  // Expand to calendar days (past months in full, current month through today)
-  // so every gap between logged days is visible for vacation marking.
-  const seed = [...spanByDate].map(([date, span]) => ({
-    date,
-    label: labelByDate.get(date) ?? "",
-    minutes: span.minutes,
-  }));
-  const expanded = expandCalendarDays(
-    seed.sort((a, b) => a.date.localeCompare(b.date)), period, localYMD(now, timezone),
-  );
-  // Monthly totals include recorded days even when calendar expansion hides them.
-  const report: HoursReport = {
-    period,
-    tz: timezone,
-    days: expanded.days,
-    activeDays: expanded.activeDays,
-    totalMinutes: seed.reduce((sum, day) => sum + day.minutes, 0),
-  };
+  const { report, sessions, recordedDays, spanByDate } =
+    summarizeMonth(res.results ?? [], period, timezone, now);
   const projects = includeProjects ? await projectTotalsForPeriod(env, userId, period) : [];
-  return { report, sessions, projects, csv: renderCsv(expanded.days, spanByDate, projects) };
+  return { report, sessions, recordedDays, projects, csv: renderCsv(report.days, spanByDate, projects) };
 }
 
 function renderCsv(

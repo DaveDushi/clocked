@@ -52,7 +52,7 @@ test("landing page shows hosted vs self-hosted compare table and timeline UI", a
   assert.match(html, /Hosted vs self-hosted/);
   assert.match(html, /compare-table/);
   assert.match(html, /Self-hosted Worker/);
-  assert.match(html, /timelinePanel/);
+  assert.match(html, /id="dlgDay"/);
   assert.match(html, /Local first/);
   assert.match(html, /Optional projects/);
 });

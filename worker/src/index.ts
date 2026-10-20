@@ -28,10 +28,10 @@ import {
 import { buildAndSendReport, sendMonthlyReports } from "./email";
 import { handleActivityIngest } from "./activity";
 import { handleIngest } from "./ingest";
-import {
-  buildTimesheet,
-  timezoneForLocalDate,
-} from "./report";
+import { buildTimesheet } from "./report";
+import { breakStats } from "./break-stats";
+import { handleManualSession } from "./manual-session";
+import { buildTeamOverview, parseSelection, sendTeamTimesheets } from "./team-overview";
 import { getEffectiveDelivery, getTeamDelivery, handleDeliverySettings } from "./delivery";
 import {
   getOrCreateToken,
@@ -43,7 +43,7 @@ import {
   rotateToken,
   userIdForToken,
 } from "./tokens";
-import { previousMonthPeriod, wallToUtc } from "./time";
+import { previousMonthPeriod } from "./time";
 import { orgPlan, planCap, planLabel } from "./plans";
 import { ensureTeamOrg } from "./teams";
 import { handleAdminApprove, isApproved } from "./approval";
@@ -51,7 +51,6 @@ import { handleAcceptIndividualInvitation, handleCreateInvitation, handleRequest
 import { clientIp, rateLimitAllowDurable } from "./rate-limit";
 import {
   isSameOriginRequest,
-  isValidCalendarDate,
   parsePeriodParam,
   timingSafeEqual,
   withSecurityHeaders,
@@ -230,10 +229,10 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const { schedule } = await getEffectiveDelivery(env, { userId: user.id, email: user.email });
     const period = resolvePeriod(url, schedule.timezone);
     if (!period) return json({ error: "invalid period" }, 400);
-    const { report, projects, sessions } = await buildTimesheet({
+    const { report, projects, sessions, recordedDays } = await buildTimesheet({
       env, period, userId: user.id, timezone: schedule.timezone,
     });
-    return json({ ...report, projects, sessions });
+    return json({ ...report, projects, sessions, recordedDays, stats: breakStats(recordedDays) });
   }
 
   // ---- Team (manager) API.
@@ -303,14 +302,46 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const { schedule } = await getTeamDelivery(env, orgId);
     const period = resolvePeriod(url, schedule.timezone);
     if (!period) return json({ error: "invalid period" }, 400);
-    const { report, sessions, csv } = await buildTimesheet({
+    const { report, sessions, recordedDays, csv } = await buildTimesheet({
       env, period, userId: targetId, timezone: schedule.timezone,
       includeProjects: url.pathname === "/api/team/preview",
     });
     if (url.pathname === "/api/team/preview") {
       return new Response(csv, { status: 200, headers: { "content-type": "text/csv" } });
     }
-    return json({ ...report, sessions });
+    return json({ ...report, sessions, recordedDays, stats: breakStats(recordedDays) });
+  }
+
+  // Every member's month at once: roster totals, break comparison and the day grid.
+  if (url.pathname === "/api/team/overview" && req.method === "GET") {
+    const user = await requireActiveUser(req, env);
+    if (user instanceof Response) return user;
+    const orgId = url.searchParams.get("organizationId") ?? "";
+    if (!(await isManagerOf(env, user.id, orgId))) return json({ error: "forbidden" }, 403);
+    const { schedule } = await getTeamDelivery(env, orgId);
+    const period = resolvePeriod(url, schedule.timezone);
+    if (!period) return json({ error: "invalid period" }, 400);
+    return json(await buildTeamOverview(env, orgId, period, schedule.timezone));
+  }
+
+  // Send the reviewed selection of member timesheets to the team's recipients.
+  if (url.pathname === "/api/team/send" && req.method === "POST") {
+    const user = await requireActiveUser(req, env);
+    if (user instanceof Response) return user;
+    const orgId = url.searchParams.get("organizationId") ?? "";
+    if (!(await isManagerOf(env, user.id, orgId))) return json({ error: "forbidden" }, 403);
+    const body = (await req.json().catch(() => ({}))) as { period?: unknown; userIds?: unknown };
+    const period = parsePeriodParam(typeof body.period === "string" ? body.period : null);
+    if (!period) return json({ error: "invalid period" }, 400);
+    const userIds = parseSelection(body.userIds);
+    if (!userIds) return json({ error: "select at least one member" }, 400);
+    if (!(await rateLimitAllowDurable(env.DB, `team-send:${orgId}`, 5, 60 * 60_000))) {
+      return json({ error: "too many sends; try again later" }, 429);
+    }
+    const result = await sendTeamTimesheets(env, orgId, period, userIds);
+    if (!result.ok) return json({ error: result.error }, result.status);
+    const failed = result.results.filter((item) => !item.ok).length;
+    return json({ ...result, ok: failed === 0, sent: result.results.length - failed, failed }, failed ? 502 : 200);
   }
 
   if (url.pathname === "/api/team/inactivity") {
@@ -349,7 +380,11 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
       return json({ error: "user is not in your organization" }, 403);
     }
     const { schedule } = await getTeamDelivery(env, orgId);
-    return handleManualSession(req, url, env, targetId, schedule.timezone);
+    if (req.method !== "GET" &&
+      !(await rateLimitAllowDurable(env.DB, `manual-session:${user.id}`, 120, 60 * 60_000))) {
+      return json({ error: "too many requests" }, 429);
+    }
+    return handleManualSession(req, url, env, targetId, user.id, schedule.timezone);
   }
 
   // Create (or reuse) a team the caller manages. Teams are free.
@@ -376,7 +411,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
     // Team workers cannot add/delete their own manual entries (managers use /api/team/manual-session).
-    if (req.method === "POST" || req.method === "DELETE") {
+    if (req.method === "POST" || req.method === "PATCH" || req.method === "DELETE") {
       if (!(await canSelfServiceEditTimes(env, user.id))) {
         return json(
           { error: "your team manager controls timesheet adjustments" },
@@ -388,7 +423,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
       }
     }
     const { schedule } = await getEffectiveDelivery(env, { userId: user.id, email: user.email });
-    return handleManualSession(req, url, env, user.id, schedule.timezone);
+    return handleManualSession(req, url, env, user.id, user.id, schedule.timezone);
   }
 
   // Privacy: export this account's cloud data (sessions + activity aggregates).
@@ -615,111 +650,6 @@ async function canSelfServiceEditTimes(env: Env, userId: string): Promise<boolea
   const roles = res.results ?? [];
   if (roles.length === 0) return true;
   return roles.some((r) => isManagerRole(r.role));
-}
-
-/**
- * List / add / remove sessions for a user.
- * GET returns all sessions in the period (app + manual) so wrong clockings can be removed.
- * POST still creates manual adjustments only.
- * DELETE removes any session id owned by the user (manual or desktop-synced).
- */
-async function handleManualSession(
-  req: Request,
-  url: URL,
-  env: Env,
-  userId: string,
-  timezone: string,
-): Promise<Response> {
-  if (req.method === "GET") {
-    const period = resolvePeriod(url, timezone);
-    if (!period) return json({ error: "invalid period" }, 400);
-    const { sessions: entries } = await buildTimesheet({
-      env, period, userId, timezone, includeProjects: false,
-    });
-    return json({ entries });
-  }
-
-  if (req.method === "DELETE") {
-    const body = (await req.json().catch(() => ({}))) as { id?: unknown };
-    const id = typeof body.id === "string" ? body.id : "";
-    if (!id || id.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/.test(id)) {
-      return json({ error: "id required" }, 400);
-    }
-    // Any owned closed session — managers use this to drop bad desktop clockings.
-    const res = await env.DB.prepare(
-      `DELETE FROM sessions WHERE id = ? AND user_id = ? AND end_utc IS NOT NULL`,
-    )
-      .bind(id, userId)
-      .run();
-    if (!res.meta.changes) return json({ error: "not found" }, 404);
-    // Tombstone so a later desktop re-sync of the same id cannot resurrect it.
-    try {
-      await env.DB.prepare(
-        `INSERT OR IGNORE INTO session_deletions (id, user_id, deleted_at) VALUES (?, ?, ?)`,
-      )
-        .bind(id, userId, new Date().toISOString())
-        .run();
-    } catch {
-      /* table may not exist until migration applied — delete still succeeded */
-    }
-    return json({ ok: true });
-  }
-
-  if (req.method === "POST") {
-    const body = (await req.json().catch(() => ({}))) as {
-      date?: unknown;
-      start?: unknown;
-      end?: unknown;
-    };
-    const date = typeof body.date === "string" ? body.date : "";
-    const start = typeof body.start === "string" ? body.start : "";
-    const end = typeof body.end === "string" ? body.end : "";
-    if (
-      !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
-      !/^\d{2}:\d{2}$/.test(start) ||
-      !/^\d{2}:\d{2}$/.test(end)
-    ) {
-      return json({ error: "invalid date or time" }, 400);
-    }
-    const [y, m, d] = date.split("-").map(Number);
-    const [sh, smi] = start.split(":").map(Number);
-    const [eh, emi] = end.split(":").map(Number);
-    if (
-      !isValidCalendarDate(y, m, d) ||
-      sh > 23 ||
-      smi > 59 ||
-      eh > 23 ||
-      emi > 59 ||
-      sh < 0 ||
-      smi < 0 ||
-      eh < 0 ||
-      emi < 0
-    ) {
-      return json({ error: "invalid date or time" }, 400);
-    }
-    if (eh * 60 + emi <= sh * 60 + smi) {
-      return json({ error: "clock-out must be after clock-in" }, 400);
-    }
-    // Same-day only; cap is 24h by construction — still guard absurd ranges.
-    if (eh * 60 + emi - (sh * 60 + smi) > 24 * 60) {
-      return json({ error: "session too long" }, 400);
-    }
-    const dayTimezone = await timezoneForLocalDate(env, userId, date, timezone);
-    const startUtc = wallToUtc(y, m, d, sh, smi, 0, dayTimezone);
-    const endUtc = wallToUtc(y, m, d, eh, emi, 0, dayTimezone);
-    if (!(endUtc.getTime() > startUtc.getTime())) {
-      return json({ error: "clock-out must be after clock-in" }, 400);
-    }
-    await env.DB.prepare(
-      `INSERT INTO sessions (id, start_utc, end_utc, start_reason, end_reason, timezone, user_id)
-       VALUES (?, ?, ?, 'manual', 'manual', ?, ?)`,
-    )
-      .bind(crypto.randomUUID(), startUtc.toISOString(), endUtc.toISOString(), dayTimezone, userId)
-      .run();
-    return json({ ok: true });
-  }
-
-  return json({ error: "method not allowed" }, 405);
 }
 
 async function isMemberOf(env: Env, userId: string, organizationId: string): Promise<boolean> {

@@ -68,7 +68,7 @@ export function createTimesheetView(options: Options) {
       }
     },
 
-    async edit(method: "POST" | "DELETE", body: Record<string, string>): Promise<boolean> {
+    async edit(method: "POST" | "PATCH" | "DELETE", body: Record<string, unknown>): Promise<boolean> {
       if (!target || !data || pending.has(generation + ":" + target.editUrl)) return false;
       const original = target;
       const editGeneration = generation;
