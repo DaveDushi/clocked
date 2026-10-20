@@ -47,14 +47,13 @@ test("dashboard advertises the Windows installer and Chrome extension", async ()
   assert.match(html, /Chrome extension/);
 });
 
-test("landing page shows hosted vs self-hosted compare table and timeline UI", async () => {
+test("landing page keeps hosted access, self-hosting and the timesheet UI available", async () => {
   const html = await dashboardResponse().text();
-  assert.match(html, /Hosted vs self-hosted/);
-  assert.match(html, /compare-table/);
-  assert.match(html, /Self-hosted Worker/);
+  assert.match(html, /id="heroRequestAccess"/);
+  assert.match(html, /data-kind="individual"/);
+  assert.match(html, /data-kind="team"/);
+  assert.match(html, /Can I self-host\?/);
   assert.match(html, /id="dlgDay"/);
-  assert.match(html, /Local first/);
-  assert.match(html, /Optional projects/);
 });
 
 test("dashboard exposes additive device tokens instead of a revoke-all control", async () => {

@@ -171,12 +171,16 @@ const HTML = /* html */ `<!doctype html>
 
   /* ---------- forms ---------- */
   label { display:block; font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); margin-bottom:7px; }
-  input, textarea {
+  input, textarea, select {
     width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border);
     background:#0b0d13; color:var(--fg); font:inherit; transition:border-color .15s, box-shadow .15s;
   }
   textarea { resize:vertical; min-height:74px; }
-  input:focus, textarea:focus { outline:none; border-color:var(--amber); box-shadow:0 0 0 3px rgba(242,169,80,.16); }
+  input:focus, textarea:focus, select:focus { outline:none; border-color:var(--amber); box-shadow:0 0 0 3px rgba(242,169,80,.16); }
+  select {
+    appearance:none; min-height:44px; padding-right:40px; cursor:pointer;
+  }
+  select:disabled { opacity:.5; cursor:default; }
   input[type=month], input[type=date], input[type=time] { font-family:var(--mono); font-size:14px; }
   ::-webkit-calendar-picker-indicator { filter:invert(.75); cursor:pointer; }
   .row { display:flex; gap:10px; align-items:flex-end; }
@@ -205,6 +209,7 @@ const HTML = /* html */ `<!doctype html>
     width:auto; padding:8px 10px; border-radius:9px; border:1px solid var(--border);
     background:#0b0d13; color:var(--fg); font:inherit; font-family:var(--mono); cursor:pointer;
   }
+  .sendday select { padding-right:36px; }
   .sendday input[type=time] { width:126px; }
   .sendday input[list] { width:min(240px, 100%); }
   .sendday select:disabled, .sendday input:disabled { cursor:default; }
@@ -352,93 +357,57 @@ const HTML = /* html */ `<!doctype html>
   .timeline-empty { padding:18px 14px; color:var(--muted); font-size:13.5px; text-align:center; }
   .timeline-hint { margin:10px 0 0; font-size:12.5px; color:var(--faint); }
 
-  /* ---------- compare (hosted vs self-host) ---------- */
-  .compare { max-width:720px; margin:0 auto 36px; }
-  .compare h2 { text-align:center; font-size:22px; margin:0 0 6px; letter-spacing:.02em; }
-  .compare > p { text-align:center; color:var(--muted); font-size:14.5px; margin:0 0 16px; line-height:1.5; }
-  .compare-wrap {
-    overflow-x:auto; border:1px solid var(--border); border-radius:14px;
-    background:linear-gradient(180deg, var(--panel), var(--panel2));
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
-  }
-  table.compare-table { width:100%; border-collapse:collapse; min-width:520px; }
-  table.compare-table th, table.compare-table td {
-    text-align:left; padding:12px 14px; border-bottom:1px solid var(--border);
-    font-size:13.5px; vertical-align:top;
-  }
-  table.compare-table tr:last-child th, table.compare-table tr:last-child td { border-bottom:0; }
-  table.compare-table thead th {
-    font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint);
-    background:rgba(0,0,0,.2); position:sticky; top:0;
-  }
-  table.compare-table tbody th {
-    font-weight:600; color:var(--fg); width:34%;
-  }
-  table.compare-table td { color:var(--muted); line-height:1.45; }
-  table.compare-table .yes { color:var(--ok); }
-  table.compare-table .no { color:var(--faint); }
-  table.compare-table .hosted-col { color:var(--fg); }
-  .compare-note { text-align:center; font-size:12.5px; color:var(--faint); margin:12px 0 0; line-height:1.5; }
-
   .total { display:flex; justify-content:space-between; align-items:baseline; margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
   .total b { font-family:var(--mono); font-size:26px; font-weight:600; color:var(--amber); text-shadow:0 0 12px rgba(242,169,80,.2); font-variant-numeric:tabular-nums; }
 
   /* ---------- landing / auth ---------- */
-  .hero { text-align:center; margin:5vh auto 28px; max-width:620px; }
-  .hero .logo { width:58px; height:58px; margin:0 auto 18px; border-width:3px; }
-  .hero .logo::before { height:14px; }
-  .hero .logo::after { height:21px; }
-  .hero .eyebrow {
-    display:inline-block; font-family:var(--mono); font-size:12px; letter-spacing:.12em; text-transform:uppercase;
-    color:var(--amber); margin:0 0 14px; padding:5px 10px; border:1px solid rgba(242,169,80,.3); border-radius:999px;
-    background:rgba(242,169,80,.06);
-  }
-  .hero h1 { font-size:36px; line-height:1.12; margin:0 0 12px; letter-spacing:.02em; }
-  .hero h1 small { color:var(--amber); }
-  .hero p { color:var(--muted); margin:0 auto; font-size:16.5px; max-width:520px; line-height:1.55; }
-  .hero .trust { margin:14px 0 0; font-size:12.5px; color:var(--faint); }
-
-  .features { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; max-width:720px; margin:0 auto 28px; }
-  .feature { background:linear-gradient(180deg, var(--panel), var(--panel2)); border:1px solid var(--border); border-radius:14px; padding:16px 15px; box-shadow:inset 0 1px 0 rgba(255,255,255,.04); text-align:left; }
-  .feature .k { font-family:var(--mono); font-size:12px; color:var(--amber); letter-spacing:.08em; text-transform:uppercase; margin-bottom:6px; }
-  .feature .v { font-size:13.5px; color:var(--muted); line-height:1.5; }
-  @media (max-width:720px) { .features { grid-template-columns:repeat(2,1fr); } }
-  @media (max-width:560px) { .features { grid-template-columns:1fr; } .hero h1 { font-size:30px; } }
-
-  .how { max-width:720px; margin:0 auto 32px; }
-  .how h2 { text-align:center; font-size:22px; margin:0 0 6px; letter-spacing:.02em; }
-  .how > p { text-align:center; color:var(--muted); font-size:14.5px; margin:0 0 16px; }
-  .how-steps { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
-  @media (max-width:560px) { .how-steps { grid-template-columns:1fr; } }
-  .how-step {
-    background:linear-gradient(180deg, var(--panel), var(--panel2)); border:1px solid var(--border);
-    border-radius:14px; padding:16px; box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
-  }
-  .how-step .n { font-family:var(--mono); font-size:12px; color:var(--amber); letter-spacing:.1em; margin-bottom:8px; }
-  .how-step h3 { margin:0 0 6px; font-size:15px; }
-  .how-step p { margin:0; font-size:13.5px; color:var(--muted); line-height:1.5; }
-
-  .audience { max-width:720px; margin:0 auto 32px; text-align:center; }
-  .audience h2 { font-size:22px; margin:0 0 6px; }
-  .audience > p { color:var(--muted); font-size:14.5px; margin:0 0 14px; }
-  .chips { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
-  .chip {
-    font-size:13px; color:var(--fg); padding:8px 12px; border-radius:999px;
-    border:1px solid var(--border); background:rgba(255,255,255,.02);
+  body:has(.top.bare) { background:var(--bg); }
+  body:has(.top.bare)::before { display:none; }
+  .top.bare .logo { box-shadow:none; }
+  .top.bare + .ruler { height:1px; background:var(--border); margin:20px 0 0; mask-image:none; -webkit-mask-image:none; }
+  .top.bare #navRequestAccess { background:transparent; color:var(--fg); border:1px solid var(--border); box-shadow:none; font-weight:500; }
+  #landingView { max-width:680px; margin:0 auto; }
+  #landingView button, #landingView a.btn { box-shadow:none; }
+  #landingView button:hover, #landingView a.btn:hover { transform:none; }
+  .hero { padding:64px 0 44px; }
+  .hero .eyebrow { color:var(--muted); font-size:13px; margin:0 0 16px; }
+  .hero h1 { font-size:clamp(32px,5vw,46px); line-height:1.15; letter-spacing:-.035em; margin:0 0 18px; max-width:560px; font-weight:500; }
+  .hero p { color:#a7adbb; font-size:16px; max-width:540px; margin:0; line-height:1.65; }
+  .hero .downloadCta { justify-content:flex-start; margin-top:24px; }
+  #heroRequestAccess { background:var(--amber); }
+  .hero .trust { margin-top:16px; font-size:13px; color:var(--muted); }
+  .access-section { border-top:1px solid var(--border); padding:30px 0; }
+  .access-head h2, .faq h2 { font-size:20px; font-weight:500; margin:0 0 8px; }
+  .access-head > p { color:var(--muted); margin:0; max-width:560px; font-size:14px; line-height:1.6; }
+  .access-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:32px; margin-top:24px; }
+  .access-option h3 { font-size:15px; font-weight:500; margin:0 0 6px; }
+  .access-option p { color:var(--muted); margin:0 0 12px; font-size:14px; line-height:1.6; }
+  #landingView .access-option button { background:transparent; color:var(--fg); padding:4px 0; border-radius:3px; font-size:14px; font-weight:500; text-decoration:underline; text-underline-offset:5px; white-space:normal; text-align:left; }
+  .faq { border-top:1px solid var(--border); padding-top:28px; }
+  .faq details { border-bottom:1px solid var(--border); }
+  .faq summary { cursor:pointer; padding:16px 0; font-size:14px; color:var(--fg); }
+  .faq details p { margin:0 0 16px; color:var(--muted); font-size:14px; line-height:1.6; }
+  .faq a { color:var(--fg); }
+  .footer-note { display:flex; flex-wrap:wrap; gap:12px 22px; margin:28px 0 0; font-size:13px; }
+  .footer-note a { color:var(--muted); text-underline-offset:4px; }
+  @media(max-width:560px) {
+    .hero { padding:40px 0 30px; }
+    .hero .downloadCta { align-items:stretch; gap:10px; }
+    .hero .downloadCta > * { width:100%; white-space:normal; }
+    .access-grid { grid-template-columns:1fr; gap:24px; }
+    #topAuth { gap:4px; }
+    .top.bare #topAuth button { padding:8px; font-size:12px; }
+    .top.bare { gap:8px; }
+    .top.bare .wordmark { font-size:18px; }
+    .top.bare .logo { width:28px; height:28px; }
   }
 
-  .faq { max-width:640px; margin:8px auto 40px; }
-  .faq h2 { text-align:center; font-size:22px; margin:0 0 14px; }
-  .faq details {
-    border:1px solid var(--border); border-radius:12px; background:linear-gradient(180deg, var(--panel), var(--panel2));
-    padding:0 16px; margin-bottom:8px;
+  @media(max-width:380px) {
+    .top.bare { flex-wrap:wrap; }
+    .top.bare #topAuth { width:100%; justify-content:flex-end; }
+    #requestTeamFields:not(.hidden) { flex-direction:column; align-items:stretch; }
+    #requestTeamFields > div { min-width:0; }
   }
-  .faq summary { cursor:pointer; list-style:none; padding:14px 0; font-weight:600; font-size:14.5px; }
-  .faq summary::-webkit-details-marker { display:none; }
-  .faq details p { margin:0 0 14px; color:var(--muted); font-size:14px; line-height:1.55; }
-
-  .footer-note { text-align:center; color:var(--faint); font-size:12.5px; margin:8px auto 24px; max-width:520px; line-height:1.5; }
-  .footer-note a { color:var(--muted); }
 
   #auth { max-width:400px; margin:0 auto; }
   .tabs { display:flex; gap:6px; margin-bottom:18px; background:#0b0d13; border:1px solid var(--border); border-radius:12px; padding:4px; }
@@ -490,23 +459,7 @@ const HTML = /* html */ `<!doctype html>
   .modal-close { position:absolute; top:12px; right:12px; width:32px; height:32px; padding:0; font-size:18px; line-height:1; }
 
   /* ---------- request hosted access ---------- */
-  .access-head { text-align:center; margin:36px auto 18px; max-width:560px; }
-  .access-head h2 { font-size:23px; margin:0 0 6px; letter-spacing:.02em; }
-  .access-head p { color:var(--muted); font-size:15px; margin:0; }
-  .access-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; max-width:760px; margin:0 auto 26px; }
-  .access-card {
-    position:relative; overflow:hidden; display:flex; flex-direction:column;
-    background:linear-gradient(180deg, var(--panel), var(--panel2));
-    border:1px solid var(--border); border-radius:16px; padding:22px 22px 24px;
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 10px 26px rgba(0,0,0,.3);
-  }
-  .access-card::before { content:""; position:absolute; top:0; left:0; right:0; height:2px; background:linear-gradient(90deg, transparent, var(--amber) 30%, var(--amber2) 70%, transparent); }
-  .access-card h3 { font-size:20px; margin:0 0 10px; }
-  .access-card p { color:var(--muted); font-size:14px; line-height:1.6; margin:0 0 14px; }
-  .access-card ul { padding-left:18px; margin:0 0 22px; font-size:13.5px; line-height:1.7; flex:1; }
-  .access-card button { margin-top:auto; }
   #accessRequestModal .modal-card { max-height:calc(100dvh - 40px); overflow:auto; }
-  @media(max-width:600px) { .access-grid { grid-template-columns:1fr; } }
   #verifyGate { max-width:520px; margin:24px auto; }
 
   .muted { color:var(--muted); }
@@ -542,12 +495,55 @@ const HTML = /* html */ `<!doctype html>
   .invitelink { display:flex; gap:8px; margin-top:10px; }
   .invitelink.hidden { display:none; }
   .invitelink input { flex:1; font-family:var(--mono); font-size:12px; }
-  #inviteRole { width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:#0b0d13; color:var(--fg); font:inherit; }
 
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation:none !important; transition:none !important; }
   }
 ${WORKSPACE_STYLE}
+  /* Keep the chevron after workspace background/padding shorthands. */
+  :is(select, .ws select, .sendday select, .ws-section-head select) {
+    color-scheme:dark; padding-right:40px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%238b91a0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right 13px center;
+  }
+  select option, select optgroup { background-color:#151823; color:var(--fg); }
+  .ws select.ws-month { padding-right:40px !important; }
+
+  /* Native semantics and events, with an OS picker fallback in older browsers. */
+  @supports (appearance:base-select) and selector(select::picker(select)) {
+    :is(select, .ws select):not([multiple]):not([size]) {
+      appearance:base-select; align-items:center;
+    }
+    select:not([multiple]):not([size])::picker-icon { display:none; }
+    select:not([multiple]):not([size])::picker(select) {
+      appearance:base-select; color-scheme:dark;
+      background:#151823; color:var(--fg); font:inherit; line-height:1.5;
+      border:1px solid #363d50; border-radius:10px; padding:5px;
+      margin-block:6px; max-height:min(320px, 60vh); overflow:auto;
+      box-shadow:0 12px 36px rgba(0,0,0,.45);
+      scrollbar-color:#41485b #151823;
+    }
+    select:not([multiple]):not([size]) option {
+      display:flex; align-items:center; gap:12px; min-height:38px;
+      padding:9px 12px; border:0; border-radius:6px;
+      background:transparent; color:var(--fg); font:inherit; cursor:pointer;
+      white-space:normal; overflow-wrap:anywhere;
+    }
+    select:not([multiple]):not([size]) option:checked {
+      background:rgba(242,169,80,.12); color:var(--amber);
+    }
+    select:not([multiple]):not([size]) option:not(:disabled):hover {
+      background:#292e3d;
+    }
+    select:not([multiple]):not([size]) option:focus-visible {
+      outline:2px solid var(--amber); outline-offset:-2px; background:#292e3d;
+    }
+    select:not([multiple]):not([size]) option::checkmark {
+      order:1; margin-left:auto; color:var(--amber);
+    }
+    select:not([multiple]):not([size]) option:disabled { color:var(--muted); cursor:default; }
+    :is(select, .ws select):open { border-color:var(--amber); }
+  }
 </style>
 </head>
 <body>
@@ -567,187 +563,59 @@ ${WORKSPACE_STYLE}
 
   <!-- Landing (logged out) -->
   <div id="landingView" class="hidden">
-    <div class="hero">
-      <div class="logo" aria-hidden="true"></div>
-      <div class="eyebrow">Windows &amp; macOS · automatic · open source desktop</div>
-      <h1>Stop babysitting<br /><small>a timer.</small></h1>
-      <p>clocked is a tray / menu-bar app that clocks you in and out from real machine
-        activity — unlock, work, lock, idle. Hours stay on your PC (SQLite) first.
-        Optional cloud sync emails a monthly timesheet even if the laptop was asleep.</p>
+    <section class="hero" aria-labelledby="landingHeading">
+      <div class="eyebrow">Automatic time tracking for Windows &amp; macOS</div>
+      <h1 id="landingHeading">Your workday, without the timer.</h1>
+      <p>Clocked tracks time as you work, then stops when you lock your computer or step away. Your hours stay on your machine, ready when you need them.</p>
       <div class="downloadCta row">
-        <button type="button" class="btn" id="heroRequestAccess">Request access</button>
         <a class="btn ghost" href="/download/mac">Download for macOS</a>
         <a class="btn ghost" href="/download/win">Download for Windows</a>
-        <a class="btn ghost" href="/download/extension">Chrome extension</a>
-        <div class="hintline">Optional extension sends site hostnames to the local app only — no screenshots, no keylogging, no full URLs.</div>
+        <button type="button" id="heroRequestAccess">Request access</button>
       </div>
-      <p class="trust">MIT desktop app · local SQLite source of truth · hosted access by invitation · self-host the Worker anytime</p>
-    </div>
-
-    <div class="features">
-      <div class="feature"><div class="k">Automatic presence</div><div class="v">Wake, unlock, and activity clock you in. Sleep, lock, idle, quit, and shutdown clock you out — idle is backdated to last input so empty time doesn&rsquo;t inflate the day.</div></div>
-      <div class="feature"><div class="k">Local first</div><div class="v">Sessions live in SQLite on your machine. Pause from the tray, tune idle timeout, set working hours with an after-hours prompt, and keep tracking offline.</div></div>
-      <div class="feature"><div class="k">Optional projects</div><div class="v">Opt in to attribute time to the focused app and privacy-safe context (document name or browser hostname). Window titles stay off by default.</div></div>
-      <div class="feature"><div class="k">Monthly timesheet</div><div class="v">Hosted cloud emails a day-by-day CSV on your schedule. Preview anytime, add manual spans, and export or delete your cloud data.</div></div>
-      <div class="feature"><div class="k">Teams</div><div class="v">Invite workers, review their hours, adjust entries as a manager, and centralize report delivery — not live surveillance.</div></div>
-      <div class="feature"><div class="k">Yours to run</div><div class="v">Point the desktop app at your own Cloudflare Worker, or use hosted clocked for accounts, dashboard, and email without ops work.</div></div>
-    </div>
-
-    <div class="how">
-      <h2>How it works</h2>
-      <p>Three steps. Under a minute after install.</p>
-      <div class="how-steps">
-        <div class="how-step">
-          <div class="n">01</div>
-          <h3>Install the tray app</h3>
-          <p>Download for Windows or macOS. It runs in the background, can start at login, and keeps a local SQLite timesheet with no account required.</p>
-        </div>
-        <div class="how-step">
-          <div class="n">02</div>
-          <h3>Connect cloud (optional)</h3>
-          <p>Request hosted access, accept your invitation, then connect the app with your sync token. You can also point the app at your self-hosted Worker.</p>
-        </div>
-        <div class="how-step">
-          <div class="n">03</div>
-          <h3>Forget about it</h3>
-          <p>Hours accumulate automatically. Open the dashboard for a day timeline, projects, and email settings — or wait for the monthly CSV.</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="compare">
-      <h2>Hosted vs self-hosted</h2>
-      <p>The open-source desktop and a minimal Worker stay useful on their own. Hosted clocked adds accounts, teams, and managed delivery for free.</p>
-      <div class="compare-wrap">
-        <table class="compare-table">
-          <thead>
-            <tr>
-              <th scope="col">Capability</th>
-              <th scope="col">Self-hosted Worker</th>
-              <th scope="col" class="hosted-col">Hosted clocked</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <th scope="row">Desktop tray app</th>
-              <td class="yes">Yes — MIT, local SQLite</td>
-              <td class="hosted-col yes">Yes — same app</td>
-            </tr>
-            <tr>
-              <th scope="row">Session sync</th>
-              <td>You deploy Worker + D1 + secrets</td>
-              <td class="hosted-col yes">Managed — paste token &amp; go</td>
-            </tr>
-            <tr>
-              <th scope="row">Web dashboard</th>
-              <td class="no">Basic / DIY (your fork)</td>
-              <td class="hosted-col yes">Hours, day timeline, projects, export</td>
-            </tr>
-            <tr>
-              <th scope="row">Accounts &amp; isolation</th>
-              <td class="no">Typically one shared token</td>
-              <td class="hosted-col yes">Per-user auth, tokens, email verify</td>
-            </tr>
-            <tr>
-              <th scope="row">Monthly email report</th>
-              <td>You wire Resend / Email Routing</td>
-              <td class="hosted-col yes">Scheduled day, time &amp; timezone; multi-recipient</td>
-            </tr>
-            <tr>
-              <th scope="row">Manual time edits</th>
-              <td class="no">Your own tooling</td>
-              <td class="hosted-col yes">Add / remove sessions in dashboard</td>
-            </tr>
-            <tr>
-              <th scope="row">Teams &amp; manager views</th>
-              <td class="no">Not in the minimal path</td>
-              <td class="hosted-col yes">Invite, roster, shared timesheets</td>
-            </tr>
-            <tr>
-              <th scope="row">Operations</th>
-              <td class="no">You operate everything</td>
-              <td class="hosted-col yes">Hosted updates, support path</td>
-            </tr>
-            <tr>
-              <th scope="row">Best for</th>
-              <td>Developers &amp; privacy-first solo ops</td>
-              <td class="hosted-col">Freelancers &amp; small teams who want it to just work</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="compare-note">Run it yourself, or request hosted access and connect the app after receiving an invitation.</p>
-    </div>
-
-    <div class="audience">
-      <h2>Built for people who bill time</h2>
-      <p>Not another productivity panopticon. A quiet clock for real work.</p>
-      <div class="chips">
-        <span class="chip">Freelancers</span>
-        <span class="chip">Consultants</span>
-        <span class="chip">Small agencies</span>
-        <span class="chip">Contractors</span>
-        <span class="chip">Solo founders</span>
-      </div>
-    </div>
+      <p class="trust">Open-source desktop app. Works offline, no account needed.</p>
+    </section>
 
     <section class="access-section" aria-labelledby="accessHeading">
       <div class="access-head">
-        <h2 id="accessHeading">Hosted access, by invitation</h2>
-        <p>Tell us how you want to use Clocked. We review requests and send invitations by email.</p>
+        <h2 id="accessHeading">Add sync and shared timesheets</h2>
+        <p>Hosted Clocked adds a web dashboard and scheduled timesheet emails. Access is by invitation. We review requests and reply by email.</p>
       </div>
       <div class="access-grid">
-        <div class="access-card">
+        <div class="access-option">
           <h3>For yourself</h3>
-          <p>Your time, your timesheets, your delivery schedule. No team needed.</p>
-          <ul><li>Sync across your computers</li><li>Review and export your hours</li><li>Schedule your monthly timesheet email</li></ul>
-          <button class="requestAccess" data-kind="individual" type="button">Request individual access</button>
+          <p>Sync your computers, review your hours, and get a monthly timesheet.</p>
+          <button class="requestAccess" data-kind="individual" type="button">Request individual access &rarr;</button>
         </div>
-        <div class="access-card">
+        <div class="access-option">
           <h3>For your team</h3>
-          <p>A separate team for your business, with managers and workers in one place.</p>
-          <ul><li>Invite workers and additional managers</li><li>Review hours and manage timesheet delivery</li><li>Up to 50 people, including managers</li></ul>
-          <button class="requestAccess" data-kind="team" type="button">Request team access</button>
+          <p>Invite up to 50 people, review hours together, and manage timesheet delivery.</p>
+          <button class="requestAccess" data-kind="team" type="button">Request team access &rarr;</button>
         </div>
       </div>
-      <p class="compare-note">The open-source desktop app works locally without an account.</p>
     </section>
 
-    <div class="faq">
-      <h2>FAQ</h2>
+    <section class="faq" aria-labelledby="faqHeading">
+      <h2 id="faqHeading">A few details</h2>
       <details>
-        <summary>How do I get hosted access?</summary>
-        <p>Request access for yourself or your team. We review each request and email an invitation if approved. You can then create an account or sign in, verify your email, and accept the invitation. Sending a request does not create an account.</p>
+        <summary>What does Clocked track?</summary>
+        <p>By default, only work sessions based on activity, lock, and idle events. No screenshots or keylogging. Optional project tracking adds focused apps and site hostnames, never full URLs. Team managers can review hours, without live monitoring.</p>
       </details>
       <details>
-        <summary>Is this employee surveillance software?</summary>
-        <p>No. By default clocked tracks presence from OS power and input events on the machine you install it on — no screenshots, no keylogging. Optional project tracking can record focused apps and privacy-safe site hostnames (not full URLs). Team managers see hours for people who joined their org — not live monitoring.</p>
-      </details>
-      <details>
-        <summary>What if my laptop is closed at month-end?</summary>
-        <p>Sessions live on your PC and sync when you&rsquo;re online. The cloud report is emailed by the server on your schedule, so you still get the timesheet even if the laptop was asleep that day.</p>
+        <summary>Do I need hosted access?</summary>
+        <p>No. The desktop app keeps your hours locally in SQLite and works without an account. Hosted access adds sync, the dashboard, teams, and scheduled email reports. Approved requests receive an invitation to create an account.</p>
       </details>
       <details>
         <summary>Can I self-host?</summary>
-        <p>Yes. The desktop app is open source and can point at your own Worker URL. You run Cloudflare, D1, secrets, and email yourself. Hosted clocked is the managed path for accounts, dashboard, teams, and email without ops.</p>
+        <p>Yes. Point the desktop app at your own Cloudflare Worker. The source and setup instructions are on <a href="https://github.com/DaveDushi/clocked" target="_blank" rel="noopener">GitHub</a>.</p>
       </details>
-      <details>
-        <summary>Do I need an account to track time?</summary>
-        <p>No. Local-only mode works with an empty config — hours stay in SQLite on your machine. An account is only needed for cloud sync, the web dashboard, teams, and monthly email.</p>
-      </details>
-      <details>
-        <summary>Which platforms?</summary>
-        <p>Native tray and menu-bar apps for Windows and macOS. Optional Chrome/Edge extension for accurate browser hostnames. The web dashboard works in any modern browser once you have an account.</p>
-      </details>
-    </div>
+    </section>
 
-    <p class="footer-note">
-      Source on <a href="https://github.com/DaveDushi/clocked" target="_blank" rel="noopener">GitHub</a>
-      · Installer via <a href="/download">/download</a>
-      · <a href="/press">Press kit</a>
-      · <a href="/news">News</a>
-      · Questions? Open an issue on the repo.
-    </p>
+    <footer class="footer-note">
+      <a href="https://github.com/DaveDushi/clocked" target="_blank" rel="noopener">Source &amp; setup</a>
+      <a href="/download/extension">Chrome / Edge extension</a>
+      <a href="/press">Press kit</a>
+      <a href="/news">News</a>
+    </footer>
 
     <div id="authModal" class="modal hidden">
       <div class="modal-backdrop"></div>
@@ -1200,6 +1068,7 @@ async function loadInactivityEditor() {
 }
 $("inactivityMode").onchange = syncInactivityFields;
 $("saveInactivity").onclick = async () => {
+  if ($("saveInactivity").disabled || settingsScope !== "team" || !wsIsTeam() || !isManagerRoleC(orgRole)) return;
   const team = $("inactivityMode").value === "team";
   if (team && (!$("inactivityLimit").reportValidity() || !$("inactivityWarning").reportValidity())) return;
   const policy = team ? { timeout_secs: Number($("inactivityLimit").value) * 60, warning_secs: Number($("inactivityWarning").value) * 60 } : null;
@@ -1264,6 +1133,7 @@ async function loadWorkingHoursEditor() {
     $("hoursEnd").value = schedule && schedule.mode === "scheduled" ? schedule.end : "17:00";
     const days = schedule && schedule.mode === "scheduled" ? schedule.days : [1, 2, 3, 4, 5];
     $("hoursDays").querySelectorAll("input").forEach((input) => { input.checked = days.includes(Number(input.value)); });
+    $("hoursTarget").disabled = false;
     $("hoursMode").disabled = false; $("saveWorkingHours").disabled = false;
     $("workingHoursMsg").textContent = "";
   } catch (error) {
@@ -1276,6 +1146,9 @@ async function loadWorkingHoursEditor() {
 $("hoursTarget").onchange = loadWorkingHoursEditor;
 $("hoursMode").onchange = syncWorkingHoursFields;
 $("saveWorkingHours").onclick = async () => {
+  if ($("saveWorkingHours").disabled || !wsIsTeam() || !isManagerRoleC(orgRole)) return;
+  if (!$("dlgMember").open && (!$("dlgSettings").open || settingsScope !== "team")) return;
+  const version = hoursLoadVersion;
   const mode = $("hoursMode").value;
   const schedule = mode === "inherit" ? null : mode === "disabled" ? { mode: "disabled" } : {
     mode: "scheduled", start: $("hoursStart").value, end: $("hoursEnd").value,
@@ -1288,14 +1161,17 @@ $("saveWorkingHours").onclick = async () => {
   try {
     const response = await api(path, { method: "POST", body: JSON.stringify({ schedule }) });
     const data = await response.json();
+    if (version !== hoursLoadVersion) return;
     if (!response.ok) throw new Error(data.error || "Could not save working hours.");
     $("workingHoursMsg").textContent = "Saved. Updated desktop apps apply this on their next sync, including startup, wake, or Sync now.";
     $("workingHoursMsg").className = "msg ok";
     await loadWorkingHoursSummary();
   } catch (error) {
+    if (version !== hoursLoadVersion) return;
     $("workingHoursMsg").textContent = error.message || "Could not save working hours.";
     $("workingHoursMsg").className = "msg err";
   } finally {
+    if (version !== hoursLoadVersion) return;
     $("saveWorkingHours").disabled = false; $("hoursTarget").disabled = false;
     $("hoursMode").disabled = false; syncWorkingHoursFields();
   }
@@ -1532,6 +1408,7 @@ function addRecipientRow(value) {
   row.className = "recipient";
   const input = document.createElement("input");
   input.type = "email"; input.placeholder = "you@example.com"; input.value = value || "";
+  input.setAttribute("aria-label", "Timesheet recipient email");
   const del = document.createElement("button");
   del.type = "button"; del.className = "ghost del"; del.textContent = "×"; del.title = "Remove";
   del.onclick = () => { row.remove(); if (!$("recipients").children.length) addRecipientRow(""); };
@@ -1576,24 +1453,29 @@ function syncSendDayState() {
 }
 $("autoSend").onchange = syncSendDayState;
 
-async function loadEmailSettings() {
-  fillSendDays();
-  fillTimeZones();
-  if (emailMode === "manager") {
-    const r = await api("/api/team/settings?organizationId=" + encodeURIComponent(orgId));
-    const d = r.ok ? await r.json() : { recipients: [], sendDay: 1, sendTime: "06:00", sendTimezone: "UTC", defaultRecipients: [] };
-    // Prefill with the managers' emails until an explicit destination is saved.
-    renderRecipients((d.recipients && d.recipients.length) ? d.recipients : (d.defaultRecipients || []));
-    setSchedule(d.sendDay, d.sendTime, d.sendTimezone);
-  } else if (emailMode === "member") {
-    const r = await api("/api/settings");
-    const d = r.ok ? await r.json() : { recipients: [], sendDay: 1, sendTime: "06:00", sendTimezone: "UTC" };
-    renderEmailReadonly(d.recipients || [], d.sendDay, d.sendTime, d.sendTimezone);
-  } else {
-    const r = await api("/api/settings");
-    const d = r.ok ? await r.json() : { recipients: [], sendDay: 1, sendTime: "06:00", sendTimezone: "UTC" };
-    renderRecipients(d.recipients);
-    setSchedule(d.sendDay, d.sendTime, d.sendTimezone);
+let emailSettingsContext = null;
+let emailLoadVersion = 0;
+async function loadEmailSettings(context) {
+  const version = ++emailLoadVersion;
+  emailSettingsContext = null; $("saveEmail").disabled = true;
+  fillSendDays(); fillTimeZones();
+  try {
+    const response = await api(context.path);
+    const data = await response.json();
+    if (version !== emailLoadVersion) return;
+    if (!response.ok) throw new Error(data.error || "Could not load delivery settings.");
+    const editable = context.kind === "team" || !data.managed;
+    emailSettingsContext = editable ? context : null;
+    $("emailEdit").classList.toggle("hidden", !editable);
+    $("emailReadonly").classList.toggle("hidden", editable);
+    if (editable) {
+      renderRecipients(data.recipients.length ? data.recipients : (data.defaultRecipients || []));
+      setSchedule(data.sendDay, data.sendTime, data.sendTimezone);
+      $("saveEmail").disabled = false;
+    } else renderEmailReadonly(data.recipients || [], data.sendDay, data.sendTime, data.sendTimezone);
+  } catch (error) {
+    if (version !== emailLoadVersion) return;
+    $("emailReadonly").textContent = error.message || "Could not load delivery settings.";
   }
 }
 
@@ -1634,6 +1516,8 @@ $("signout").onclick = async () => {
 $("addRecipient").onclick = () => addRecipientRow("");
 
 $("saveEmail").onclick = async () => {
+  const context = emailSettingsContext, version = emailLoadVersion;
+  if (!context || $("saveEmail").disabled) return;
   const recipients = recipientValues();
   $("emailMsg").textContent = ""; $("emailMsg").className = "msg";
   if (!recipients.length) { $("emailMsg").textContent = "Add at least one recipient."; $("emailMsg").className = "msg err"; return; }
@@ -1643,14 +1527,17 @@ $("saveEmail").onclick = async () => {
   if ($("autoSend").checked && (!sendTime || !sendTimezone)) {
     $("emailMsg").textContent = "Choose a time and timezone."; $("emailMsg").className = "msg err"; return;
   }
-  const path = emailMode === "manager"
-    ? "/api/team/settings?organizationId=" + encodeURIComponent(orgId)
-    : "/api/settings";
   $("saveEmail").disabled = true;
-  const r = await api(path, { method:"POST", body: JSON.stringify({ recipients, sendDay, sendTime, sendTimezone }) });
-  $("saveEmail").disabled = false;
-  if (r.ok) { $("emailMsg").textContent = "Saved."; $("emailMsg").className = "msg ok"; }
-  else { const e = await r.json().catch(()=>({})); $("emailMsg").textContent = e.error || "Save failed."; $("emailMsg").className = "msg err"; }
+  try {
+    const response = await api(context.path, { method:"POST", body: JSON.stringify({ recipients, sendDay, sendTime, sendTimezone }) });
+    const data = await response.json();
+    if (version !== emailLoadVersion) return;
+    if (!response.ok) throw new Error(data.error || "Save failed.");
+    $("emailMsg").textContent = "Saved."; $("emailMsg").className = "msg ok";
+  } catch (error) {
+    if (version !== emailLoadVersion) return;
+    $("emailMsg").textContent = error.message || "Save failed."; $("emailMsg").className = "msg err";
+  } finally { if (version === emailLoadVersion) $("saveEmail").disabled = false; }
 };
 
 // ---- CSV preview ----

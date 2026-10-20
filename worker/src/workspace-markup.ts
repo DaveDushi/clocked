@@ -1,7 +1,7 @@
 // Signed-in workspace: Timesheets and Stats pages, plus its dialogs. Settings keeps
 // the existing device, privacy, delivery, working-hours and inactivity controls and
 // their element ids, so their established handlers still drive them.
-const SETTINGS_ICON = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.4M12 18.8v2.4M4.2 7.5l2.1 1.2M17.7 15.3l2.1 1.2M4.2 16.5l2.1-1.2M17.7 8.7l2.1-1.2M7 12a5 5 0 1 0 10 0 5 5 0 0 0-10 0"/></svg>`;
+const SETTINGS_ICON = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9.5 3-.5 2a7.5 7.5 0 0 0-1.8 1L5.3 5.5 3 9.5 4.5 11a7.5 7.5 0 0 0 0 2L3 14.5l2.3 4 1.9-.5A7.5 7.5 0 0 0 9 19l.5 2h5l.5-2a7.5 7.5 0 0 0 1.8-1l1.9.5 2.3-4-1.5-1.5a7.5 7.5 0 0 0 0-2L21 9.5l-2.3-4-1.9.5A7.5 7.5 0 0 0 15 5l-.5-2z"/><circle cx="12" cy="12" r="3"/></svg>`;
 
 export const WORKSPACE_MARKUP = /* html */ `
 <div id="workspace" class="ws hidden">
@@ -63,22 +63,25 @@ export const WORKSPACE_MARKUP = /* html */ `
     <div class="ws-dialog wide ws-settings">
       <div class="ws-dialog-head"><h2 id="dlgSettingsTitle">Settings</h2><button type="button" class="text-button" data-close aria-label="Close">&times;</button></div>
 
+      <div class="ws-settings-tabs" role="tablist" aria-label="Settings scope">
+        <button id="settingsPersonalTab" type="button" role="tab" aria-controls="settingsPersonalPanel" aria-selected="true">Personal settings</button>
+        <button id="settingsTeamTab" class="hidden" hidden type="button" role="tab" aria-controls="settingsTeamPanel" aria-selected="false" tabindex="-1">Team settings</button>
+      </div>
+      <div id="settingsPersonalPanel" role="tabpanel" aria-labelledby="settingsPersonalTab"><div id="personalDeliverySlot"></div></div>
+      <div id="settingsTeamPanel" role="tabpanel" aria-labelledby="settingsTeamTab" hidden><div id="teamDeliverySlot"></div></div>
       <details id="setDelivery">
         <summary><span id="emailTitle">Timesheet delivery</span></summary>
         <div class="body">
-          <p class="hint" id="emailHint"></p>
+          <p class="hint ws-settings-explainer" id="emailHint"></p>
           <div id="emailReadonly" class="hidden"></div>
           <div id="emailEdit">
             <div id="recipients" class="recipients"></div>
             <div class="schedule">
               <label class="check"><input type="checkbox" id="autoSend"> Email automatically each month</label>
               <div id="sendDayWrap" class="sendday">
-                <span>Send on the</span>
-                <select id="sendDay" aria-label="Day of month"></select>
-                <span>at</span>
-                <input id="sendTime" type="time" step="60" aria-label="Delivery time" />
-                <span>in</span>
-                <input id="sendTimezone" type="text" list="sendTimezones" maxlength="100" placeholder="Timezone" aria-label="Delivery timezone" autocomplete="off" />
+                <div class="ws-settings-field"><label for="sendDay">Day of month</label><select id="sendDay" aria-label="Day of month"></select></div>
+                <div class="ws-settings-field"><label for="sendTime">Delivery time</label><input id="sendTime" type="time" step="60" aria-label="Delivery time" /></div>
+                <div class="ws-settings-field"><label for="sendTimezone">Timezone</label><input id="sendTimezone" type="text" list="sendTimezones" maxlength="100" placeholder="Timezone" aria-label="Delivery timezone" autocomplete="off" /></div>
                 <datalist id="sendTimezones"></datalist>
               </div>
             </div>
@@ -92,25 +95,23 @@ export const WORKSPACE_MARKUP = /* html */ `
       </details>
 
       <details id="setWorkingHours" class="hidden">
-        <summary><span>Default working hours<small>Team default, or override it for one person from their timesheet</small></span></summary>
+        <summary><span>Default working hours</span></summary>
         <div class="body" id="teamHoursSlot">
           <div id="workingHoursEditor">
-            <p class="hint">Hours use each computer's local time and control the after-hours prompt. They do not stop tracking at shift end. Updated desktop apps apply changes on their next sync.</p>
             <div id="hoursTargetField"><label for="hoursTarget">Schedule for</label>
             <select id="hoursTarget"><option value="">Team default</option></select></div>
-            <label for="hoursMode">Working-hours policy</label>
+            <div class="ws-settings-field"><div class="ws-settings-label"><label for="hoursMode">Working-hours policy</label><span class="ws-settings-help"><button type="button" aria-label="About working hours" aria-describedby="hoursHelp">?</button><span id="hoursHelp" role="tooltip">Uses each computer's local time. Overnight shifts belong to the day they start.</span></span></div>
             <select id="hoursMode" disabled>
               <option value="inherit">Use personal settings</option>
               <option value="scheduled">Set working hours</option>
               <option value="disabled">Turn off the after-hours prompt</option>
-            </select>
-            <fieldset id="hoursFields" disabled style="border:0;padding:0;margin:12px 0">
+            </select></div>
+            <fieldset id="hoursFields" disabled>
               <div class="row">
                 <div><label for="hoursStart">Shift starts</label><input id="hoursStart" type="time" step="60" value="09:00" /></div>
                 <div><label for="hoursEnd">Shift ends</label><input id="hoursEnd" type="time" step="60" value="17:00" /></div>
               </div>
-              <div id="hoursDays" style="display:flex;flex-wrap:wrap;gap:12px;margin-top:12px" role="group" aria-label="Shift start days"></div>
-              <p class="hint">Choose the days a shift starts. For overnight hours, Friday 22:00 to 06:00 includes Saturday morning.</p>
+              <div id="hoursDays" class="ws-settings-days" role="group" aria-label="Shift start days"></div>
             </fieldset>
             <button id="saveWorkingHours" class="primary" type="button" disabled>Save working hours</button>
             <div id="workingHoursMsg" class="msg" role="status"></div>
@@ -121,32 +122,29 @@ export const WORKSPACE_MARKUP = /* html */ `
       <details id="setInactivity" class="hidden">
         <summary><span>Inactivity limit<small id="inactivitySummary">Loading team policy</small></span></summary>
         <div class="body">
-          <p class="hint">Apply one inactivity limit to everyone on this team so idle gaps mean the same thing on every computer. Updated desktop apps apply it on their next sync and keep it while offline. Clock-out time is backdated to the last input. Calls suppress the warning and delay clock-out.</p>
-          <label for="inactivityMode">Team inactivity policy</label>
+          <div class="ws-settings-field"><label for="inactivityMode">Team inactivity policy</label>
           <select id="inactivityMode" disabled>
             <option value="personal">Use personal desktop settings</option>
             <option value="team">Set team limit and warning</option>
-          </select>
-          <fieldset id="inactivityFields" disabled style="border:0;padding:0;margin:12px 0">
+          </select></div>
+          <fieldset id="inactivityFields" disabled>
             <div class="row">
               <div><label for="inactivityLimit">Clock out after idle minutes</label><input id="inactivityLimit" type="number" min="1" max="1440" step="1" value="15" required /></div>
-              <div><label for="inactivityWarning">Warn minutes before clock-out</label><input id="inactivityWarning" type="number" min="0" max="1439" step="1" value="2" required /></div>
+              <div><div class="ws-settings-label"><label for="inactivityWarning">Warn minutes before clock-out</label><span class="ws-settings-help"><button type="button" aria-label="About inactivity warnings" aria-describedby="inactivityHelp">?</button><span id="inactivityHelp" role="tooltip">Use 0 for no warning. The warning must be shorter than the idle limit.</span></span></div><input id="inactivityWarning" type="number" min="0" max="1439" step="1" value="2" required /></div>
             </div>
-            <p class="hint">The warning must be shorter than the limit. Set it to 0 to turn off the warning.</p>
           </fieldset>
-          <p class="hint">Changes apply going forward. Recorded sessions do not store the limit that was in effect, so earlier idle gaps may reflect each computer's own setting.</p>
           <button id="saveInactivity" class="primary" type="button" disabled>Save inactivity policy</button>
           <div id="inactivityMsg" class="msg" role="status"></div>
         </div>
       </details>
 
       <details id="setMyHours">
-        <summary><span>Working hours<small>The after-hours prompt on your computers</small></span></summary>
+        <summary><span>Working hours</span></summary>
         <div class="body"><p id="workingHoursSummary" class="hint" role="status"></p></div>
       </details>
 
       <details id="setDesktop">
-        <summary><span>Desktop app and devices<small>Connect the tray or menu-bar app</small></span></summary>
+        <summary><span>Desktop app and devices</span></summary>
         <div class="body">
           <div id="verifyBanner" class="msg err hidden" role="status">
             Verify your email to create a sync token.
@@ -157,13 +155,12 @@ export const WORKSPACE_MARKUP = /* html */ `
             <a class="btn" href="/download/win">Download for Windows</a>
             <a class="btn" href="/download/extension">Chrome extension</a>
           </div>
-          <p class="hint">Install the tray app, add a token for this device, and paste it into the app's Settings. The browser extension on that computer uses the same device token.</p>
-          <label>Newly created token</label>
+          <div class="ws-settings-field"><div class="ws-settings-label"><span class="field-label" id="tokenLabel">Newly created token</span><span class="ws-settings-help"><button type="button" aria-label="About device tokens" aria-describedby="tokenHelp">?</button><span id="tokenHelp" role="tooltip">Copy a new token now. It is shown once and grants access to your account. Keep it private.</span></span></div>
           <div class="tokenbox">
-            <div id="token" class="token" title="Your Bearer token">&middot;&middot;&middot;&middot;&middot;&middot;&middot;&middot;</div>
+            <div id="token" class="token" title="Your Bearer token" aria-labelledby="tokenLabel">&middot;&middot;&middot;&middot;&middot;&middot;&middot;&middot;</div>
             <button id="copyToken" type="button" disabled>Copy</button>
           </div>
-          <p class="token-help">Shown in full only once. Treat it like a password: it can sync sessions and open your dashboard from the tray app.</p>
+          </div>
           <div class="token-create">
             <input id="tokenName" type="text" maxlength="64" placeholder="Device name, e.g. Personal laptop" autocomplete="off" aria-label="Device name" />
             <button id="mintToken" class="primary" type="button">Add device</button>
@@ -174,9 +171,9 @@ export const WORKSPACE_MARKUP = /* html */ `
       </details>
 
       <details id="setPrivacy">
-        <summary><span>Privacy<small>Export or delete your cloud data</small></span></summary>
+        <summary><span>Privacy</span></summary>
         <div class="body">
-          <p class="hint">Download a copy of your cloud sessions and project totals, or erase them from this host.</p>
+          <p class="hint">Deleting cloud data is permanent.</p>
           <div class="inline-actions">
             <button id="exportData" type="button">Export my data</button>
             <button id="deleteData" class="danger" type="button">Delete cloud data</button>
@@ -186,18 +183,18 @@ export const WORKSPACE_MARKUP = /* html */ `
       </details>
 
       <details id="setTeamCreate" class="hidden">
-        <summary><span>Start a team<small>Invite people and review their hours in one place</small></span></summary>
+        <summary><span>Start a team</span></summary>
         <div class="body">
-          <p class="hint">Free for up to 50 members. Your own timesheet moves into the team.</p>
-          <label for="teamCreateName">Team name</label>
-          <input id="teamCreateName" type="text" placeholder="Acme Inc." autocomplete="organization" maxlength="80" />
+          <p class="hint">Up to 50 members, free.</p>
+          <div class="ws-settings-field"><label for="teamCreateName">Team name</label>
+          <input id="teamCreateName" type="text" placeholder="Acme Inc." autocomplete="organization" maxlength="80" /></div>
           <div class="ws-actions-row"><button type="button" id="teamCreateBtn" class="primary">Create team</button></div>
           <div id="teamCreateMsg" class="msg" role="status"></div>
         </div>
       </details>
 
       <details id="setOperator" class="hidden">
-        <summary><span>Invitations<small>Invite individuals and new team managers</small></span></summary>
+        <summary><span>Invitations</span></summary>
         <div class="body" id="operatorSlot"></div>
       </details>
 

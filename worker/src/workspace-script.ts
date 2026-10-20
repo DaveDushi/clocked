@@ -718,43 +718,66 @@ async function wsOpenPreview(userId, opener) {
 
 // ---- settings ----
 function wsShow(id, visible) { $(id).classList.toggle("hidden", !visible); }
-function wsOpenSettings(opener, section) {
-  const team = wsIsTeam(), worker = ws.mode === "worker";
-  $("dlgSettingsTitle").textContent = team ? "Team settings" : "Settings";
-  $("emailTitle").textContent = team ? "Timesheet delivery" : worker ? "Your timesheet delivery" : "Timesheet delivery";
-  $("emailHint").textContent = team ? "Where every member's timesheet is emailed, and when. Applies to the whole team."
-    : worker ? "Your team manager sets where your timesheet is emailed." : "Where your timesheet is emailed, and when.";
-  $("emailEdit").classList.toggle("hidden", worker);
-  $("emailReadonly").classList.toggle("hidden", !worker);
-  wsShow("setWorkingHours", team);
-  wsShow("setInactivity", team);
-  wsShow("setMyHours", !team);
-  const ownsSingle = ws.mode === "personal" && orgPlanKey === "single";
-  wsShow("setTeamCreate", !team && !worker && (ws.me.operator || ownsSingle));
-  wsShow("setOperator", !!ws.me.operator);
-  wsShow("setPlan", team);
-  if (team) {
-    const unlimited = orgCap >= 1000000;
-    $("planSummary").textContent = (orgPlanKey === "enterprise" ? "Enterprise" : "Team") + " · " + memberCount + (unlimited ? "" : " of " + orgCap) + " member seats used";
-    $("teamHoursSlot").appendChild($("workingHoursEditor"));
-    $("hoursTargetField").classList.add("hidden");
-    $("hoursTarget").value = "";
-    loadWorkingHoursEditor();
-    loadInactivityEditor();
+let settingsScope = "personal";
+function wsInvalidateSettings() {
+  emailSettingsContext = null; ++emailLoadVersion; ++hoursLoadVersion; ++inactivityLoadVersion;
+  $("saveEmail").disabled = true; $("saveWorkingHours").disabled = true; $("saveInactivity").disabled = true;
+}
+function wsSelectSettings(scope) {
+  wsInvalidateSettings();
+  const canManage = wsIsTeam() && isManagerRoleC(orgRole);
+  const team = scope === "team" && canManage;
+  settingsScope = team ? "team" : "personal";
+  $("settingsTeamTab").hidden = !canManage; wsShow("settingsTeamTab", canManage);
+  for (const name of ["Personal", "Team"]) {
+    const selected = name === (team ? "Team" : "Personal");
+    $("settings" + name + "Tab").setAttribute("aria-selected", String(selected));
+    $("settings" + name + "Tab").tabIndex = selected ? 0 : -1;
+    $("settings" + name + "Panel").hidden = !selected;
   }
-  loadEmailSettings();
+  for (const id of ["setMyHours", "setDesktop", "setPrivacy", "setTeamCreate", "setOperator"]) $("settingsPersonalPanel").appendChild($(id));
+  for (const id of ["setWorkingHours", "setInactivity", "setPlan"]) $("settingsTeamPanel").appendChild($(id));
+  $(team ? "teamDeliverySlot" : "personalDeliverySlot").appendChild($("setDelivery"));
+  $("emailTitle").textContent = "Timesheet delivery";
+  $("emailMsg").textContent = "";
+  wsShow("emailEdit", false); wsShow("emailReadonly", true);
+  $("emailReadonly").textContent = "Loading delivery settings...";
+  wsShow("setWorkingHours", canManage); wsShow("setInactivity", canManage); wsShow("setPlan", canManage);
+  const ownsSingle = ws.mode === "personal" && orgPlanKey === "single";
+  wsShow("setTeamCreate", ws.mode === "personal" && (ws.me.operator || ownsSingle));
+  wsShow("setOperator", !!ws.me.operator);
+  if (team) {
+    $("planSummary").textContent = (orgPlanKey === "enterprise" ? "Enterprise" : "Team") + " \u00b7 " + memberCount + (orgCap >= 1000000 ? "" : " of " + orgCap) + " member seats used";
+    $("teamHoursSlot").appendChild($("workingHoursEditor"));
+    $("hoursTargetField").classList.add("hidden"); $("hoursTarget").value = "";
+    loadWorkingHoursEditor(); loadInactivityEditor();
+  } else loadWorkingHoursSummary();
+  loadEmailSettings(team ? { kind: "team", path: "/api/team/settings?organizationId=" + encodeURIComponent(orgId) } : { kind: "personal", path: "/api/settings" });
+}
+$("settingsPersonalTab").onclick = () => wsSelectSettings("personal");
+$("settingsTeamTab").onclick = () => wsSelectSettings("team");
+$("dlgSettings").querySelector("[role=tablist]").addEventListener("keydown", (event) => {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  wsSelectSettings(event.key === "Home" ? "personal" : event.key === "End" ? "team" : settingsScope === "personal" ? "team" : "personal");
+  $(settingsScope === "team" ? "settingsTeamTab" : "settingsPersonalTab").focus();
+});
+for (const id of ["dlgSettings", "dlgMember"]) $(id).addEventListener("close", wsInvalidateSettings);
+function wsOpenSettings(opener, section) {
+  $("dlgSettingsTitle").textContent = "Settings";
+  wsSelectSettings(section === "setDelivery" && wsIsTeam() ? "team" : "personal");
   loadToken();
-  loadWorkingHoursSummary();
   if (section) $(section).open = true;
   wsOpenDialog("dlgSettings", opener);
-  if (section) { $(section).scrollIntoView({ block: "nearest" }); const summary = $(section).querySelector("summary"); if (summary) summary.focus({ preventScroll: true }); }
+  if (section) { $(section).scrollIntoView({ block: "nearest" }); $(section).querySelector("summary").focus({ preventScroll: true }); }
 }
 new MutationObserver(() => { if ($("inactivityMsg").classList.contains("ok")) wsLoadPolicy(); })
   .observe($("inactivityMsg"), { attributes: true, attributeFilter: ["class"] });
 
 function wsOpenMemberSettings(id, opener) {
   const m = wsMember(id);
-  if (!m) return;
+  if (!m || !wsIsTeam() || !isManagerRoleC(orgRole)) return;
+  wsInvalidateSettings();
   ws.settingsMember = id;
   $("dlgMemberTitle").textContent = m.name;
   $("memberSettingsSub").textContent = m.email + " · " + (wsRoleTag(m.role) || "Worker");
@@ -950,7 +973,9 @@ async function startWorkspace(me) {
   ws.pending = []; ws.policy = undefined; ws.memberData = null; ws.memberKey = "";
   personalView.clear(true); memberView.clear(true);
   $("wsName").textContent = ws.mode === "personal" ? "Personal account" : orgName;
-  $("wsSettings").setAttribute("aria-label", wsIsTeam() ? "Team settings" : "Settings");
+  $("wsSettings").setAttribute("aria-label", "Settings");
+  $("settingsTeamTab").hidden = !(wsIsTeam() && isManagerRoleC(orgRole));
+  wsShow("settingsTeamTab", !$("settingsTeamTab").hidden);
   $("wsAccount").textContent = wsModel.initials(meEmail);
   // The operator invitation form lives in Settings rather than above the workspace.
   const operatorCard = $("operatorInvites");

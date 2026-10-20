@@ -201,27 +201,70 @@ export const WORKSPACE_STYLE = /* css */ `
   .ws-send-total strong { color:var(--fg); font-weight:400; }
   .ws-send-footer { position:sticky; bottom:-24px; background:#10121a; padding:4px 0 0; }
   .ws-results { font-size:11px; margin-top:10px; color:var(--err); }
-  .ws-settings details { border-top:1px solid var(--border); padding:15px 0; }
-  .ws-settings details > summary { cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:15px; list-style:none; font-size:13px; }
+  .ws-settings [hidden] { display:none !important; }
+  .ws-settings-tabs { display:flex; gap:10px; margin-bottom:20px; border-bottom:1px solid var(--border); }
+  .ws-settings-tabs [role=tab] { background:none; border:0; border-radius:0; padding:12px 8px; color:var(--wsmuted); }
+  .ws-settings-tabs [aria-selected=true] { color:var(--fg); box-shadow:inset 0 -2px var(--amber); }
+  .ws-settings { --settings-button-gap:10px; }
+  .ws-settings .ws-dialog-head { padding-bottom:20px; }
+  .ws-settings details { border-top:1px solid var(--border); padding:0; }
+  .ws-settings details > summary { cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 0; list-style:none; font-size:13px; line-height:1.5; }
   .ws-settings details > summary::-webkit-details-marker { display:none; }
-  .ws-settings details > summary::after { content:"+"; color:var(--wsmuted); font-family:var(--mono); }
+  .ws-settings details > summary::after { content:"+"; color:var(--wsmuted); font-family:var(--mono); flex:none; }
   .ws-settings details[open] > summary::after { content:"−"; }
-  .ws-settings summary small { display:block; margin-top:4px; font-size:11px; }
-  .ws-settings .body { padding-top:12px; }
-  .ws-settings .body > .hint, .ws-settings .hint { font-size:12px; color:var(--wsmuted); margin:8px 0 12px; line-height:1.55; }
-  .ws-settings .row { gap:10px; flex-wrap:wrap; }
-  .ws-settings .row > div { min-width:140px; }
-  .ws-settings input:not([type=checkbox]), .ws-settings select { width:100%; }
-  .ws-settings .sendday select, .ws-settings .sendday input { width:auto; }
-  .ws-settings .recipient .del, .ws-settings .mentry .del { width:38px; padding:8px 0; }
-  .ws-settings .check { font-size:13px; }
-  .ws-settings label { margin:10px 0 6px; }
-  .ws-settings .check { margin:0; }
-  .ws-settings fieldset label.check { margin:0; }
-  .ws-settings .card { background:none; border:0; box-shadow:none; padding:0; margin:0; }
-  .ws-settings .msg { font-size:12px; }
-  .ws-settings .setupbox { display:flex; gap:8px; flex-wrap:wrap; margin:6px 0 12px; }
+  .ws-settings summary small { display:block; margin-top:4px; font-size:11px; line-height:1.5; }
+  .ws-settings details[open] > summary { padding-bottom:0; }
+  .ws-settings .body { display:grid; gap:16px; padding:16px 0 24px; }
+  .ws-settings .body > *, .ws-settings .row > div { min-width:0; }
+  .ws-settings .body .hint, .ws-settings .token-help { font-size:12px; color:var(--wsmuted); margin:0; line-height:1.6; }
+  .ws-settings .body .hint:empty, .ws-settings .msg:empty, .ws-settings .ws-feedback:empty { display:none; }
+  .ws-settings #emailEdit, .ws-settings #workingHoursEditor { display:grid; gap:16px; min-width:0; }
+  .ws-settings label, .ws-settings .field-label { display:block; margin:0 0 6px; line-height:1.5; }
+  .ws-settings fieldset { border:0; padding:0; margin:0; min-width:0; display:grid; gap:10px; }
+  .ws-settings .row { gap:16px; flex-wrap:wrap; align-items:flex-end; }
+  .ws-settings .row > div { flex:1 1 200px; }
+  .ws-settings input:not([type=checkbox]):not([type=radio]), .ws-settings select { width:100%; max-width:100%; }
+  .ws-settings .check, .ws-settings fieldset label.check { display:flex; align-items:flex-start; gap:8px; margin:0; font-size:12px; line-height:1.6; }
+  .ws-settings input[type=checkbox], .ws-settings input[type=radio] { flex:none; width:16px; height:16px; margin:2px 0 0; padding:0; accent-color:var(--amber); }
+  .ws-settings .ws-settings-days { display:flex; flex-wrap:wrap; gap:10px 16px; }
+  .ws-settings .recipients { gap:10px; margin:0; }
+  .ws-settings .recipient, .ws-settings .mentry { gap:var(--settings-button-gap); min-width:0; }
+  .ws-settings .recipient input { min-width:0; }
+  .ws-settings .recipient .del, .ws-settings .mentry .del { flex:none; width:38px; padding:8px 0; }
+  .ws-settings .schedule { gap:12px; margin:0; }
+  .ws-settings .sendday { display:grid; grid-template-columns:minmax(100px,.8fr) minmax(120px,1fr) minmax(0,1.6fr); align-items:end; gap:12px; padding:0 0 0 24px; }
+  .ws-settings .sendday > div { min-width:0; }
+  .ws-settings .sendday input, .ws-settings .sendday select { width:100%; min-height:40px; }
+  .ws-settings .ws-actions-row, .ws-settings .inline-actions, .ws-settings .setupbox,
+  .ws-settings .tokenbox, .ws-settings .token-create, .ws-settings .token-row,
+  .ws-settings .invitelink { gap:var(--settings-button-gap); margin:0; }
+  .ws-settings .ws-actions-row.split { justify-content:flex-start; }
+  .ws-settings .body > button, .ws-settings #workingHoursEditor > button { justify-self:start; }
+  .ws-settings .setupbox { display:flex; flex-wrap:wrap; }
   .ws-settings .tokenbox .token { font-size:12px; }
+  .ws-settings .token-create { flex-wrap:wrap; }
+  .ws-settings .token-create input { flex:1 1 200px; }
+  .ws-settings .token-list { margin:0; }
+  .ws-settings .token-list:empty { display:none; }
+  .ws-settings .card { background:none; border:0; box-shadow:none; padding:0; margin:0; }
+  .ws-settings .msg, .ws-settings .ws-feedback { font-size:12px; margin:0; line-height:1.6; overflow-wrap:anywhere; }
+  .ws-settings .hidden, .ws-settings #emailEdit.hidden, .ws-settings #workingHoursEditor.hidden,
+  .ws-settings .ws-settings-explainer { display:none; }
+  .ws-settings .ws-settings-label { display:flex; align-items:center; justify-content:space-between; gap:var(--settings-button-gap); margin-bottom:6px; min-height:24px; }
+  .ws-settings .ws-settings-label label, .ws-settings .ws-settings-label .field-label { margin:0; }
+  .ws-settings .ws-settings-help { position:relative; flex:none; display:inline-flex; }
+  .ws-settings .ws-settings-help > button { width:24px; height:24px; padding:0; border-radius:50%; color:var(--wsmuted); font-size:12px; }
+  .ws-settings .ws-settings-help [role=tooltip] { position:absolute; z-index:5; right:0; top:calc(100% + 6px); width:240px; max-width:calc(100vw - 72px); padding:10px 12px; border:1px solid #485064; border-radius:8px; background:#1b1f2b; color:var(--fg); box-shadow:0 8px 24px rgba(0,0,0,.35); font-size:12px; line-height:1.6; visibility:hidden; opacity:0; pointer-events:none; }
+  .ws-settings .ws-settings-help:hover [role=tooltip], .ws-settings .ws-settings-help:focus-within [role=tooltip] { visibility:visible; opacity:1; }
+  @media (max-width:540px) {
+    .ws-settings .sendday { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+    .ws-settings .sendday .ws-settings-field:last-of-type { grid-column:1 / -1; }
+    .ws-settings .setupbox > .btn { flex:1 1 180px; }
+    .ws-settings .token-row { flex-wrap:wrap; }
+    .ws-settings .token-row-main { flex-basis:100%; }
+    .ws-settings .token-row-meta { overflow-wrap:anywhere; }
+    .ws-settings button, .ws-settings a.btn { white-space:normal; }
+  }
   .ws-plan { border-top:1px solid var(--border); padding:15px 0; font-size:13px; }
   .ws-plan small { display:block; margin-top:4px; font-size:11px; }
   .ws-invite-row { display:flex; align-items:center; justify-content:space-between; gap:15px; padding:12px 0; border-top:1px solid var(--border); font-size:12px; }
