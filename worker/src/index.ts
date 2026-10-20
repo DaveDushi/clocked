@@ -27,7 +27,8 @@ import {
 } from "./marketing-agent";
 import { buildAndSendReport, sendContactSales, sendMonthlyReports } from "./email";
 import { handleActivityIngest, projectTotalsForPeriod } from "./activity";
-import { handleIngest } from "./ingest";
+import { handleIngest, deleteSession } from "./ingest";
+import { handleMobileUsage, mobileUsageForPeriod } from "./mobile-usage";
 import {
   buildHoursReport,
   buildReportCsv,
@@ -57,6 +58,7 @@ import {
 } from "./schedule";
 import {
   getOrCreateToken,
+  hashToken,
   listTokens,
   MAX_DEVICE_TOKENS,
   mintToken,
@@ -277,7 +279,8 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const report = await buildHoursReport(env, period, user.id, schedule.timezone);
     const projects = await projectTotalsForPeriod(env, user.id, period);
     const sessions = await listSessionsForPeriod(env, period, user.id, schedule.timezone);
-    return json({ ...report, projects, sessions });
+    const screenTime = await mobileUsageForPeriod(env, user.id, period);
+    return json({ ...report, projects, sessions, screenTime });
   }
 
   // ---- Team (manager) API.
@@ -605,6 +608,10 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     );
   }
 
+  if (req.method === "POST" && url.pathname === "/mobile/usage") {
+    return handleMobileUsage(req, env);
+  }
+
   // ---- Desktop-app (Bearer-token) API.
   if (req.method === "POST" && url.pathname === "/sessions") {
     if (!(await rateLimitAllowDurable(env.DB, `sessions:${ip}`, 60, 60_000))) {
@@ -619,7 +626,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
       if (!(await rateLimitAllowDurable(env.DB, `sessions:user:${userId}`, 120, 60_000))) {
         return json({ error: "too many requests" }, 429);
       }
-      return handleIngest(req, env, userId);
+      return handleIngest(req, env, userId, await hashToken(bearer));
     }
     // Legacy global token: opt-in only (ALLOW_LEGACY_BEARER_TOKEN=true). Off by default.
     if (legacyBearerEnabled(env) && checkAuth(req, env)) {
@@ -806,23 +813,7 @@ async function handleManualSession(
     if (!id || id.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/.test(id)) {
       return json({ error: "id required" }, 400);
     }
-    // Any owned closed session — managers use this to drop bad desktop clockings.
-    const res = await env.DB.prepare(
-      `DELETE FROM sessions WHERE id = ? AND user_id = ? AND end_utc IS NOT NULL`,
-    )
-      .bind(id, userId)
-      .run();
-    if (!res.meta.changes) return json({ error: "not found" }, 404);
-    // Tombstone so a later desktop re-sync of the same id cannot resurrect it.
-    try {
-      await env.DB.prepare(
-        `INSERT OR IGNORE INTO session_deletions (id, user_id, deleted_at) VALUES (?, ?, ?)`,
-      )
-        .bind(id, userId, new Date().toISOString())
-        .run();
-    } catch {
-      /* table may not exist until migration applied — delete still succeeded */
-    }
+    if (!(await deleteSession(env, userId, id))) return json({ error: "not found" }, 404);
     return json({ ok: true });
   }
 
@@ -918,12 +909,17 @@ async function handleDataExport(env: Env, user: SessionUser): Promise<Response> 
     user: { id: user.id, email: user.email },
     sessions: sessions.results ?? [],
     activity,
+    screenTime: (await env.DB.prepare(
+      `SELECT device_id, day, selection_id, platform, timezone, duration_seconds, updated_at
+         FROM mobile_usage WHERE user_id = ? ORDER BY day, device_id, selection_id`,
+    ).bind(user.id).all()).results,
   };
   return new Response(JSON.stringify(body, null, 2), {
     status: 200,
     headers: {
       "content-type": "application/json",
       "content-disposition": `attachment; filename="clocked-export-${user.id.slice(0, 8)}.json"`,
+      "cache-control": "no-store",
     },
   });
 }
@@ -931,19 +927,17 @@ async function handleDataExport(env: Env, user: SessionUser): Promise<Response> 
 /** Wipe product data for a user (sessions, activity, tokens, settings). */
 async function deleteUserClockedData(env: Env, userId: string): Promise<void> {
   const steps = [
+    env.DB.prepare(`DELETE FROM mobile_usage WHERE user_id = ?`).bind(userId),
     env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?`).bind(userId),
     env.DB.prepare(`DELETE FROM api_token WHERE userId = ?`).bind(userId),
     env.DB.prepare(`DELETE FROM user_settings WHERE userId = ?`).bind(userId),
     env.DB.prepare(`DELETE FROM activity_day WHERE user_id = ?`).bind(userId),
     env.DB.prepare(`DELETE FROM session_deletions WHERE user_id = ?`).bind(userId),
   ];
-  for (const s of steps) {
-    try {
-      await s.run();
-    } catch (e) {
-      console.error("deleteUserClockedData step failed:", String((e as Error)?.message ?? e));
-    }
-  }
+  // Token revocation and all product-data removal share one transaction. Ingest
+  // checks the token again inside its write transaction, so an already-started
+  // request cannot restore data after this wipe commits.
+  await env.DB.batch(steps);
 }
 
 function parseSendSchedule(body: {
@@ -980,6 +974,6 @@ function isEmail(s: string): boolean {
 function json(obj: unknown, status = 200): Response {
   return new Response(JSON.stringify(obj), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "cache-control": "no-store" },
   });
 }

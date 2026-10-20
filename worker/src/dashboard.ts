@@ -1045,6 +1045,13 @@ const HTML = /* html */ `<!doctype html>
           <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">By project</div>
           <div id="projectList"></div>
         </div>
+        <section id="screenTimeSection" style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)" aria-labelledby="screenTimeHeading">
+          <h3 id="screenTimeHeading">Screen Time usage measurements</h3>
+          <p class="hint">These cumulative measurements may be threshold lower bounds. They have no session timestamps and are excluded from timesheet totals, timelines, CSV reports, and email hours. Overlap with desktop time cannot be determined.</p>
+          <p class="hint">Each device/day uses its largest selection snapshot. Overlapping selections and devices are never added together. Measurements retain the device's recorded local dates; selection changes cannot reconstruct distinct work time.</p>
+          <div id="screenTimeSummary" class="muted" role="status">No synced measurements for this month.</div>
+          <div id="screenTimeList" class="tablewrap"></div>
+        </section>
         <div id="hoursMsg" class="msg" role="status"></div>
         <details class="soft" id="manualEditWrap">
           <summary>Add or remove time</summary>
@@ -1075,6 +1082,7 @@ const HTML = /* html */ `<!doctype html>
       </div>
     </div>
 
+    <!-- Cumulative Screen Time is separate from exact interval accounting. -->
     <!-- Desktop sync -->
     <div id="panel-desktop" class="dash-panel">
       <div class="card">
@@ -2361,6 +2369,7 @@ if (deleteBtn) deleteBtn.onclick = async () => {
 // ---- hours ----
 let hoursSessions = [];
 let selectedDay = "";
+let hoursLoadVersion = 0;
 
 function rowHtml(x, max, i, selected) {
   const dt = new Date(x.date + "T00:00:00");
@@ -2548,12 +2557,15 @@ function closeTimeline() {
 }
 
 async function loadHours() {
+  const version = ++hoursLoadVersion;
+  renderScreenTime(null);
   const period = $("month").value;
   if (!period) return;
   $("hoursMsg").textContent = ""; $("hoursMsg").className = "msg";
   $("rows").innerHTML = "<tr class='empty'><td colspan='3'>Loading&hellip;</td></tr>";
   closeTimeline();
   const r = await api("/api/hours?period=" + period);
+  if (version !== hoursLoadVersion) return;
   if (!r.ok) {
     $("rows").innerHTML = "";
     hoursSessions = [];
@@ -2561,6 +2573,8 @@ async function loadHours() {
     return;
   }
   const d = await r.json();
+  if (version !== hoursLoadVersion) return;
+  renderScreenTime(d.screenTime);
   hoursSessions = d.sessions || [];
   const max = d.days.reduce((a,x) => Math.max(a, x.minutes), 0) || 1;
   $("rows").innerHTML = d.days.length
@@ -2576,6 +2590,22 @@ async function loadHours() {
   renderProjects(d.projects || []);
   loadManualEntries();
   if (openMemberId) loadTeamMemberHours(); // keep an open team member in sync with the month
+}
+
+function renderScreenTime(data) {
+  const summary = $("screenTimeSummary");
+  const list = $("screenTimeList");
+  list.innerHTML = "";
+  if (!data || !data.devices || !data.devices.length) {
+    summary.textContent = "No synced measurements for this month.";
+    return;
+  }
+  function duration(seconds) {
+    return Math.floor(seconds / 3600) + ":" + pad(Math.floor(seconds / 60) % 60) + ":" + pad(seconds % 60);
+  }
+  summary.textContent = "Largest single-device month measurement: " + duration(data.largestDeviceSeconds) + ". Hours:minutes:seconds, not exact worked time.";
+  list.innerHTML = "<table><thead><tr><th>Device local day</th><th>Device</th><th class='num'>Usage measurement</th></tr></thead><tbody>" +
+    data.devices.map((row) => "<tr><td>" + pvEsc(row.day) + "</td><td>" + pvEsc(row.deviceId) + "</td><td class='num'>" + duration(row.durationSeconds) + "</td></tr>").join("") + "</tbody></table>";
 }
 
 function renderProjects(list) {
@@ -2768,6 +2798,8 @@ $("signout").onclick = async () => {
       headers: { "content-type": "application/json" },
     });
   } catch (e) { /* still clear UI */ }
+  hoursLoadVersion++;
+  renderScreenTime(null);
   // Reset client state, then full reload so no cached session UI sticks around.
   show(false);
   setMode("signin");
