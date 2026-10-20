@@ -25,7 +25,9 @@ function recordingEnv() {
           };
         },
         async batch(stmts) {
-          inserts.push(...stmts.map((s) => s.args));
+          const writes = stmts.filter((s) => s.sql.includes("INSERT INTO sessions"));
+          inserts.push(...writes.map((s) => s.args));
+          return stmts.map((s) => ({ results: s.sql.includes("INSERT INTO sessions") ? [{ id: s.args[0] }] : [], meta: { changes: 1 } }));
         },
       },
     },

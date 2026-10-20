@@ -30,7 +30,21 @@ export function wallToUtc(
 ): Date {
   const guess = Date.UTC(y, m - 1, d, h, mi, s);
   const off = tzOffsetMs(new Date(guess), tz);
-  return new Date(guess - off);
+  const initial = guess - off;
+  let candidate = initial;
+  let previous = guess;
+  // UTC midnight can already be after a local DST change in positive-offset
+  // zones. Resolve the offset at the resulting instant, not only at the guess.
+  for (let i = 0; i < 4; i++) {
+    const next = guess - tzOffsetMs(new Date(candidate), tz);
+    if (next === candidate) return new Date(candidate);
+    // A nonexistent wall time oscillates across the gap. Preserve the existing
+    // schedule policy for that case instead of looping.
+    if (next === previous) return new Date(initial);
+    previous = candidate;
+    candidate = next;
+  }
+  return new Date(candidate);
 }
 
 export function localYMD(date: Date, tz: string): { y: number; m: number; d: number } {
@@ -70,8 +84,8 @@ export function monthBoundsUtc(period: string, tz: string): { start: Date; end: 
 export function nextLocalMidnightUtc(date: Date, tz: string): Date {
   const { y, m, d } = localYMD(date, tz);
   const guess = Date.UTC(y, m - 1, d + 1, 0, 0, 0); // Date.UTC rolls over month/year
-  const off = tzOffsetMs(new Date(guess), tz);
-  return new Date(guess - off);
+  const next = new Date(guess);
+  return wallToUtc(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), 0, 0, 0, tz);
 }
 
 const labelFmt = (tz: string) =>

@@ -1,0 +1,10 @@
+// Identity and signing. Override in Config/Local.xcconfig (git-ignored) or on
+// the xcodebuild command line; the App Group must be registered to your team.
+CLOCKED_BUNDLE_ID = com.daviddusi.clocked.ios
+CLOCKED_APP_GROUP = group.com.daviddusi.clocked
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+DEVELOPMENT_TEAM =
+CODE_SIGN_STYLE = Automatic
+
+#include? "Local.xcconfig"
