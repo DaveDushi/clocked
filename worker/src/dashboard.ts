@@ -7,8 +7,7 @@ import { WORKSPACE_STYLE } from "./workspace-style.js";
 // no assets). Auth is better-auth (cookies, same-origin fetch); data comes from
 // /api/hours, /api/settings, and /api/token. Served at GET /.
 //
-// New accounts require an invitation. Verified invitees join their team before
-// the dashboard exposes desktop sync and timesheets.
+// New accounts require an invitation. Team invitations require explicit consent.
 //
 // The lifecycle function is serialized below. Handwritten inline JS uses string concatenation.
 const HTML = /* html */ `<!doctype html>
@@ -665,8 +664,15 @@ ${WORKSPACE_STYLE}
     <div id="approvalGate" class="card hidden">
       <h3>Join with your invitation</h3>
       <p class="hint">Open the invitation sent to your account's email address to get access. If it expired, ask the person who invited you for a new one.</p>
+      <div id="teamInvitationDetails" class="hidden">
+        <h3>Join <span id="teamInvitationName"></span>?</h3>
+        <p>Your role will be <b id="teamInvitationRole"></b>.</p>
+        <p class="hint">Team managers can view, edit, and email reports of sessions that start after you join. Earlier sessions stay private. The team's timesheet delivery and working-hours policies will apply while this is your active team.</p>
+        <button id="acceptTeamInvitation" type="button">Accept invitation</button>
+      </div>
       <div id="invitationMsg" class="msg" role="status"></div>
       <button id="retryInvitation" class="ghost" type="button">Try again</button>
+      <button id="dismissTeamInvitation" class="ghost hidden" type="button">Not now</button>
     </div>
 
     <!-- Product UI — only after email verification. Tabbed to keep the page short. -->
@@ -975,15 +981,31 @@ function isManagerRoleC(role) {
 }
 function roleLabel(role) { return isManagerRoleC(role) ? "Manager" : "Worker"; }
 
-// If arriving from an invite link (/?invitation=ID) while signed in, accept it.
-async function acceptPendingInvite() {
+async function acceptPendingInvite(acceptTeam = false) {
   const params = new URLSearchParams(location.search);
   const individual = params.get("individualInvitation");
   const inv = individual || params.get("invitation");
   $("invitationMsg").textContent = "";
+  if (!acceptTeam) $("teamInvitationDetails").classList.add("hidden");
+  $("dismissTeamInvitation").classList.toggle("hidden", !params.has("invitation"));
+  $("retryInvitation").classList.remove("hidden");
   if (!inv) return true;
   let r;
   try {
+    if (!individual && !acceptTeam) {
+      const details = await api("/api/auth/organization/get-invitation?id=" + encodeURIComponent(inv));
+      const invitation = await details.json().catch(() => ({}));
+      if (!details.ok || invitation.status !== "pending" || typeof invitation.organizationName !== "string" || typeof invitation.role !== "string") {
+        $("invitationMsg").textContent = invitation.message || "Could not load this invitation. Check you are signed in with the invited email address, or ask for a new invitation.";
+        $("invitationMsg").className = "msg err";
+        return false;
+      }
+      $("teamInvitationName").textContent = invitation.organizationName;
+      $("teamInvitationRole").textContent = roleLabel(invitation.role);
+      $("teamInvitationDetails").classList.remove("hidden");
+      $("retryInvitation").classList.add("hidden");
+      return false;
+    }
     r = await api(individual ? "/api/invitations/individual/accept" : "/api/auth/organization/accept-invitation", { method:"POST", body: JSON.stringify({ invitationId: inv }) });
   } catch {
     $("invitationMsg").textContent = "Could not reach clocked. Your invitation is still here. Check your connection and try again.";
@@ -1003,6 +1025,24 @@ async function acceptPendingInvite() {
 }
 
 $("retryInvitation").onclick = () => afterLogin(false);
+$("acceptTeamInvitation").onclick = async () => {
+  if ($("acceptTeamInvitation").disabled) return;
+  $("acceptTeamInvitation").disabled = true;
+  $("dismissTeamInvitation").disabled = true;
+  try {
+    if (await acceptPendingInvite(true)) await afterLogin(false);
+  } finally {
+    $("acceptTeamInvitation").disabled = false;
+    $("dismissTeamInvitation").disabled = false;
+  }
+};
+$("dismissTeamInvitation").onclick = async () => {
+  if ($("dismissTeamInvitation").disabled) return;
+  const url = new URL(location.href);
+  url.searchParams.delete("invitation");
+  history.replaceState({}, "", url.pathname + url.search);
+  await afterLogin(false);
+};
 $("operatorInviteKind").onchange = () => {
   const manager = $("operatorInviteKind").value === "manager";
   $("operatorTeamField").classList.toggle("hidden", !manager);

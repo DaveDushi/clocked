@@ -1,3 +1,5 @@
+import { orgPlan } from "./plans.js";
+import { membershipSessionScope, sessionInScope } from "./team-scope.js";
 import { breakStats, teamBreakStats, type BreakStats } from "./break-stats.js";
 import { getTeamDelivery } from "./delivery.js";
 import { buildAndSendReport } from "./email.js";
@@ -49,11 +51,11 @@ export async function buildTeamOverview(
   now: Date = new Date(),
 ): Promise<TeamOverview> {
   const members = await env.DB.prepare(
-    `SELECT u.id AS id, u.name AS name, u.email AS email, m.role AS role
-       FROM member m JOIN user u ON u.id = m.userId
+    `SELECT u.id AS id, u.name AS name, u.email AS email, m.role AS role, m.createdAt, o.metadata
+       FROM member m JOIN user u ON u.id = m.userId JOIN organization o ON o.id = m.organizationId
       WHERE m.organizationId = ?
       ORDER BY u.name, u.email`,
-  ).bind(organizationId).all<{ id: string; name: string; email: string; role: string }>();
+  ).bind(organizationId).all<{ id: string; name: string; email: string; role: string; createdAt: string | number; metadata: string | null }>();
   const { start, end } = periodQueryBounds(period);
   const sessions = await env.DB.prepare(
     `SELECT ${SESSION_COLUMNS.split(", ").map((column) => "s." + column).join(", ")}
@@ -61,9 +63,13 @@ export async function buildTeamOverview(
       WHERE s.end_utc IS NOT NULL AND s.end_utc > ? AND s.start_utc < ?
       ORDER BY s.start_utc`,
   ).bind(organizationId, start.toISOString(), end.toISOString()).all<SessionRow>();
+  const scopes = new Map((members.results ?? []).map((member) =>
+    [member.id, membershipSessionScope({ ...member, plan: orgPlan(member.metadata) })] as const));
   const rowsByUser = new Map<string, SessionRow[]>();
   for (const row of sessions.results ?? []) {
     if (!row.user_id) continue;
+    const scope = scopes.get(row.user_id);
+    if (!scope || !sessionInScope(row.start_utc, scope)) continue;
     const rows = rowsByUser.get(row.user_id) ?? [];
     rows.push(row);
     rowsByUser.set(row.user_id, rows);
@@ -72,7 +78,7 @@ export async function buildTeamOverview(
   const overview = (members.results ?? []).map((member): OverviewMember => {
     const month = summarizeMonth(rowsByUser.get(member.id) ?? [], period, timezone, now);
     return {
-      ...member,
+      id: member.id, email: member.email, role: member.role,
       name: member.name || member.email,
       stats: breakStats(month.recordedDays),
       days: month.recordedDays.map((day) => ({
@@ -131,7 +137,7 @@ export async function sendTeamTimesheets(
   const results: { userId: string; ok: boolean; error?: string }[] = [];
   for (const userId of userIds) {
     const sent = await buildAndSendReport(env, period, {
-      force: true, userId, to: recipients, timezone: delivery.schedule.timezone,
+      force: true, userId, to: recipients, timezone: delivery.schedule.timezone, organizationId,
     });
     results.push(sent.ok ? { userId, ok: true } : { userId, ok: false, error: sent.error || "send failed" });
   }

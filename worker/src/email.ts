@@ -1,3 +1,4 @@
+import { getEffectiveSessionScope, getTeamSessionScope } from "./team-scope.js";
 import type { Env } from "./types";
 import { sendEmail } from "./email-provider.js";
 import { buildTimesheet, formatHours, isWorkDay, type HoursReport } from "./report.js";
@@ -141,7 +142,7 @@ export interface SendResult {
 export async function buildAndSendReport(
   env: Env,
   period: string,
-  opts: { force: boolean; userId: string; to: string[]; timezone?: string },
+  opts: { force: boolean; userId: string; to: string[]; timezone?: string; organizationId?: string },
 ): Promise<SendResult> {
   const { userId, to } = opts;
   const timezone = opts.timezone ?? env.REPORT_TZ;
@@ -159,7 +160,11 @@ export async function buildAndSendReport(
     if (existing) return { ok: true, period, rows: 0, skipped: true };
   }
 
-  const { csv, report, projects } = await buildTimesheet({ env, period, userId, timezone });
+  const scope = opts.organizationId
+    ? await getTeamSessionScope(env, userId, opts.organizationId)
+    : await getEffectiveSessionScope(env, userId);
+  if (!scope) return { ok: false, period, rows: 0, error: "user is not in your organization" };
+  const { csv, report, projects } = await buildTimesheet({ env, period, userId, timezone, scope });
   const rows = csv ? csv.trimEnd().split("\n").length : 0;
   const body =
     rows > 0

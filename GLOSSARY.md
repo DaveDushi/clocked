@@ -16,3 +16,9 @@ Time attributed to projects through optional activity tracking. These totals are
 
 **Timesheet delivery**:
 The recipients and monthly schedule used to send an account's timesheet. A team controls delivery for its members; a solo account controls its own delivery.
+
+**Primary membership**:
+The membership that determines an account's workspace, delivery settings, working hours, and permission to adjust timesheets. A team takes precedence over a legacy personal workspace. When an account belongs to several teams, its earliest team membership is primary.
+
+**Shared timesheet**:
+The part of a member's timesheet a team can view, adjust, and send. It includes only sessions that started on or after the member joined that team. Earlier sessions remain in the member's personal history.

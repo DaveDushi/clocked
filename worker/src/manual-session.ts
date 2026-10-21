@@ -1,3 +1,4 @@
+import { sessionInScope, type SessionScope } from "./team-scope.js";
 import { buildTimesheet, timezoneForLocalDate, validTimezoneOr } from "./report.js";
 import { isValidCalendarDate, parsePeriodParam } from "./security.js";
 import { previousMonthPeriod, wallToUtc } from "./time.js";
@@ -62,13 +63,14 @@ export async function handleManualSession(
   userId: string,
   actorId: string,
   timezone: string,
+  scope: SessionScope,
 ): Promise<Response> {
   if (req.method === "GET") {
     const raw = url.searchParams.get("period");
     const period = raw ? parsePeriodParam(raw) : previousMonthPeriod(new Date(), timezone);
     if (!period) return json({ error: "invalid period" }, 400);
     const { sessions: entries } = await buildTimesheet({
-      env, period, userId, timezone, includeProjects: false,
+      env, period, userId, timezone, includeProjects: false, scope,
     });
     return json({ entries });
   }
@@ -78,6 +80,9 @@ export async function handleManualSession(
   if (req.method === "DELETE") {
     const id = typeof body.id === "string" ? body.id : "";
     if (!SESSION_ID.test(id)) return json({ error: "id required" }, 400);
+    const original = await env.DB.prepare("SELECT start_utc FROM sessions WHERE id = ? AND user_id = ? AND end_utc IS NOT NULL")
+      .bind(id, userId).first<{ start_utc: string }>();
+    if (!original || !sessionInScope(original.start_utc, scope)) return json({ error: "not found" }, 404);
     // Any owned closed session — managers use this to drop bad desktop clockings.
     const res = await env.DB.prepare(
       `DELETE FROM sessions WHERE id = ? AND user_id = ? AND end_utc IS NOT NULL`,
@@ -104,6 +109,7 @@ export async function handleManualSession(
     const dayTimezone = await timezoneForLocalDate(env, userId, entry.date, timezone);
     const bounds = entryBounds(entry, dayTimezone);
     if (typeof bounds === "string") return json({ error: bounds }, 400);
+    if (!sessionInScope(bounds.start.toISOString(), scope)) return json({ error: "session predates team membership" }, 403);
     await env.DB.prepare(
       `INSERT INTO sessions (id, start_utc, end_utc, start_reason, end_reason, timezone, user_id, edited_by)
        VALUES (?, ?, ?, 'manual', 'manual', ?, ?, ?)`,
@@ -119,15 +125,16 @@ export async function handleManualSession(
     const entry = parseEntry(body);
     if (!entry) return json({ error: "invalid date or time" }, 400);
     const original = await env.DB.prepare(
-      `SELECT id, timezone, replaces_id FROM sessions WHERE id = ? AND user_id = ? AND end_utc IS NOT NULL`,
+      `SELECT id, timezone, replaces_id, start_utc FROM sessions WHERE id = ? AND user_id = ? AND end_utc IS NOT NULL`,
     )
       .bind(id, userId)
-      .first<{ id: string; timezone: string | null; replaces_id: string | null }>();
-    if (!original) return json({ error: "not found" }, 404);
+      .first<{ id: string; timezone: string | null; replaces_id: string | null; start_utc: string }>();
+    if (!original || !sessionInScope(original.start_utc, scope)) return json({ error: "not found" }, 404);
     // Keep the timezone the session is shown in, so the edited times mean what the form showed.
     const sessionTimezone = validTimezoneOr(original.timezone, timezone);
     const bounds = entryBounds(entry, sessionTimezone);
     if (typeof bounds === "string") return json({ error: bounds }, 400);
+    if (!sessionInScope(bounds.start.toISOString(), scope)) return json({ error: "session predates team membership" }, 403);
     const replacement = crypto.randomUUID();
     await env.DB.batch([
       env.DB.prepare(`DELETE FROM sessions WHERE id = ? AND user_id = ?`).bind(id, userId),

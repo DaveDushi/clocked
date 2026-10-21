@@ -33,7 +33,7 @@ test("CSV report uses the explicitly supplied user timezone", async () => {
     },
   ]);
 
-  const { csv } = await buildTimesheet({ env, period: "2026-09", userId: "user-1", timezone: "Asia/Jerusalem" });
+  const { csv } = await buildTimesheet({ scope: { kind: "personal" }, env, period: "2026-09", userId: "user-1", timezone: "Asia/Jerusalem" });
 
   assert.match(csv, /Tuesday, September 1, 2026.*03:30,05:00/);
   assert.doesNotMatch(csv, /00:30,02:00/);
@@ -53,7 +53,7 @@ test("CSV renders travel days in the timezone captured on each session", async (
     },
   ]);
 
-  const { csv } = await buildTimesheet({ env, period: "2026-09", userId: "traveler", timezone: "UTC" });
+  const { csv } = await buildTimesheet({ scope: { kind: "personal" }, env, period: "2026-09", userId: "traveler", timezone: "UTC" });
 
   assert.match(csv, /Tuesday, September 1, 2026.*09:00,10:00/);
   assert.match(csv, /Thursday, September 10, 2026.*16:00,17:00/);

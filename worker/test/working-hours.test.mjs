@@ -16,6 +16,7 @@ function fixture(t) {
       .run(id, id, id + "@example.test");
   }
   sqlite.exec(`INSERT INTO organization (id, name, slug, createdAt) VALUES ('a', 'Acme', 'acme', 1), ('b', 'Other', 'other', 1);
+    UPDATE organization SET metadata = '{"plan":"team"}';
     INSERT INTO member (id, organizationId, userId, role, createdAt) VALUES
     ('ma', 'a', 'owner', 'owner', 1), ('mw', 'a', 'worker', 'member', 1),
     ('mb', 'b', 'otherOwner', 'owner', 1), ('mx', 'b', 'outsider', 'member', 1);`);

@@ -1,5 +1,12 @@
 // Signed-in workspace styles. Scoped under .ws so the landing page keeps its own look.
 export const WORKSPACE_STYLE = /* css */ `
+  html:has(body.ws-mode), body.ws-mode, .ws, .ws * { scrollbar-width:thin; scrollbar-color:#41485b transparent; }
+  html:has(body.ws-mode)::-webkit-scrollbar, body.ws-mode::-webkit-scrollbar, .ws::-webkit-scrollbar, .ws *::-webkit-scrollbar { width:8px; height:8px; }
+  html:has(body.ws-mode)::-webkit-scrollbar-track, body.ws-mode::-webkit-scrollbar-track, .ws::-webkit-scrollbar-track, .ws *::-webkit-scrollbar-track { background:transparent; }
+  html:has(body.ws-mode)::-webkit-scrollbar-thumb, body.ws-mode::-webkit-scrollbar-thumb, .ws::-webkit-scrollbar-thumb, .ws *::-webkit-scrollbar-thumb { background:#41485b; border:2px solid transparent; border-radius:8px; background-clip:padding-box; }
+  html:has(body.ws-mode)::-webkit-scrollbar-thumb:hover, body.ws-mode::-webkit-scrollbar-thumb:hover, .ws::-webkit-scrollbar-thumb:hover, .ws *::-webkit-scrollbar-thumb:hover { background-color:#647086; }
+  html:has(body.ws-mode)::-webkit-scrollbar-button, body.ws-mode::-webkit-scrollbar-button, .ws::-webkit-scrollbar-button, .ws *::-webkit-scrollbar-button { display:none; width:0; height:0; }
+  html:has(body.ws-mode)::-webkit-scrollbar-corner, body.ws-mode::-webkit-scrollbar-corner, .ws::-webkit-scrollbar-corner, .ws *::-webkit-scrollbar-corner { background:transparent; }
   body.ws-mode #topbar, body.ws-mode .ruler { display:none; }
   body.ws-mode .wrap { max-width:1180px; padding-top:18px; }
   .ws { --wsmuted:#9299aa; position:relative; border:1px solid var(--border); border-radius:14px; overflow:clip;

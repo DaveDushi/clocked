@@ -1,4 +1,5 @@
 import type { Env } from "./types";
+import { getPrimaryMembership } from "./memberships.js";
 
 export type InactivityPolicy = { timeout_secs: number; warning_secs: number };
 
@@ -21,12 +22,9 @@ async function teamPolicy(env: Env, orgId: string): Promise<InactivityPolicy | n
 }
 
 export async function effectiveInactivity(env: Env, userId: string): Promise<InactivityPolicy | null> {
-  const row = await env.DB.prepare(`SELECT i.timeout_secs, i.warning_secs FROM member m
-    LEFT JOIN org_inactivity i ON i.organizationId = m.organizationId
-    WHERE m.userId = ? ORDER BY m.createdAt, m.id LIMIT 1`)
-    .bind(userId).first<{ timeout_secs: number | null; warning_secs: number | null }>();
-  return row?.timeout_secs != null && row.warning_secs != null
-    ? { timeout_secs: row.timeout_secs, warning_secs: row.warning_secs } : null;
+  const membership = await getPrimaryMembership(env, userId);
+  const policy = membership ? await teamPolicy(env, membership.organizationId) : null;
+  return policy ? { timeout_secs: policy.timeout_secs, warning_secs: policy.warning_secs } : null;
 }
 
 export async function handleManagerInactivity(req: Request, env: Env, actorId: string): Promise<Response> {

@@ -47,7 +47,7 @@ test("breaks are gaps between merged sessions on one local day, labelled by the 
   // Overnight: the gap from 23:30 to the next morning is not a break.
   session("overnight", "alice", "2026-09-02T01:00:00Z", "2026-09-02T02:00:00Z", "lock");
   session("zero-break", "alice", "2026-09-03T09:00:00Z", "2026-09-03T17:00:00Z", "lock");
-  const { recordedDays, report } = await buildTimesheet({ env, period: "2026-09", userId: "alice" });
+  const { recordedDays, report } = await buildTimesheet({ scope: { kind: "personal" }, env, period: "2026-09", userId: "alice" });
   assert.equal(report.activeDays, 3);
   assert.deepEqual(recordedDays.map(({ date, minutes, start, end, breakMinutes }) => ({ date, minutes, start, end, breakMinutes })), [
     { date: "2026-09-01", minutes: 13 * 60 + 14, start: "09:00", end: "23:30", breakMinutes: 75 },
@@ -66,7 +66,7 @@ test("cross-midnight sessions split by local date and an unrecorded reason stays
   const { env, session } = fixture(t);
   session("evening", "alice", "2026-09-10T20:00:00Z", "2026-09-11T01:00:00Z", null, "Europe/Berlin");
   session("morning", "alice", "2026-09-11T03:00:00Z", "2026-09-11T04:00:00Z", "lock", "Europe/Berlin");
-  const { recordedDays } = await buildTimesheet({ env, period: "2026-09", userId: "alice" });
+  const { recordedDays } = await buildTimesheet({ scope: { kind: "personal" }, env, period: "2026-09", userId: "alice" });
   assert.deepEqual(recordedDays.map(({ date, minutes, breaks }) => ({ date, minutes, breaks })), [
     { date: "2026-09-10", minutes: 120, breaks: [] },
     { date: "2026-09-11", minutes: 240, breaks: [{ start: "03:00", end: "05:00", minutes: 120, cause: "unknown" }] },
@@ -100,7 +100,7 @@ test("editing a session replaces the chosen session, records who edited it and s
   const { env, session, sqlite } = fixture(t);
   session("recorded-0001", "bob", "2026-09-04T09:00:00Z", "2026-09-04T12:00:00Z", "idle", "Europe/Berlin");
   session("untouched-001", "bob", "2026-09-04T13:00:00Z", "2026-09-04T15:00:00Z", "lock", "Europe/Berlin");
-  const edited = await handleManualSession(request("PATCH", { id: "recorded-0001", date: "2026-09-04", start: "10:30", end: "13:45" }), url, env, "bob", "alice", "UTC");
+  const edited = await handleManualSession(request("PATCH", { id: "recorded-0001", date: "2026-09-04", start: "10:30", end: "13:45" }), url, env, "bob", "alice", "UTC", { kind: "personal" });
   assert.equal(edited.status, 200);
   const { id } = await edited.json();
   const rows = sqlite.prepare("SELECT id, start_utc, end_utc, start_reason, timezone, edited_by, replaces_id FROM sessions WHERE user_id = 'bob' ORDER BY start_utc").all();
@@ -108,7 +108,7 @@ test("editing a session replaces the chosen session, records who edited it and s
     { id, start_utc: "2026-09-04T08:30:00.000Z", end_utc: "2026-09-04T11:45:00.000Z", start_reason: "manual", timezone: "Europe/Berlin", edited_by: "alice", replaces_id: "recorded-0001" },
     { id: "untouched-001", start_utc: "2026-09-04T13:00:00Z", end_utc: "2026-09-04T15:00:00Z", start_reason: "unlock", timezone: "Europe/Berlin", edited_by: null, replaces_id: null },
   ]);
-  const { sessions, recordedDays } = await buildTimesheet({ env, period: "2026-09", userId: "bob" });
+  const { sessions, recordedDays } = await buildTimesheet({ scope: { kind: "personal" }, env, period: "2026-09", userId: "bob" });
   assert.deepEqual(sessions.map(({ start, end, entry, editor }) => ({ start, end, entry, editor })), [
     { start: "10:30", end: "13:45", entry: "edited", editor: "other" },
     { start: "15:00", end: "17:00", entry: null, editor: null },
@@ -123,7 +123,7 @@ test("editing a session replaces the chosen session, records who edited it and s
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM sessions WHERE id = 'recorded-0001'").get().n, 0);
 
   // Editing the edit keeps pointing at the original recorded session.
-  await handleManualSession(request("PATCH", { id, date: "2026-09-04", start: "10:00", end: "13:45" }), url, env, "bob", "bob", "UTC");
+  await handleManualSession(request("PATCH", { id, date: "2026-09-04", start: "10:00", end: "13:45" }), url, env, "bob", "bob", "UTC", { kind: "personal" });
   const again = sqlite.prepare("SELECT edited_by, replaces_id FROM sessions WHERE user_id = 'bob' AND start_reason = 'manual'").get();
   assert.deepEqual({ ...again }, { edited_by: "bob", replaces_id: "recorded-0001" });
 });
@@ -132,13 +132,13 @@ test("session edits validate times, keep cross-midnight sessions whole and never
   const { env, session, sqlite } = fixture(t);
   session("night-shift-1", "bob", "2026-09-04T20:00:00Z", "2026-09-05T02:00:00Z");
   session("alice-only-01", "alice", "2026-09-04T09:00:00Z", "2026-09-04T10:00:00Z");
-  const patch = (body, owner = "bob") => handleManualSession(request("PATCH", body), url, env, owner, "alice", "UTC");
+  const patch = (body, owner = "bob") => handleManualSession(request("PATCH", body), url, env, owner, "alice", "UTC", { kind: "personal" });
   assert.equal((await patch({ id: "alice-only-01", date: "2026-09-04", start: "09:00", end: "11:00" })).status, 404);
   assert.equal((await patch({ id: "night-shift-1", date: "2026-09-04", start: "22:00", end: "21:00" })).status, 400);
   assert.equal((await patch({ id: "night-shift-1", date: "2026-09-04", start: "20:00", end: "21:00", overnight: true })).status, 400);
   assert.equal((await patch({ id: "night-shift-1", date: "2026-02-30", start: "20:00", end: "21:00" })).status, 400);
   assert.equal((await patch({ id: "night-shift-1", date: "2026-09-04", start: "21:00", end: "03:00", overnight: true })).status, 200);
-  const { sessions, report } = await buildTimesheet({ env, period: "2026-09", userId: "bob" });
+  const { sessions, report } = await buildTimesheet({ scope: { kind: "personal" }, env, period: "2026-09", userId: "bob" });
   assert.deepEqual(sessions.map(({ date, start, end }) => ({ date, start, end })), [
     { date: "2026-09-04", start: "21:00", end: "00:00" },
     { date: "2026-09-05", start: "00:00", end: "03:00" },
@@ -148,7 +148,7 @@ test("session edits validate times, keep cross-midnight sessions whole and never
   assert.equal(report.totalMinutes, 360);
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM sessions WHERE user_id = 'alice'").get().n, 1);
 
-  const added = await handleManualSession(request("POST", { date: "2026-09-06", start: "08:00", end: "09:30" }), url, env, "bob", "alice", "UTC");
+  const added = await handleManualSession(request("POST", { date: "2026-09-06", start: "08:00", end: "09:30" }), url, env, "bob", "alice", "UTC", { kind: "personal" });
   assert.equal(added.status, 200);
   const entry = sqlite.prepare("SELECT edited_by, replaces_id, start_reason FROM sessions WHERE start_utc = '2026-09-06T08:00:00.000Z'").get();
   assert.deepEqual({ ...entry }, { edited_by: "alice", replaces_id: null, start_reason: "manual" });
@@ -160,7 +160,7 @@ test("team overview reports every member once, only from that team, with recorde
   session("a2", "alice", "2026-09-01T12:30:00Z", "2026-09-01T17:00:00Z");
   session("b1", "bob", "2026-09-02T09:00:00Z", "2026-09-02T17:00:00Z");
   session("o1", "outsider", "2026-09-02T09:00:00Z", "2026-09-02T17:00:00Z");
-  await handleManualSession(request("POST", { date: "2026-09-03", start: "09:00", end: "10:00" }), url, env, "bob", "alice", "UTC");
+  await handleManualSession(request("POST", { date: "2026-09-03", start: "09:00", end: "10:00" }), url, env, "bob", "alice", "UTC", { kind: "personal" });
   const overview = await buildTeamOverview(env, "team", "2026-09", "UTC", new Date("2026-10-19T12:00:00Z"));
   assert.equal(overview.today, "2026-10-19");
   assert.deepEqual(overview.members.map(({ id, role, stats, enteredSessions }) => ({ id, role, days: stats.recordedDays, worked: stats.workedMinutes, avg: stats.avgBreakMinutes, enteredSessions })), [

@@ -26,7 +26,7 @@ test("one timesheet keeps overlapping timeline entries and counts worked time on
   session("desktop", "2026-09-01T10:00:00.000Z", "2026-09-01T13:00:00.000Z");
   session("manual", "2026-09-01T13:01:00.000Z", "2026-09-01T14:00:00.000Z", "UTC", "alice", "manual");
   session("evening", "2026-09-01T14:02:00.000Z", "2026-09-01T15:00:00.000Z");
-  const { report, sessions, csv } = await buildTimesheet({ env, period: "2026-09", userId: "alice" });
+  const { report, sessions, csv } = await buildTimesheet({ scope: { kind: "personal" }, env, period: "2026-09", userId: "alice" });
   assert.equal(report.totalMinutes, 357);
   assert.equal(report.days[0].minutes, 357);
   assert.equal(report.activeDays, 1);
@@ -49,7 +49,7 @@ test("real month selection filters ownership and clips local month edges", async
   session("other", "2026-09-02T00:00:00.000Z", "2026-09-02T10:00:00.000Z", "UTC", "bob");
   assert.throws(() => session("open", "2026-09-02T00:00:00.000Z", null), /NOT NULL/);
   session("outside", "2026-08-01T00:00:00.000Z", "2026-08-01T10:00:00.000Z");
-  const { report, sessions, csv } = await buildTimesheet({
+  const { report, sessions, csv } = await buildTimesheet({ scope: { kind: "personal" },
     env, period: "2026-09", userId: "alice", timezone: "Asia/Tokyo",
   });
   assert.equal(report.totalMinutes, 120);
@@ -65,7 +65,7 @@ test("midnight and daylight-saving slices retain elapsed time and timeline metad
   const { env, session } = fixture(t);
   session("midnight", "2026-10-23T21:30:00.000Z", "2026-10-23T22:30:00.000Z", "Europe/Berlin");
   session("repeat", "2026-10-25T00:30:00.000Z", "2026-10-25T02:30:00.000Z", "Europe/Berlin");
-  const { report, sessions } = await buildTimesheet({
+  const { report, sessions } = await buildTimesheet({ scope: { kind: "personal" },
     env, period: "2026-10", userId: "alice", now: new Date("2026-11-01T12:00:00Z"),
   });
   assert.equal(report.totalMinutes, 180);
@@ -83,7 +83,7 @@ test("midnight and daylight-saving slices retain elapsed time and timeline metad
 test("spring daylight-saving gaps use elapsed minutes rather than wall-clock differences", async (t) => {
   const { env, session } = fixture(t);
   session("gap", "2026-03-29T00:30:00.000Z", "2026-03-29T01:30:00.000Z", "Europe/Berlin");
-  const { report, sessions, csv } = await buildTimesheet({ env, period: "2026-03", userId: "alice" });
+  const { report, sessions, csv } = await buildTimesheet({ scope: { kind: "personal" }, env, period: "2026-03", userId: "alice" });
   assert.equal(report.totalMinutes, 60);
   assert.equal(sessions[0].start, "01:30");
   assert.equal(sessions[0].end, "03:30");
@@ -95,7 +95,7 @@ test("daily rounding follows the union while timeline entries keep individual du
   session("first", "2026-09-01T09:00:00.000Z", "2026-09-01T09:00:20.000Z");
   session("second", "2026-09-01T09:01:00.000Z", "2026-09-01T09:01:20.000Z");
   session("zero", "2026-09-02T09:00:00.000Z", "2026-09-02T09:00:10.000Z");
-  const { report, sessions, csv } = await buildTimesheet({ env, period: "2026-09", userId: "alice" });
+  const { report, sessions, csv } = await buildTimesheet({ scope: { kind: "personal" }, env, period: "2026-09", userId: "alice" });
   assert.deepEqual(sessions.map((s) => s.minutes), [0, 0, 0]);
   assert.equal(report.days[0].minutes, 1);
   assert.equal(report.days[1].minutes, 0);
@@ -108,7 +108,7 @@ test("current and future calendars preserve totals for hidden recorded dates", a
   const { env, session } = fixture(t);
   session("today", "2026-09-01T09:00:00.000Z", "2026-09-01T10:00:00.000Z");
   session("later", "2026-09-20T09:00:00.000Z", "2026-09-20T11:00:00.000Z");
-  const current = await buildTimesheet({
+  const current = await buildTimesheet({ scope: { kind: "personal" },
     env, period: "2026-09", userId: "alice", now: new Date("2026-09-02T12:00:00Z"),
   });
   assert.equal(current.report.days.length, 2);
@@ -117,7 +117,7 @@ test("current and future calendars preserve totals for hidden recorded dates", a
   assert.equal(current.sessions.length, 2);
   assert.match(current.csv, /,,,Total,1:00\n/);
   assert.doesNotMatch(current.csv, /September 20/);
-  const future = await buildTimesheet({
+  const future = await buildTimesheet({ scope: { kind: "personal" },
     env, period: "2026-09", userId: "alice", now: new Date("2026-08-01T12:00:00Z"),
   });
   assert.deepEqual(future.report.days, []);
@@ -128,7 +128,7 @@ test("current and future calendars preserve totals for hidden recorded dates", a
 test("empty months have calendar rows but no CSV, even with project activity", async (t) => {
   const { env, sqlite } = fixture(t);
   sqlite.exec("INSERT INTO activity_day VALUES ('alice', '2026-09-01', 'editor', 'Work', 60, '2026-09-01')");
-  const { report, sessions, csv, projects } = await buildTimesheet({ env, period: "2026-09", userId: "alice" });
+  const { report, sessions, csv, projects } = await buildTimesheet({ scope: { kind: "personal" }, env, period: "2026-09", userId: "alice" });
   assert.equal(report.days.length, 30);
   assert.equal(report.activeDays, 0);
   assert.equal(report.totalMinutes, 0);
@@ -145,12 +145,12 @@ test("project rollups round summed activity separately and respect opt-out", asy
     ('alice', '2026-09-01', 'browser', 'Work', 20, '2026-09-01'),
     ('bob', '2026-09-01', 'browser', 'Other', 600, '2026-09-01'),
     ('alice', '2026-10-01', 'editor', 'Outside', 600, '2026-10-01')`);
-  const sheet = await buildTimesheet({ env, period: "2026-09", userId: "alice" });
+  const sheet = await buildTimesheet({ scope: { kind: "personal" }, env, period: "2026-09", userId: "alice" });
   assert.deepEqual(sheet.projects, [{ project: "Work", minutes: 1 }]);
   assert.equal(sheet.report.totalMinutes, 60);
   assert.match(sheet.csv, /Project,Hours\nWork,0:01\n$/);
   sqlite.exec("INSERT INTO user_settings (userId, track_projects) VALUES ('alice', 0)");
-  const hidden = await buildTimesheet({ env, period: "2026-09", userId: "alice" });
+  const hidden = await buildTimesheet({ scope: { kind: "personal" }, env, period: "2026-09", userId: "alice" });
   assert.deepEqual(hidden.projects, []);
   assert.doesNotMatch(hidden.csv, /Project,Hours/);
 });

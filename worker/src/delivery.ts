@@ -1,5 +1,6 @@
 import type { Env } from "./types";
 import { orgIdForUser } from "./settings.js";
+import { PRIMARY_MEMBERSHIP_ORDER_SQL } from "./memberships.js";
 import {
   DEFAULT_SEND_TIME,
   DEFAULT_SEND_TIMEZONE,
@@ -46,17 +47,17 @@ function parseRecipients(raw: string | null): string[] {
   return [...new Set((raw ?? "").split(/[\n,]/).map((value) => value.trim()).filter(Boolean))];
 }
 
-/** The earliest membership selects both recipients and schedule, including for cron. */
+/** Primary membership selects both recipients and schedule, including for cron. */
 async function readDeliveries(
   env: Env,
   user: { userId: string; email: string } | null,
 ): Promise<AccountDelivery[]> {
   const result = await env.DB.prepare(
     `WITH first_membership AS (
-       SELECT userId, organizationId,
-              ROW_NUMBER() OVER (PARTITION BY userId ORDER BY createdAt, id) AS position
-         FROM member
-         ${user ? "WHERE userId = ?" : ""}
+       SELECT m.userId, m.organizationId,
+              ROW_NUMBER() OVER (PARTITION BY m.userId ORDER BY ${PRIMARY_MEMBERSHIP_ORDER_SQL}) AS position
+         FROM member m JOIN organization o ON o.id = m.organizationId
+         ${user ? "WHERE m.userId = ?" : ""}
      )
      SELECT u.id, COALESCE(?, u.email) AS email, fm.organizationId,
             CASE WHEN fm.organizationId IS NOT NULL THEN os.mail_to ELSE us.mail_to END AS mail_to,

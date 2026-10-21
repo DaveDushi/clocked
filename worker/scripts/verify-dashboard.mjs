@@ -39,7 +39,7 @@ const people = [
   ["cy", "Cy Lindqvist", "cy@example.test", "member"],
   ["dee", "Dee Park", "dee@example.test", "admin"],
 ];
-const others = [["solo", "Sam Solo", "solo@example.test"], ["outsider", "Otto Side", "outsider@example.test"]];
+const others = [["solo", "Sam Solo", "solo@example.test"], ["outsider", "Otto Side", "outsider@example.test"], ["legacy", "Lee Solo", "legacy@example.test"], ["mixed", "Pat Joined", "mixed@example.test"]];
 const salt = randomBytes(16);
 const hash = `pbkdf2$100000$${salt.toString("base64")}$${pbkdf2Sync(password, salt, 100000, 32, "sha256").toString("base64")}`;
 const sql = [];
@@ -53,6 +53,16 @@ people.forEach(([id, , , role], i) => sql.push(`INSERT INTO member (id, organiza
 sql.push(`INSERT INTO member (id, organizationId, userId, role, createdAt) VALUES ('m-outsider', 'other', 'outsider', 'owner', '2026-01-01T00:00:00Z');`);
 sql.push(`INSERT INTO org_settings (organizationId, mail_to, send_day, send_time, send_timezone) VALUES ('team', 'payroll@example.test', 1, '09:00', 'Europe/Berlin');`);
 sql.push(`INSERT INTO user_settings (userId, send_timezone) VALUES ('solo', 'Europe/Berlin');`);
+sql.push(`INSERT INTO organization (id, name, slug, createdAt, metadata) VALUES ('legacy', 'Personal workspace', 'legacy', '2026-01-01T00:00:00Z', '{"plan":"single"}');`);
+sql.push(`INSERT INTO member (id, organizationId, userId, role, createdAt) VALUES ('m-legacy', 'legacy', 'legacy', 'owner', '2026-01-01T00:00:00Z');`);
+sql.push(`INSERT INTO org_settings (organizationId, mail_to, send_day, send_time, send_timezone) VALUES ('legacy', 'legacy@example.test', 1, '04:00', 'UTC');`);
+sql.push(`INSERT INTO organization (id, name, slug, createdAt, metadata) VALUES ('mixed-personal', 'Old personal workspace', 'mixed-personal', '2026-01-01T00:00:00Z', '{"plan":"single"}'), ('joined-team', 'Joined Studio', 'joined-team', '2026-01-01T00:00:00Z', '{"plan":"team"}');`);
+sql.push(`INSERT INTO member (id, organizationId, userId, role, createdAt) VALUES ('m-mixed-personal', 'mixed-personal', 'mixed', 'owner', '2026-01-01T00:00:00Z'), ('m-joined-manager', 'joined-team', 'manager', 'owner', '2026-01-02T00:00:00Z'), ('m-mixed-team', 'joined-team', 'mixed', 'member', '2026-09-15T12:00:00Z');`);
+sql.push(`INSERT INTO org_settings (organizationId, mail_to, send_day, send_time, send_timezone) VALUES ('mixed-personal', 'private@example.test', 1, '04:00', 'UTC'), ('joined-team', 'joined-payroll@example.test', 12, '09:30', 'Europe/Berlin');`);
+sql.push(`INSERT INTO org_working_hours (organizationId, schedule) VALUES ('joined-team', '{"mode":"scheduled","start":"09:00","end":"17:00","days":[1,2,3,4,5]}');`);
+for (const [id, start, end] of [["mixed-before", "2026-09-10T08:00:00Z", "2026-09-10T16:00:00Z"], ["mixed-crossing", "2026-09-15T11:00:00Z", "2026-09-15T13:00:00Z"], ["mixed-after", "2026-09-16T08:00:00Z", "2026-09-16T16:00:00Z"]]) {
+  sql.push(`INSERT INTO sessions (id, user_id, start_utc, end_utc, timezone) VALUES ('${id}', 'mixed', '${start}', '${end}', 'UTC');`);
+}
 
 // Berlin is UTC+2 for every fixture date (before the October 25 change).
 const utc = (date, clock) => { const [h, m] = clock.split(":").map(Number); const d = new Date(`${date}T00:00:00Z`); d.setUTCMinutes(h * 60 + m - 120); return d.toISOString(); };
@@ -126,7 +136,7 @@ try {
     await delay(250);
   }
   assert.ok(ready, "Local Worker did not start: " + log);
-  for (const [actor, email] of [["manager", "manager@example.test"], ["ana", "ana@example.test"], ["solo", "solo@example.test"], ["outsider", "outsider@example.test"]]) {
+  for (const [actor, email] of [["manager", "manager@example.test"], ["ana", "ana@example.test"], ["solo", "solo@example.test"], ["outsider", "outsider@example.test"], ["legacy", "legacy@example.test"], ["mixed", "mixed@example.test"]]) {
     await login(actor, email);
   }
 
@@ -170,6 +180,7 @@ try {
   assert.equal(sent.status, 200, JSON.stringify(sentBody) + log.slice(-3000));
   assert.deepEqual(sentBody.recipients, ["payroll@example.test"]);
   assert.deepEqual(sentBody.results.map((r) => [r.userId, r.ok]), [["ana", true], ["ben", true]]);
+  for (let i = 0; i < 40 && !log.includes("send_email binding called"); i++) await delay(25);
   assert.match(log, /send_email binding called/);
 
   const solo = await (await api("solo", "/api/hours?period=2026-09")).json();
@@ -177,12 +188,53 @@ try {
   assert.ok(solo.recordedDays.every((d) => Number.isFinite(d.breakMinutes)));
   assert.equal((await api("solo", "/api/team/overview?organizationId=team&period=2026-09")).status, 403);
 
-  console.log("PASS: team overview, normalized break stats, role boundaries, session edits and reviewed bulk send (mock email binding).");
+  // Legacy personal owners edit the organization schedule used by report delivery.
+  const legacyPath = "/api/team/settings?organizationId=legacy";
+  const legacyBefore = await (await api("legacy", legacyPath)).json();
+  assert.equal(legacyBefore.sendTime, "04:00");
+  const legacySchedule = { recipients: legacyBefore.recipients, sendDay: 12, sendTime: "09:30", sendTimezone: "Europe/Berlin" };
+  assert.equal((await api("legacy", legacyPath, legacySchedule)).status, 200);
+  const legacyAfter = await (await api("legacy", "/api/settings")).json();
+  assert.deepEqual(legacyAfter, { ...legacySchedule, managed: true });
+  assert.equal((await api("ana", legacyPath, legacySchedule)).status, 403);
+
+  const mixedMe = await (await api("mixed", "/api/me")).json();
+  assert.equal(mixedMe.canEditTimes, false, "a legacy personal owner joining as a worker cannot bypass team editing policy");
+  const mixedDelivery = await (await api("mixed", "/api/settings")).json();
+  assert.deepEqual(mixedDelivery.recipients, ["joined-payroll@example.test"]);
+  assert.equal(mixedDelivery.sendTime, "09:30");
+  assert.equal((await api("mixed", "/api/settings", legacySchedule)).status, 403);
+  const mixedHours = await (await api("mixed", "/api/working-hours")).json();
+  assert.equal(mixedHours.organizationName, "Joined Studio");
+  const privateMonth = await (await api("mixed", "/api/hours?period=2026-09")).json();
+  assert.equal(privateMonth.totalMinutes, 1080, "the member retains their complete personal history");
+  const sharedMonth = await (await api("manager", "/api/team/hours?organizationId=joined-team&userId=mixed&period=2026-09")).json();
+  assert.equal(sharedMonth.totalMinutes, 480);
+  assert.deepEqual(sharedMonth.sessions.map((s) => s.id), ["mixed-after"]);
+  const sharedCsv = await (await api("manager", "/api/team/preview?organizationId=joined-team&userId=mixed&period=2026-09")).text();
+  assert.ok(!sharedCsv.includes("September 10") && !sharedCsv.includes("11:00") && !sharedCsv.includes("13:00"), "team exports exclude pre-join and crossing sessions");
+  for (const method of ["PATCH", "DELETE"]) {
+    const blocked = await api("manager", "/api/team/manual-session?organizationId=joined-team&userId=mixed", { id: "mixed-before", date: "2026-09-10", start: "10:00", end: "12:00" }, method);
+    assert.ok(blocked.status >= 400 && blocked.status < 500, "managers cannot mutate private history");
+  }
+  assert.equal((await api("mixed", "/api/manual-session", { date: "2026-09-20", start: "09:00", end: "10:00" })).status, 403);
+  for (const method of ["POST", "PATCH", "DELETE"]) {
+    assert.equal((await api("mixed", "/api/team/manual-session?organizationId=mixed-personal&userId=mixed", { id: "mixed-after", date: "2026-09-16", start: "10:00", end: "12:00" }, method)).status, 403, "the retained personal owner role cannot bypass worker editing policy");
+  }
+  assert.equal((await api("mixed", "/api/team/create", { name: "Promoted personal" })).status, 403, "a worker cannot promote their retained personal workspace to override the active team policy");
+  assert.equal((await (await api("mixed", "/api/hours?period=2026-09")).json()).totalMinutes, 1080);
+
+  const pending = await api("manager", "/api/auth/organization/invite-member", { email: "legacy@example.test", role: "member", organizationId: "joined-team" });
+  assert.equal(pending.status, 200, await pending.clone().text());
+  const invitation = await pending.json();
+
+  console.log("PASS: team overview, normalized break stats, role boundaries, session edits, reviewed bulk send, and legacy personal-to-team history isolation (mock email binding).");
   if (process.argv.includes("--serve")) {
-    console.log(`Browser fixture: ${base}  manager@example.test (team owner), ana@example.test (worker), solo@example.test (personal); password ${password}`);
+    console.log(`Browser fixture: ${base}  manager@example.test (team owner), ana@example.test (worker), solo@example.test (personal), legacy@example.test (legacy personal owner), mixed@example.test (legacy personal owner who joined a team); password ${password}`);
+    console.log(`Pending team invitation for legacy@example.test: ${base}/?invitation=${encodeURIComponent(invitation.id)}`);
     await new Promise((done) => server.on("exit", done));
   }
 } catch (error) {
-  console.error(log);
+  console.error(log.replace(/env\.BETTER_AUTH_SECRET[^\n]*/g, "env.BETTER_AUTH_SECRET (<REDACTED>)"));
   throw error;
 } finally { server.kill(); }

@@ -9,7 +9,7 @@ const between = (start, end) => script.slice(script.indexOf(start), script.index
 const email = between("let emailSettingsContext = null;", "function setSchedule");
 const save = between('$("saveEmail").onclick =', "// ---- CSV preview ----");
 const scope = between('let settingsScope = "personal";', '$("settingsPersonalTab").onclick');
-function harness({ mode = "team", role = "owner", managed = true, api } = {}) {
+function harness({ mode = "team", role = "owner", plan = "team", managed = true, api } = {}) {
   const elements = new Map();
   const $ = (id) => {
     if (!elements.has(id)) elements.set(id, {
@@ -22,7 +22,7 @@ function harness({ mode = "team", role = "owner", managed = true, api } = {}) {
   };
   const requests = [];
   const context = {
-    $, ws: { mode, me: {} }, orgId: "selected-team", orgRole: role, orgPlanKey: "team", orgCap: 50, memberCount: 5,
+    $, ws: { mode, me: {} }, orgId: "selected-team", orgRole: role, orgPlanKey: plan, orgCap: 50, memberCount: 5,
     emailMode: "manager", emailLoadVersion: 0, hoursLoadVersion: 0, inactivityLoadVersion: 0,
     wsIsTeam: () => mode === "team",
     wsShow: (id, visible) => $(id).classList.toggle("hidden", !visible),
@@ -81,6 +81,29 @@ test("unmanaged solo delivery saves only personal settings", async () => {
   await h.$("saveEmail").onclick();
   assert.equal(h.requests.at(-1).path, "/api/settings");
   assert.equal(h.requests.at(-1).options.method, "POST");
+});
+
+test("legacy single-seat owners can change delivery from Personal settings", async () => {
+  for (const role of ["owner", "admin"]) {
+    const h = harness({ mode: "personal", role, plan: "single" });
+    h.run('wsSelectSettings("personal")'); await settle();
+    assert.equal(h.$("settingsTeamTab").hidden, true);
+    assert.equal(h.$("settingsPersonalPanel").hidden, false);
+    assert.equal(h.$("setDelivery").parentId, "personalDeliverySlot");
+    assert.equal(h.$("saveEmail").disabled, false, "the personal account owner controls delivery");
+    assert.deepEqual(h.requests.map((r) => r.path), ["/api/team/settings?organizationId=selected-team"]);
+    h.$("autoSend").checked = true;
+    h.$("sendDay").value = "12";
+    h.$("sendTime").value = "09:30";
+    h.$("sendTimezone").value = "Europe/Berlin";
+    await h.$("saveEmail").onclick();
+    assert.equal(h.requests.at(-1).path, "/api/team/settings?organizationId=selected-team");
+    assert.equal(h.requests.at(-1).options.method, "POST");
+    assert.deepEqual(JSON.parse(h.requests.at(-1).options.body), {
+      recipients: ["payroll@example.test"], sendDay: 12, sendTime: "09:30", sendTimezone: "Europe/Berlin",
+    });
+    assert.equal(h.$("emailMsg").textContent, "Saved.");
+  }
 });
 
 test("late team loads and saves cannot enable edits or replace feedback in Personal settings", async () => {

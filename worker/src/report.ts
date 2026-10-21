@@ -1,3 +1,4 @@
+import { sessionInScope, type SessionScope } from "./team-scope.js";
 import type { Env } from "./types";
 import { projectTotalsForPeriod } from "./activity.js";
 import { expandCalendarDays } from "./calendar-days.js";
@@ -397,6 +398,7 @@ export async function buildTimesheet({
   timezone = env.REPORT_TZ,
   includeProjects = true,
   now = new Date(),
+  scope,
 }: {
   env: Env;
   period: string;
@@ -404,6 +406,7 @@ export async function buildTimesheet({
   timezone?: string;
   includeProjects?: boolean;
   now?: Date;
+  scope: SessionScope;
 }): Promise<Timesheet> {
   const { start, end } = periodQueryBounds(period);
 
@@ -416,8 +419,14 @@ export async function buildTimesheet({
     .all<SessionRow>();
 
   const { report, sessions, recordedDays, spanByDate } =
-    summarizeMonth(res.results ?? [], period, timezone, now);
-  const projects = includeProjects ? await projectTotalsForPeriod(env, userId, period) : [];
+    summarizeMonth((res.results ?? []).filter((row) => sessionInScope(row.start_utc, scope)), period, timezone, now);
+  if (scope.kind === "team") {
+    const joined = localYMD(new Date(scope.since), timezone);
+    const date = `${joined.y}-${String(joined.m).padStart(2, "0")}-${String(joined.d).padStart(2, "0")}`;
+    report.days = report.days.filter((day) => day.date >= date);
+  }
+  // Daily activity aggregates cannot separate personal and team work on the join day.
+  const projects = includeProjects && scope.kind === "personal" ? await projectTotalsForPeriod(env, userId, period) : [];
   return { report, sessions, recordedDays, projects, csv: renderCsv(report.days, spanByDate, projects) };
 }
 

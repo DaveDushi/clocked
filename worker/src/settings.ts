@@ -1,4 +1,5 @@
 import type { Env } from "./types";
+import { getPrimaryMembership } from "./memberships.js";
 
 /** Read a value from the `settings` key/value table (null if unset). */
 export async function getSetting(env: Env, key: string): Promise<string | null> {
@@ -51,12 +52,7 @@ export async function setTrackProjects(env: Env, userId: string, enabled: boolea
   }
 }
 
-/** The (first) organization a user belongs to, or null for solo users. */
+/** Real teams take precedence over legacy single-seat personal organizations. */
 export async function orgIdForUser(env: Env, userId: string): Promise<string | null> {
-  const row = await env.DB.prepare(
-    "SELECT organizationId FROM member WHERE userId = ? ORDER BY createdAt, id LIMIT 1",
-  )
-    .bind(userId)
-    .first<{ organizationId: string }>();
-  return row?.organizationId ?? null;
+  return (await getPrimaryMembership(env, userId))?.organizationId ?? null;
 }

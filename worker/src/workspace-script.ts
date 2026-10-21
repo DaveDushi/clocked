@@ -1,9 +1,11 @@
 import { createWorkspaceModel } from "./workspace-model.js";
+import { selectPrimaryMembership } from "./memberships.js";
 
 // Inline client for the signed-in workspace. It shares the dashboard script's scope
 // (api, $, createTimesheetView, the org globals and the retained settings handlers).
 // Written as plain string-built JS like the rest of the dashboard: no backticks.
-export const WORKSPACE_SCRIPT = "const wsModel = (" + createWorkspaceModel.toString() + ")();\n" + String.raw`
+export const WORKSPACE_SCRIPT = "const wsModel = (" + createWorkspaceModel.toString() + ")();\n" +
+  "const wsPrimaryMembership = (" + selectPrimaryMembership.toString() + ");\n" + String.raw`
 const ws = {
   me: null, mode: "personal", page: "timesheets", period: "", query: "", expanded: new Set(),
   scope: "all", sort: "average", overview: null, overviewError: "", overviewVersion: 0,
@@ -743,7 +745,7 @@ function wsSelectSettings(scope) {
   wsShow("emailEdit", false); wsShow("emailReadonly", true);
   $("emailReadonly").textContent = "Loading delivery settings...";
   wsShow("setWorkingHours", canManage); wsShow("setInactivity", canManage); wsShow("setPlan", canManage);
-  const ownsSingle = ws.mode === "personal" && orgPlanKey === "single";
+  const ownsSingle = ws.mode === "personal" && orgPlanKey === "single" && !!orgId && isManagerRoleC(orgRole);
   wsShow("setTeamCreate", ws.mode === "personal" && (ws.me.operator || ownsSingle));
   wsShow("setOperator", !!ws.me.operator);
   if (team) {
@@ -752,7 +754,7 @@ function wsSelectSettings(scope) {
     $("hoursTargetField").classList.add("hidden"); $("hoursTarget").value = "";
     loadWorkingHoursEditor(); loadInactivityEditor();
   } else loadWorkingHoursSummary();
-  loadEmailSettings(team ? { kind: "team", path: "/api/team/settings?organizationId=" + encodeURIComponent(orgId) } : { kind: "personal", path: "/api/settings" });
+  loadEmailSettings(team || ownsSingle ? { kind: "team", path: "/api/team/settings?organizationId=" + encodeURIComponent(orgId) } : { kind: "personal", path: "/api/settings" });
 }
 $("settingsPersonalTab").onclick = () => wsSelectSettings("personal");
 $("settingsTeamTab").onclick = () => wsSelectSettings("team");
@@ -951,16 +953,16 @@ async function startWorkspace(me) {
   ws.me = me;
   meEmail = (me.user && me.user.email) || "";
   orgId = ""; orgName = ""; orgRole = ""; orgPlanKey = ""; orgCap = 0; memberCount = 0;
-  const mgr = (me.orgs || []).find((o) => isManagerRoleC(o.role));
-  if (mgr) {
-    orgId = mgr.organizationId; orgName = mgr.name || ""; orgRole = mgr.role || ""; orgPlanKey = mgr.plan || "";
-    orgCap = mgr.cap || 0; memberCount = mgr.memberCount || 1;
-    ws.mode = orgPlanKey === "single" ? "personal" : "team";
-    emailMode = "manager"; canEditTimes = true;
-  } else if (me.orgs && me.orgs.length) {
-    const mem = me.orgs[0];
-    orgId = mem.organizationId || ""; orgName = mem.name || ""; orgRole = mem.role || ""; orgPlanKey = mem.plan || "";
-    ws.mode = "worker"; emailMode = "member"; canEditTimes = false;
+  const membership = wsPrimaryMembership(me.orgs || []);
+  if (membership) {
+    orgId = membership.organizationId; orgName = membership.name || ""; orgRole = membership.role || ""; orgPlanKey = membership.plan || "";
+    orgCap = membership.cap || 0; memberCount = membership.memberCount || 1;
+    if (isManagerRoleC(orgRole)) {
+      ws.mode = orgPlanKey === "single" ? "personal" : "team";
+      emailMode = "manager"; canEditTimes = true;
+    } else {
+      ws.mode = "worker"; emailMode = "member"; canEditTimes = false;
+    }
   } else {
     ws.mode = "personal"; emailMode = "solo"; canEditTimes = true;
   }

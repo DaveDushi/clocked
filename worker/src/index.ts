@@ -1,3 +1,4 @@
+import { getTeamSessionScope } from "./team-scope";
 import { effectiveInactivity, handleManagerInactivity } from "./inactivity";
 import { checkAuth } from "./auth";
 import { makeAuth } from "./auth-server";
@@ -57,6 +58,7 @@ import {
 } from "./security";
 import type { Env } from "./types";
 import { effectiveWorkingHours, handleManagerWorkingHours } from "./working-hours";
+import { getPrimaryMembership, normalizeMembershipDate, selectPrimaryMembership } from "./memberships";
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -230,7 +232,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const period = resolvePeriod(url, schedule.timezone);
     if (!period) return json({ error: "invalid period" }, 400);
     const { report, projects, sessions, recordedDays } = await buildTimesheet({
-      env, period, userId: user.id, timezone: schedule.timezone,
+      env, period, userId: user.id, timezone: schedule.timezone, scope: { kind: "personal" },
     });
     return json({ ...report, projects, sessions, recordedDays, stats: breakStats(recordedDays) });
   }
@@ -241,9 +243,10 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     if (!user) return json({ error: "unauthorized" }, 401);
     const approved = user.emailVerified && (await isApproved(env, user.id));
     const orgs = approved ? await membershipsFor(env, user.id) : [];
-    const manager = orgs.some((o) => isManagerRole(o.role));
+    const primary = selectPrimaryMembership(orgs);
+    const manager = primary !== null && isManagerRole(primary.role);
     // Team workers (non-managers) may not self-edit times — managers adjust for them.
-    const canEditTimes = orgs.length === 0 || manager;
+    const canEditTimes = primary === null || manager;
     return json({
       user: { id: user.id, email: user.email, emailVerified: user.emailVerified, approved },
       operator: approved && isOperator(user),
@@ -296,14 +299,13 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const orgId = url.searchParams.get("organizationId") ?? "";
     const targetId = url.searchParams.get("userId") ?? "";
     if (!(await isManagerOf(env, user.id, orgId))) return json({ error: "forbidden" }, 403);
-    if (!targetId || !(await isMemberOf(env, targetId, orgId))) {
-      return json({ error: "user is not in your organization" }, 403);
-    }
     const { schedule } = await getTeamDelivery(env, orgId);
     const period = resolvePeriod(url, schedule.timezone);
     if (!period) return json({ error: "invalid period" }, 400);
+    const scope = await getTeamSessionScope(env, targetId, orgId);
+    if (!scope) return json({ error: "user is not in your organization" }, 403);
     const { report, sessions, recordedDays, csv } = await buildTimesheet({
-      env, period, userId: targetId, timezone: schedule.timezone,
+      env, period, userId: targetId, timezone: schedule.timezone, scope,
       includeProjects: url.pathname === "/api/team/preview",
     });
     if (url.pathname === "/api/team/preview") {
@@ -376,21 +378,27 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const orgId = url.searchParams.get("organizationId") ?? "";
     const targetId = url.searchParams.get("userId") ?? "";
     if (!(await isManagerOf(env, user.id, orgId))) return json({ error: "forbidden" }, 403);
-    if (!targetId || !(await isMemberOf(env, targetId, orgId))) {
-      return json({ error: "user is not in your organization" }, 403);
+    if (user.id === targetId && req.method !== "GET" && !(await canSelfServiceEditTimes(env, user.id))) {
+      return json({ error: "your team manager controls timesheet adjustments" }, 403);
     }
     const { schedule } = await getTeamDelivery(env, orgId);
     if (req.method !== "GET" &&
       !(await rateLimitAllowDurable(env.DB, `manual-session:${user.id}`, 120, 60 * 60_000))) {
       return json({ error: "too many requests" }, 429);
     }
-    return handleManualSession(req, url, env, targetId, user.id, schedule.timezone);
+    const scope = await getTeamSessionScope(env, targetId, orgId);
+    if (!scope) return json({ error: "user is not in your organization" }, 403);
+    return handleManualSession(req, url, env, targetId, user.id, schedule.timezone, scope);
   }
 
   // Create (or reuse) a team the caller manages. Teams are free.
   if (req.method === "POST" && url.pathname === "/api/team/create") {
     const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
+    const primary = await getPrimaryMembership(env, user.id);
+    if (!isOperator(user) && primary && !isManagerRole(primary.role)) {
+      return json({ error: "Ask the operator for a team manager invitation." }, 403);
+    }
     const ownsTeam = (await membershipsFor(env, user.id)).some((org) => org.role.split(",").includes("owner"));
     if (!isOperator(user) && !ownsTeam) return json({ error: "Ask the operator for a team manager invitation." }, 403);
     if (!(await rateLimitAllowDurable(env.DB, `team-create:${user.id}`, 10, 60 * 60_000))) {
@@ -423,7 +431,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
       }
     }
     const { schedule } = await getEffectiveDelivery(env, { userId: user.id, email: user.email });
-    return handleManualSession(req, url, env, user.id, user.id, schedule.timezone);
+    return handleManualSession(req, url, env, user.id, user.id, schedule.timezone, { kind: "personal" });
   }
 
   // Privacy: export this account's cloud data (sessions + activity aggregates).
@@ -468,7 +476,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const period = resolvePeriod(url, schedule.timezone);
     if (!period) return json({ error: "invalid period" }, 400);
     const { csv } = await buildTimesheet({
-      env, period, userId: user.id, timezone: schedule.timezone,
+      env, period, userId: user.id, timezone: schedule.timezone, scope: { kind: "personal" },
     });
     return new Response(csv, { status: 200, headers: { "content-type": "text/csv" } });
   }
@@ -589,6 +597,8 @@ function legacyBearerEnabled(env: Env): boolean {
 }
 
 interface MembershipRow {
+  id: string;
+  createdAt: string | number;
   organizationId: string;
   role: string;
   name: string;
@@ -599,7 +609,7 @@ interface MembershipRow {
 /** Orgs the user belongs to, with plan/cap for the dashboard. */
 async function membershipsFor(env: Env, userId: string) {
   const res = await env.DB.prepare(
-    `SELECT m.organizationId AS organizationId, m.role AS role, o.name AS name, o.metadata AS metadata,
+    `SELECT m.id, m.createdAt, m.organizationId AS organizationId, m.role AS role, o.name AS name, o.metadata AS metadata,
             (SELECT COUNT(*) FROM member m2 WHERE m2.organizationId = o.id) AS memberCount
        FROM member m JOIN organization o ON o.id = m.organizationId
       WHERE m.userId = ?
@@ -611,6 +621,8 @@ async function membershipsFor(env: Env, userId: string) {
   return (res.results ?? []).map((r) => {
     const plan = orgPlan(r.metadata);
     return {
+      id: r.id,
+      createdAt: normalizeMembershipDate(r.createdAt),
       organizationId: r.organizationId,
       role: r.role,
       name: r.name,
@@ -644,22 +656,8 @@ async function isManagerOf(env: Env, userId: string, organizationId: string): Pr
  * Pure team workers cannot — only managers adjust timesheets for the team.
  */
 async function canSelfServiceEditTimes(env: Env, userId: string): Promise<boolean> {
-  const res = await env.DB.prepare(`SELECT role FROM member WHERE userId = ?`)
-    .bind(userId)
-    .all<{ role: string }>();
-  const roles = res.results ?? [];
-  if (roles.length === 0) return true;
-  return roles.some((r) => isManagerRole(r.role));
-}
-
-async function isMemberOf(env: Env, userId: string, organizationId: string): Promise<boolean> {
-  if (!organizationId) return false;
-  const row = await env.DB.prepare(
-    `SELECT 1 AS ok FROM member WHERE userId = ? AND organizationId = ?`,
-  )
-    .bind(userId, organizationId)
-    .first<{ ok: number }>();
-  return !!row;
+  const membership = await getPrimaryMembership(env, userId);
+  return membership === null || isManagerRole(membership.role);
 }
 
 /** JSON dump of cloud sessions + activity for GDPR-style portability. */

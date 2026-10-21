@@ -1,4 +1,5 @@
 import type { Env } from "./types";
+import { getPrimaryMembership } from "./memberships.js";
 
 export type WorkingHours =
   | { mode: "disabled" }
@@ -38,15 +39,17 @@ function storedHours(raw: string | null): WorkingHours | null {
   return raw === null ? null : parseWorkingHours(JSON.parse(raw));
 }
 
-/** Match report ownership: the earliest membership supplies the desktop policy. */
+/** Match report ownership: the primary membership supplies the desktop policy. */
 export async function effectiveWorkingHours(env: Env, userId: string): Promise<EffectiveHours> {
+  const membership = await getPrimaryMembership(env, userId);
+  if (!membership) return { schedule: null, source: "personal", organizationName: null };
   const row = await env.DB.prepare(
     `SELECT o.name, oh.schedule AS team_schedule, mh.schedule AS member_schedule
        FROM member m JOIN organization o ON o.id = m.organizationId
        LEFT JOIN org_working_hours oh ON oh.organizationId = m.organizationId
        LEFT JOIN member_working_hours mh ON mh.membershipId = m.id
-      WHERE m.userId = ? ORDER BY m.createdAt, m.id LIMIT 1`,
-  ).bind(userId).first<{ name: string; team_schedule: string | null; member_schedule: string | null }>();
+      WHERE m.id = ?`,
+  ).bind(membership.id).first<{ name: string; team_schedule: string | null; member_schedule: string | null }>();
   if (!row) return { schedule: null, source: "personal", organizationName: null };
   const override = storedHours(row.member_schedule);
   const team = storedHours(row.team_schedule);
