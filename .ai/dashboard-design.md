@@ -1,0 +1,17 @@
+# Signed-in dashboard design
+
+Applied https://github.com/Leonxlnx/taste-skill on 2026-10-21.
+
+Direction: True-black flat, seed 1486082449. The initial light Framed sheet draw conflicted with the existing dark brand, so the direction was drawn again with the dark theme. Existing Space Grotesk and IBM Plex Mono remain. The two-page top navigation remains because a sidebar adds no useful navigation here.
+
+Timesheets answer what made up the recorded workday. Compared a weekly journal, day cards, and a continuous time rail. Selected the weekly journal because it keeps dates in order, shows weekly totals, and supports scanning many days without a card grid. Weeks collapse independently. Personal day strips place actual session segments on a 24-hour clock. Team strips compare daily worked duration because the team overview does not contain session bounds. Each team member expands into their ledger. Monthly delivery, search, CSV preview, editing and permission boundaries remain.
+
+Stats answer how worked time and breaks vary across a year or selected date window. The year calendar follows the supplied GitHub reference: Sunday-first columns of weeks, month labels, Mon/Wed/Fri labels, a Less/More key, and year navigation. Amber represents worked time. Team intensity is worked time per member. Year data comes from the existing authorized monthly endpoints, with three concurrent requests, cancellation of stale renders, caching of the current selection, and an error instead of partial totals if any month fails.
+
+Drag across dates or use the native start/end fields to zoom. Selected windows show daily hours bars with a zero baseline and recomputed totals, recorded-day averages, per-person comparisons and team medians. The 30-day and 90-day presets end today for the current year and December 31 for past years. Reset restores the full year. Clicking a day loads its actual month for the session dialog. A team day first offers the members with recorded time. Year navigation resets the date window. Windows stay within the selected year.
+
+Narrow screens use a horizontal year navigation and scroll the year chart inside its frame. Weekday labels stay fixed; the chart starts near the latest recorded activity. Zoom fields support touch without a drag gesture. The year calendar supports arrow keys, Home, End and Enter. Comparison tables scroll internally with the member column fixed instead of dropping fields. Monthly Timesheets and yearly Stats retain independent date selections.
+
+Validation: 138 tests, typecheck and production build passed. Real fixture browser checks cover personal/team annual data, range totals, drag selection, date selection, cross-month details, rapid year changes, expanded ledgers, failure/retry, empty years, keyboard dates and collapsed-week persistence. Tested 320, 360, 390, 430, 540, 640, 768, 1024, 1280, 1440 and 1920px without horizontal page overflow. The skill inspector passes with edge-text allowed because month labels can be clipped at the edge of the intentional horizontal chart scroller. Source lint allowances retain monospace figures, overlay shadows, focus indicators and missing-value dashes for their functional roles.
+
+Captures and repeatable browser verification scripts live in ignored worker/.taste-skill/. All screenshot accounts and sessions come from scripts/verify-dashboard.mjs. The fixture has September and October 2026 sessions; empty months are real zeros. No production data or deployment was used.

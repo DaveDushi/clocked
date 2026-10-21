@@ -7,10 +7,11 @@ import { selectPrimaryMembership } from "./memberships.js";
 export const WORKSPACE_SCRIPT = "const wsModel = (" + createWorkspaceModel.toString() + ")();\n" +
   "const wsPrimaryMembership = (" + selectPrimaryMembership.toString() + ");\n" + String.raw`
 const ws = {
+  closedWeeks: new Set(), window: null, suppressClick: false, year: 0, annual: null, annualError: "", annualVersion: 0, annualLoading: false, annualKey: "",
   me: null, mode: "personal", page: "timesheets", period: "", query: "", expanded: new Set(),
   scope: "all", sort: "average", overview: null, overviewError: "", overviewVersion: 0,
   personal: null, personalError: "", memberData: null, memberKey: "", pending: null, policy: undefined,
-  day: null, edit: null, send: null, busy: false, messageTarget: "", sheetId: "", settingsMember: ""
+  day: null, edit: null, send: null, busy: false, messageTarget: "", sheetId: "", sheetDay: "", settingsMember: ""
 };
 const wsEsc = (value) => String(value == null ? "" : value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const wsArrow = "<svg class='icon' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5' aria-hidden='true'><path d='m9 5 7 7-7 7'/></svg>";
@@ -20,7 +21,7 @@ function wsToday() { const now = new Date(); return { y: now.getFullYear(), m: n
 function wsCurrentPeriod() { const t = wsToday(); return wsModel.period(t.y, t.m); }
 function wsIsTeam() { return ws.mode === "team"; }
 function wsCanEdit() { return ws.mode !== "worker"; }
-function wsMembers() { return ws.overview ? ws.overview.members : []; }
+function wsMembers() { return ws.page === "stats" && ws.annual && wsIsTeam() ? ws.annual.members : ws.overview ? ws.overview.members : []; }
 function wsMember(id) { return wsMembers().find((m) => m.id === id) || null; }
 function wsRoleTag(role) {
   const roles = String(role || "").split(",").map((r) => r.trim());
@@ -79,7 +80,7 @@ document.querySelectorAll("#workspace dialog").forEach((dialog) => {
     const frame = wsDialogs.splice(index, 1)[0];
     if (dialog.id === "dlgDay") ws.day = null;
     if (dialog.id === "dlgEdit") { ws.edit = null; ws.messageTarget = ""; if (!$("dlgDay").open) ws.day = null; }
-    if (dialog.id === "dlgSheet") ws.sheetId = "";
+    if (dialog.id === "dlgSheet") { ws.sheetId = ""; ws.sheetDay = ""; }
     wsRestoreFocus(frame);
   });
 });
@@ -131,12 +132,54 @@ function wsRouteMessage(text, retry, team) {
 }
 
 function wsLoadPage() {
+  if (ws.page === "stats") return wsLoadYear();
   if (wsIsTeam()) return wsLoadOverview(false);
   return personalView.load({
     key: ws.me.user.id + ":" + ws.period, period: ws.period, label: ws.me.user.email,
     hoursUrl: "/api/hours?period=" + ws.period, editUrl: "/api/manual-session"
   });
 }
+async function wsLoadYear(force) {
+  const key = ws.me.user.id + ":" + orgId + ":" + ws.year;
+  if (!force && ws.annualKey === key && (ws.annual || ws.annualLoading)) return;
+  const version = ++ws.annualVersion;
+  const year = ws.year, team = wsIsTeam(), organization = orgId;
+  ws.annualKey = key; ws.annual = null; ws.annualError = ""; ws.annualLoading = true; wsRender();
+  const months = Array.from({ length: year === wsToday().y ? wsToday().m : 12 }, (_, i) => wsModel.period(year, i + 1));
+  const results = [];
+  let next = 0;
+  try {
+    const loaded = await Promise.allSettled(Array.from({ length: 3 }, async () => {
+      while (next < months.length && version === ws.annualVersion) {
+        const period = months[next++];
+        const response = await api(team ? "/api/team/overview?organizationId=" + encodeURIComponent(organization) + "&period=" + period : "/api/hours?period=" + period);
+        if (!response.ok) throw new Error("Could not load year");
+        results.push(await response.json());
+      }
+    }));
+    if (loaded.some((result) => result.status === "rejected")) throw new Error("Incomplete year");
+    if (version !== ws.annualVersion) return;
+    if (team) {
+      const byId = new Map();
+      for (const month of results) for (const member of month.members) {
+        if (!byId.has(member.id)) byId.set(member.id, { ...member, days: [], enteredSessions: 0 });
+        const target = byId.get(member.id);
+        target.days.push(...member.days); target.enteredSessions += member.enteredSessions;
+      }
+      const members = Array.from(byId.values()).map((member) => ({ ...member, days: member.days.sort((a, b) => a.date.localeCompare(b.date)), stats: wsModel.statsForDays(member.days) }));
+      ws.annual = { members, today: results.map((month) => month.today).sort().at(-1) };
+    } else {
+      const days = results.flatMap((month) => month.recordedDays || []).map((day) => ({ ...day, breakCount: day.breaks.length })).sort((a, b) => a.date.localeCompare(b.date));
+      ws.annual = { days };
+    }
+  } catch {
+    if (version !== ws.annualVersion) return;
+    ws.annualError = "Could not load the full year. Try again to load all months.";
+  } finally {
+    if (version === ws.annualVersion) { ws.annualLoading = false; wsRender(); if (ws.annual) wsRefreshSheet(); }
+  }
+}
+
 async function wsLoadOverview(keep) {
   const version = ++ws.overviewVersion;
   if (!keep) { ws.overview = null; ws.overviewError = ""; wsRender(); }
@@ -153,7 +196,7 @@ async function wsLoadOverview(keep) {
     if (!keep) ws.overview = null;
   }
   wsRender();
-  wsRefreshSheet();
+  if (ws.page === "timesheets") wsRefreshSheet();
 }
 async function wsLoadPending() {
   try {
@@ -183,6 +226,7 @@ function wsSyncUrl() {
   const url = new URL(location.href);
   url.searchParams.set("view", ws.page);
   url.searchParams.set("month", ws.period);
+  if (ws.page === "stats") url.searchParams.set("year", ws.year); else url.searchParams.delete("year");
   history.replaceState({}, "", url.pathname + url.search);
 }
 
@@ -201,6 +245,9 @@ function wsRender() {
     if (button.dataset.page === ws.page) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
   });
   const main = $("wsMain");
+  const oldChart = main.querySelector(".ws-year-scroll");
+  const oldChartKey = oldChart ? oldChart.dataset.window : "";
+  const oldChartLeft = oldChart ? oldChart.scrollLeft : 0;
   const scrollY = window.scrollY;
   const heat = main.querySelector(".ws-heat-scroll");
   const heatLeft = heat ? heat.scrollLeft : 0;
@@ -209,6 +256,14 @@ function wsRender() {
   if (ws.page === "timesheets" && wsIsTeam() && ws.overview) wsRenderRoster();
   const nextHeat = main.querySelector(".ws-heat-scroll");
   if (nextHeat) nextHeat.scrollLeft = heatLeft;
+  const chart = main.querySelector(".ws-year-scroll");
+  if (chart) {
+    if (oldChartKey === chart.dataset.window) chart.scrollLeft = oldChartLeft;
+    else if (chart.scrollWidth > chart.clientWidth) {
+      const latest = Array.from(chart.querySelectorAll("[data-minutes]")).sort((a, b) => a.dataset.date.localeCompare(b.dataset.date)).at(-1);
+      if (latest) chart.scrollLeft = latest.getBoundingClientRect().right - chart.getBoundingClientRect().left + chart.scrollLeft - chart.clientWidth + 35;
+    }
+  }
   window.scrollTo(0, scrollY);
   if (focusKey) {
     const again = main.querySelector("[data-key='" + focusKey + "'], [data-role='" + focusKey + "']");
@@ -227,9 +282,7 @@ function wsTeamHtml() {
     "<input type='search' class='ws-search' data-role='search' placeholder='Find a member' aria-label='Find a member' value='" + wsEsc(ws.query) + "' /></div>" +
     "<div class='ws-team-actions'><button type='button' data-action='toggle-all' id='wsViewAll' aria-pressed='false'>View all timesheets</button>" +
     "<button type='button' class='primary' data-action='send-all' data-key='send-all'>Send all &#8599;</button></div></div>" +
-    "<table class='ws-roster'><caption class='sr-only'>Member timesheets for " + wsEsc(wsModel.monthLabel(ws.period)) + "</caption>" +
-    "<thead><tr><th scope='col'>Member</th><th scope='col' class='days'>Days</th><th scope='col' class='num'>Worked time</th><th scope='col' class='end'><span class='sr-only'>Details</span></th></tr></thead>" +
-    "<tbody id='wsRosterBody'></tbody><tfoot id='wsRosterFoot'></tfoot></table>" +
+    "<div id='wsRosterBody' class='ws-person-ledgers' aria-label='Team timesheets'></div><div id='wsRosterFoot' class='ws-ledger-team-total'></div>" +
     "<div class='ws-bottom' id='wsBottom'></div>";
 }
 function wsVisibleMembers() {
@@ -237,25 +290,22 @@ function wsVisibleMembers() {
   return wsMembers().filter((m) => !q || (m.name + " " + m.email).toLowerCase().includes(q));
 }
 function wsRenderRoster() {
-  const body = $("wsRosterBody");
-  if (!body) return;
+  const body = $("wsRosterBody"); if (!body) return;
   const visible = wsVisibleMembers();
   body.innerHTML = visible.length ? visible.map((m) => {
-    const open = ws.expanded.has(m.id);
-    const tag = wsRoleTag(m.role);
-    return "<tr class='ws-row" + (open ? " open" : "") + "'><td><button type='button' class='ws-member' data-action='toggle-member' data-id='" + wsEsc(m.id) + "' data-key='member:" + wsEsc(m.id) + "' aria-expanded='" + open + "' aria-controls='detail-" + wsEsc(m.id) + "'>" +
-      wsEsc(m.name) + (tag ? "<span class='ws-role'>" + tag + "</span>" : "") + "</button></td>" +
-      "<td class='days'>" + m.stats.recordedDays + "</td><td class='num'>" + wsModel.duration(m.stats.workedMinutes) + "</td>" +
-      "<td><button type='button' class='ws-expand' data-action='toggle-member' data-id='" + wsEsc(m.id) + "' aria-expanded='" + open + "' aria-label='Toggle " + wsEsc(m.name) + " timesheet'>" + wsArrow + "</button></td></tr>" +
-      (open ? "<tr id='detail-" + wsEsc(m.id) + "'><td colspan='4' class='ws-detail-cell'>" + wsMemberDetail(m, false) + "</td></tr>" : "");
-  }).join("") : "<tr><td colspan='4' class='ws-empty'>" + (wsMembers().length ? "No members match your search." : "No members yet. Invite someone to get started.") + "</td></tr>";
+    const open = ws.expanded.has(m.id), tag = wsRoleTag(m.role);
+    const byDate = new Map(m.days.map((day) => [day.date, day]));
+    const pulse = Array.from({ length: wsModel.daysInMonth(ws.period) }, (_, index) => {
+      const day = byDate.get(ws.period + "-" + wsModel.pad(index + 1));
+      return "<i style='background:" + (day ? wsModel.WORK_SHADES[wsModel.workedLevel(day.minutes)] : "var(--border)") + "'></i>";
+    }).join("");
+    return "<article class='ws-person-ledger" + (open ? " open" : "") + "'><button type='button' class='ws-person-toggle' data-action='toggle-member' data-id='" + wsEsc(m.id) + "' data-key='member:" + wsEsc(m.id) + "' aria-expanded='" + open + "' aria-controls='detail-" + wsEsc(m.id) + "'><span class='ws-person-initials' aria-hidden='true'>" + wsEsc(wsModel.initials(m.name)) + "</span><span class='ws-person-name'>" + wsEsc(m.name) + "<small>" + m.stats.recordedDays + " recorded days" + (tag ? " / " + tag : "") + "</small></span><span class='ws-person-pulse' aria-hidden='true'>" + pulse + "</span><span class='ws-person-time mono'>" + wsModel.duration(m.stats.workedMinutes) + "<small>worked this month</small></span>" + wsArrow + "</button>" +
+      "<div id='detail-" + wsEsc(m.id) + "'" + (open ? "" : " hidden") + ">" + (open ? wsMemberDetail(m, false) : "") + "</div></article>";
+  }).join("") : "<p class='ws-empty'>" + (wsMembers().length ? "No members match your search." : "No members yet. Invite someone to get started.") + "</p>";
   const total = visible.reduce((sum, m) => sum + m.stats.workedMinutes, 0);
-  $("wsRosterFoot").innerHTML = visible.length ? "<tr class='ws-total'><td colspan='2'>" + (ws.query.trim() ? "Matching members" : "Team total") + "</td><td class='num'>" + wsModel.duration(total) + "</td><td></td></tr>" : "";
+  $("wsRosterFoot").innerHTML = visible.length ? "<span>" + (ws.query.trim() ? "Matching members" : "Team total") + "</span><strong class='mono'>" + wsModel.duration(total) + "</strong>" : "";
   const all = wsMembers().length > 0 && wsMembers().every((m) => ws.expanded.has(m.id));
-  const viewAll = $("wsViewAll");
-  viewAll.textContent = all ? "Collapse all" : "View all timesheets";
-  viewAll.setAttribute("aria-pressed", String(all));
-  wsRenderBottom();
+  $("wsViewAll").textContent = all ? "Collapse all" : "View all timesheets"; $("wsViewAll").setAttribute("aria-pressed", String(all)); wsRenderBottom();
 }
 function wsRenderBottom() {
   const bottom = $("wsBottom");
@@ -264,19 +314,25 @@ function wsRenderBottom() {
   bottom.innerHTML = "<span>" + wsEsc(wsRecordedThrough()) + "</span>" +
     (count ? "<button type='button' class='text-button' data-action='invite' data-key='pending'>" + count + " pending invitation" + (count === 1 ? "" : "s") + " &#8599;</button>" : "");
 }
+function wsLedgerHtml(days, userId, sessions) {
+  if (!days.length) return "<p class='ws-empty'>No sessions recorded in this period.</p>";
+  const max = Math.max(480, ...days.map((day) => day.minutes));
+  return "<div class='ws-ledger'>" + wsModel.weekGroups(days).map((week) => {
+    const label = (date) => new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(date + "T00:00:00Z"));
+    return "<details class='ws-week' data-week='" + wsEsc(userId + ":" + week.start) + "'" + (ws.closedWeeks.has(userId + ":" + week.start) ? "" : " open") + "><summary><span>" + label(week.days[0].date) + " - " + label(week.days.at(-1).date) + "<small>" + week.days.length + " recorded days</small></span><span class='mono'>" + wsModel.duration(week.minutes) + "<span class='ws-week-chevron' aria-hidden='true'>&#8964;</span></span></summary><div class='ws-week-days'>" + week.days.map((day) => {
+      const own = sessions ? sessions.filter((session) => session.date === day.date) : [];
+      const marks = sessions ? own.map((session) => "<i class='ws-session-mark' style='left:" + session.startMin / 14.4 + "%;width:" + (session.endMin - session.startMin) / 14.4 + "%'></i>").join("") : "<i class='ws-session-mark' style='left:0;width:" + day.minutes / max * 100 + "%'></i>";
+      const weekday = new Intl.DateTimeFormat("en", { weekday: "short", timeZone: "UTC" }).format(new Date(day.date + "T00:00:00Z"));
+      const text = wsModel.dayLabel(day.date, true) + ", " + wsModel.duration(day.minutes) + " worked, " + wsModel.shortDuration(day.breakMinutes) + " breaks, " + day.start + " to " + day.end;
+      return "<button type='button' class='ws-ledger-day' data-action='open-day' data-user='" + wsEsc(userId) + "' data-date='" + day.date + "' data-key='day:" + wsEsc(userId) + ":" + day.date + "' aria-label='" + wsEsc(text) + "'><span class='ws-date-stamp'><small>" + weekday + "</small><b>" + Number(day.date.slice(8)) + "</b></span><span class='ws-day-rhythm'><span class='ws-day-span'>" + day.start + " <span aria-hidden='true'>&rarr;</span> " + day.end + "</span><span class='ws-session-track' aria-hidden='true'>" + marks + "</span><small>" + (sessions ? own.length + " session" + (own.length === 1 ? "" : "s") + " / " : "") + wsModel.shortDuration(day.breakMinutes) + " breaks</small></span><span class='ws-day-amount mono'>" + wsModel.duration(day.minutes) + "<small>View day <span aria-hidden='true'>&#8599;</span></small></span></button>";
+    }).join("") + "</div></details>";
+  }).join("") + "</div>";
+}
 function wsMemberDetail(m, inSheet) {
-  const rows = m.days.map((d) => "<button type='button' class='ws-daily' data-action='open-day' data-user='" + wsEsc(m.id) + "' data-date='" + d.date + "' data-key='day:" + wsEsc(m.id) + ":" + d.date + (inSheet ? ":sheet" : "") + "' aria-label='View " + wsEsc(m.name) + " sessions on " + wsEsc(wsModel.dayLabel(d.date, true)) + "'>" +
-    "<span>" + wsEsc(wsModel.dayLabel(d.date)) + "</span><span class='span'>" + d.start + " – " + d.end + "</span>" +
-    "<span class='brk'>" + wsModel.shortDuration(d.breakMinutes) + "</span><span class='hrs'>" + wsModel.duration(d.minutes) + "</span></button>").join("");
-  return "<section class='ws-detail' aria-label='" + wsEsc(m.name) + " recorded days'>" +
-    (inSheet ? "<div style='height:6px'></div>" : "<div class='ws-detail-head'><strong>" + wsEsc(m.name) + "</strong><small>" + wsEsc(wsModel.monthLabel(ws.period)) + " · " + m.stats.recordedDays + " day" + (m.stats.recordedDays === 1 ? "" : "s") + " · " + wsModel.duration(m.stats.workedMinutes) + "</small></div>") +
-    (m.days.length ? "<div class='ws-daily-head'><span>Date</span><span class='span'>Day span</span><span>Breaks</span><span>Worked</span></div>" + rows +
-      "<div class='ws-subtotal'><span>Member total</span><span class='mono'>" + wsModel.duration(m.stats.workedMinutes) + " worked · " + wsModel.duration(m.stats.breakMinutes) + " breaks</span></div>"
-      : "<p class='ws-empty'>No sessions recorded in " + wsEsc(wsModel.monthLabel(ws.period)) + ".</p>") +
-    "<div class='ws-detail-actions'><div><button type='button' class='text-button' data-action='member-settings' data-id='" + wsEsc(m.id) + "' data-key='msettings:" + wsEsc(m.id) + (inSheet ? ":sheet" : "") + "'>Member settings</button>" +
-    "<button type='button' class='text-button' data-action='add-day' data-user='" + wsEsc(m.id) + "' data-key='add-day:" + wsEsc(m.id) + (inSheet ? ":sheet" : "") + "'>Add time</button>" +
-    (m.days.length ? "<button type='button' class='text-button' data-action='preview' data-user='" + wsEsc(m.id) + "'>Preview CSV</button>" : "") + "</div>" +
-    (m.days.length ? "<small>Select a date to review or edit a session</small>" : "") + "</div></section>";
+  const days = ws.page === "stats" ? wsWindowDays(m.days) : m.days;
+  return "<section class='ws-member-ledger' aria-label='" + wsEsc(m.name) + " recorded days'>" +
+    wsLedgerHtml(days, m.id, null) + (ws.page === "stats" ? "" :
+      "<div class='ws-detail-actions'><button type='button' class='text-button' data-action='member-settings' data-id='" + wsEsc(m.id) + "'>Member settings</button><button type='button' class='text-button' data-action='add-day' data-user='" + wsEsc(m.id) + "'>+ Add time</button>" + (days.length ? "<button type='button' class='text-button' data-action='preview' data-user='" + wsEsc(m.id) + "'>Preview CSV</button>" : "") + "</div>") + "</section>";
 }
 
 // Personal and worker timesheet
@@ -288,13 +344,7 @@ function wsPersonalHtml() {
   const data = ws.personal;
   const days = data.recordedDays || [];
   const breaks = days.reduce((sum, d) => sum + d.breakMinutes, 0);
-  const table = days.length
-    ? "<table class='ws-personal'><caption class='sr-only'>Your worked time and breaks for " + wsEsc(wsModel.monthLabel(ws.period)) + "</caption>" +
-      "<thead><tr><th scope='col'>Date</th><th scope='col' class='ws-span'>Day span</th><th scope='col' class='num'>Breaks</th><th scope='col' class='num'>Worked time</th></tr></thead><tbody>" +
-      days.map((d) => "<tr><td><button type='button' class='ws-day-link' data-action='open-day' data-user='' data-date='" + d.date + "' data-key='day::" + d.date + "'>" + wsEsc(wsModel.dayLabel(d.date)) + "</button></td>" +
-        "<td class='ws-span'>" + d.start + " – " + d.end + "</td><td class='num break-value'>" + wsModel.shortDuration(d.breakMinutes) + "</td><td class='num'>" + wsModel.duration(d.minutes) + "</td></tr>").join("") +
-      "</tbody><tfoot><tr class='ws-total'><td>Month total</td><td class='ws-span'></td><td class='num'>" + wsModel.duration(breaks) + "</td><td class='num'>" + wsModel.duration(data.totalMinutes) + "</td></tr></tfoot></table>"
-    : "<p class='ws-empty'>No sessions recorded in " + wsEsc(wsModel.monthLabel(ws.period)) + "." + (worker ? "" : " Connect the desktop app in Settings, or add time from a day.") + "</p>";
+  const table = "<div class='ws-month-summary'><div><small>" + wsEsc(wsModel.monthLabel(ws.period)) + "</small><strong class='mono'>" + wsModel.duration(data.totalMinutes) + "</strong></div><p>" + days.length + " recorded days <span aria-hidden='true'>/</span> " + wsModel.duration(breaks) + " breaks<small>Session bars follow a 24-hour clock.</small></p></div>" + wsLedgerHtml(days, "", data.sessions || []);
   const projects = (data.projects || []).length ? "<section class='ws-projects'><h2>By project</h2>" + (function () {
     const max = data.projects.reduce((a, p) => Math.max(a, p.minutes || 0), 0) || 1;
     return data.projects.slice(0, 12).map((p) => "<div class='ws-project'><span title='" + wsEsc(p.project) + "'>" + wsEsc(p.project) + "</span><i style='width:" + Math.max(4, Math.round((p.minutes / max) * 100)) + "%'></i><span class='mono' style='text-align:right'>" + wsModel.duration(p.minutes) + "</span></div>").join("");
@@ -319,36 +369,61 @@ function wsMetrics(stats, all, name) {
     wsMetric("Breaks / day", wsModel.rate(stats.breaksPerDay), days + (all ? " recorded member-day" : " recorded day") + (days === 1 ? "" : "s")) +
     "</div>";
 }
+function wsWindowDays(days) { return ws.window ? days.filter((day) => day.date >= ws.window.start && day.date <= ws.window.end) : days; }
+function wsStatsMembers() { return ws.annual.members.map((member) => { const days = wsWindowDays(member.days); return { ...member, days, stats: wsModel.statsForDays(days) }; }); }
+function wsWindowLabel() { return ws.window ? wsModel.dayLabel(ws.window.start) + " to " + wsModel.dayLabel(ws.window.end) : String(ws.year); }
+function wsSetWindow(start, end) {
+  const first = start < end ? start : end, last = start < end ? end : start;
+  if (first.slice(0, 4) !== String(ws.year) || last.slice(0, 4) !== String(ws.year)) return;
+  ws.window = { start: first, end: last }; wsRender();
+}
+new ResizeObserver(() => {
+  const chart = $("wsMain").querySelector(".ws-year-scroll");
+  if (!chart) return;
+  const previous = Number(chart.dataset.width || chart.scrollWidth);
+  if (previous >= chart.scrollWidth && chart.clientWidth < chart.scrollWidth) {
+    const latest = Array.from(chart.querySelectorAll("[data-minutes]")).sort((a, b) => a.dataset.date.localeCompare(b.dataset.date)).at(-1);
+    if (latest) chart.scrollLeft = latest.getBoundingClientRect().right - chart.getBoundingClientRect().left + chart.scrollLeft - chart.clientWidth + 35;
+  }
+  chart.dataset.width = chart.clientWidth;
+}).observe($("wsMain"));
+function wsZoomControls() {
+  const start = ws.window ? ws.window.start : ws.year + "-01-01", end = ws.window ? ws.window.end : ws.year + "-12-31";
+  return "<div class='ws-zoom'><div class='ws-zoom-presets'><button type='button' data-action='zoom-preset' data-days='30'>Last 30 days</button><button type='button' data-action='zoom-preset' data-days='90'>Last 90 days</button>" + (ws.window ? "<button type='button' data-action='zoom-reset'>Reset to year</button>" : "") + "</div><div class='ws-zoom-dates'><label>From<input id='wsZoomStart' type='date' value='" + start + "' min='" + ws.year + "-01-01' max='" + ws.year + "-12-31' required></label><label>To<input id='wsZoomEnd' type='date' value='" + end + "' min='" + ws.year + "-01-01' max='" + ws.year + "-12-31' required></label><button type='button' data-action='zoom-apply'>Zoom</button></div></div>";
+}
+
 function wsStatsHtml() {
   const team = wsIsTeam();
-  const head = "<div class='ws-title'><div><h1>" + (team ? "Team stats" : "My stats") + "</h1><p>Recorded worked time and breaks for the selected month.</p></div></div>";
-  let filters = "<div class='ws-stats-filters'>" + wsMonthSelect();
-  if (team && ws.overview) {
+  const head = "<div class='ws-title'><div><h1>" + (team ? "Team stats" : "My stats") + "</h1><p>A year of recorded worked time and breaks.</p></div></div>";
+  let scope = "";
+  if (team && ws.annual) {
     if (ws.scope !== "all" && !wsMember(ws.scope)) ws.scope = "all";
-    filters += "<select data-role='scope' aria-label='Stats for'><option value='all'>All " + wsMembers().length + " members</option>" +
-      wsMembers().map((m) => "<option value='" + wsEsc(m.id) + "'" + (ws.scope === m.id ? " selected" : "") + ">" + wsEsc(m.name) + "</option>").join("") + "</select>";
+    scope = "<select data-role='scope' aria-label='Stats for'><option value='all'>All " + wsMembers().length + " members</option>" + wsMembers().map((m) => "<option value='" + wsEsc(m.id) + "'" + (ws.scope === m.id ? " selected" : "") + ">" + wsEsc(m.name) + "</option>").join("") + "</select>";
   }
-  filters += "</div>";
-  if (team) {
-    if (!ws.overview) return head + filters + wsState("Loading team stats…", ws.overviewError, "reload");
-    if (ws.scope === "all") {
-      return head + filters + wsMetrics(ws.overview.team, true) + (ws.overview.team.recordedDays ? wsComparisonHtml() + wsBreakGridHtml() : "<p class='ws-empty'>No sessions recorded in " + wsEsc(wsModel.monthLabel(ws.period)) + ".</p>");
-    }
-    const m = wsMember(ws.scope);
-    return head + filters + wsMetrics(m.stats, false, m.name) + wsWorkedCalendarHtml(m.days, m.id);
+  const years = Array.from({ length: 5 }, (_, i) => wsToday().y - i);
+  if (!years.includes(ws.year)) years.push(ws.year);
+  const nav = "<nav class='ws-years' aria-label='Activity year'>" + years.map((year) => "<button type='button' data-action='year' data-year='" + year + "'" + (year === ws.year ? " aria-current='date'" : "") + ">" + year + "</button>").join("") + "</nav>";
+  let content;
+  if (!ws.annual) content = wsState("Loading " + ws.year + " activity ", ws.annualError, "reload-year");
+  else {
+    const all = team && ws.scope === "all";
+    const member = team && !all ? wsMember(ws.scope) : null;
+    const days = wsWindowDays(all ? ws.annual.members.flatMap((m) => m.days) : member ? member.days : ws.annual.days);
+    const stats = wsModel.statsForDays(days);
+    content = wsZoomControls() + wsWorkedCalendarHtml(days, all ? null : member ? member.id : "") + wsMetrics(stats, all, member ? member.name : "") + (all ? wsComparisonHtml() : "");
   }
-  if (!ws.personal) return head + filters + wsState("Loading your stats…", ws.personalError, "reload");
-  return head + filters + wsMetrics(ws.personal.stats, false) + wsWorkedCalendarHtml(ws.personal.recordedDays || [], "");
+  return head + (scope ? "<div class='ws-stats-filters'>" + scope + "</div>" : "") + "<div class='ws-year-layout'><div class='ws-year-content'>" + content + "</div>" + nav + "</div>";
 }
 function wsComparisonHtml() {
-  const members = ws.overview.members;
+  const members = wsStatsMembers();
   const rows = wsModel.sortMembers(members, ws.sort);
   const max = members.reduce((a, m) => Math.max(a, m.stats.avgBreakMinutes), 0);
-  const median = ws.overview.median;
+  const recorded = members.filter((m) => m.stats.recordedDays);
+  const median = { members: recorded.length, avgBreakMinutes: wsModel.median(recorded.map((m) => m.stats.avgBreakMinutes)), breaksPerDay: wsModel.median(recorded.map((m) => m.stats.breaksPerDay)) };
   const option = (value, label) => "<option value='" + value + "'" + (ws.sort === value ? " selected" : "") + ">" + label + "</option>";
   return "<section class='ws-section'><div class='ws-section-head'><h2>Breaks by member</h2>" +
     "<select data-role='sort' aria-label='Sort members'>" + option("average", "Highest daily break time") + option("breaks", "Most breaks per day") + option("name", "Name") + "</select></div>" +
-    "<div class='ws-compare-scroll'><table class='ws-compare'><caption class='sr-only'>Break comparison for " + wsEsc(wsModel.monthLabel(ws.period)) + "</caption><thead><tr><th scope='col'>Member</th><th scope='col' class='num'>Worked</th><th scope='col' class='num'>Break time</th><th scope='col' class='num'>Breaks / day</th><th scope='col' class='num'>Avg. break time / day</th></tr></thead><tbody>" +
+    "<div class='ws-compare-scroll'><table class='ws-compare'><caption class='sr-only'>Break comparison for " + ws.year + "</caption><thead><tr><th scope='col'>Member</th><th scope='col' class='num'>Worked</th><th scope='col' class='num'>Break time</th><th scope='col' class='num'>Breaks / day</th><th scope='col' class='num'>Avg. break time / day</th></tr></thead><tbody>" +
     "<tr class='ws-ref'><th scope='row' style='font-weight:400;text-align:left;padding:12px 0;font-size:12px'>Team median <small>(" + median.members + " with recorded days)</small></th><td class='num'>—</td><td class='num'>—</td><td class='num'>" + (median.breaksPerDay == null ? "—" : wsModel.rate(median.breaksPerDay)) + "</td><td class='num'>" + (median.avgBreakMinutes == null ? "—" : wsModel.shortDuration(median.avgBreakMinutes)) + "</td></tr>" +
     rows.map((m) => {
       const recorded = m.stats.recordedDays > 0;
@@ -366,97 +441,104 @@ function wsPolicyNote() {
     ? "Team inactivity limit: " + Math.round(ws.policy.timeout_secs / 60) + " minutes without input. Desktop apps apply it after their next sync. Sessions do not record which limit was active, so gaps from before a change may reflect each computer's own setting."
     : "Each computer uses its own inactivity limit, so the same pause can end a session on one computer and not on another. Set a team limit in Settings to make future idle gaps comparable.") + "</p>";
 }
-function wsBreakGridHtml() {
-  const dates = wsModel.visibleDates(ws.period, ws.overview.today);
-  const header = "<div class='ws-heat-row' aria-hidden='true'><span class='ws-heat-corner'></span>" + dates.map((d) => "<span class='ws-heat-label'>" + Number(d.slice(8)) + "</span>").join("") + "</div>";
-  const body = ws.overview.members.map((m) => {
-    const byDate = {};
-    m.days.forEach((d) => { byDate[d.date] = d; });
-    return "<div class='ws-heat-row'><button type='button' class='ws-heat-name' data-action='open-sheet' data-id='" + wsEsc(m.id) + "' data-key='heat:" + wsEsc(m.id) + "' title='" + wsEsc(m.name) + "'>" + wsEsc(m.name) + "</button>" +
-      dates.map((date) => {
-        const d = byDate[date];
-        const label = m.name + ", " + wsModel.dayLabel(date, true) + ": ";
-        if (!d) return "<span class='ws-heat-cell none' role='img' aria-label='" + wsEsc(label + "no recorded sessions") + "' title='" + wsEsc(m.name + " · " + wsModel.dayLabel(date) + " · No recorded sessions") + "'></span>";
-        const text = d.breakMinutes ? wsModel.shortDuration(d.breakMinutes) + " break time in " + d.breakCount + " break" + (d.breakCount === 1 ? "" : "s") : "recorded, no breaks";
-        return "<button type='button' class='ws-heat-cell' style='--strength:" + wsModel.breakStrength(d.breakMinutes) + "' data-action='open-day' data-user='" + wsEsc(m.id) + "' data-date='" + date + "' data-key='hday:" + wsEsc(m.id) + ":" + date + "' aria-label='" + wsEsc(label + text) + "' title='" + wsEsc(m.name + " · " + wsModel.dayLabel(date) + " · " + text) + "'></button>";
-      }).join("") + "</div>";
-  }).join("");
-  return "<section class='ws-section'><div class='ws-section-head'><h2>Daily break time</h2><small>" + wsEsc(wsModel.monthLabel(ws.period)) + "</small></div>" +
-    "<div class='ws-heat-scroll'><div class='ws-heat' role='group' aria-label='Break time by member and day' style='--days:" + dates.length + "'>" + header + body + "</div></div>" +
-    "<div class='ws-legend'><span>0m</span>" + [0, 30, 60, 90, 120].map((v) => "<i style='background:rgba(242,169,80," + wsModel.breakStrength(v) + ")'></i>").join("") + "<span>120m+</span><span class='gap'></span><i class='none-key'></i><span>No recorded sessions</span></div>" +
-    "<p class='ws-note'>The faintest squares are recorded days without breaks. Select a day to inspect its sessions. On small screens, scroll the grid sideways.</p></section>";
-}
 function wsWorkedCalendarHtml(days, userId) {
-  const cal = wsModel.calendar(ws.period);
-  const today = wsDataToday();
-  const byDate = {};
-  days.forEach((d) => { byDate[d.date] = d; });
-  const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  if (ws.window) return wsRangeChartHtml(days, userId);
+  const cal = ws.window ? wsModel.yearCalendar(ws.year, ws.window.start, ws.window.end) : wsModel.yearCalendar(ws.year);
+  const today = wsIsTeam() ? ws.annual.today : wsDataToday();
+  const byDate = new Map();
+  for (const day of days) byDate.set(day.date, (byDate.get(day.date) || 0) + day.minutes);
+  const labels = ["", "Mon", "", "Wed", "", "Fri", ""];
+  const months = cal.months.map((month) => "<span style='grid-column:" + (month.week + 2) + "'>" + month.label + "</span>").join("");
   let cells = "";
   for (let row = 0; row < 7; row++) {
     cells += "<span class='ws-cal-day' aria-hidden='true'>" + labels[row] + "</span>";
     for (let week = 0; week < cal.weeks; week++) {
-      const day = week * 7 + row - cal.offset + 1;
-      if (day < 1 || day > cal.last) { cells += "<span class='ws-cal-cell outside' aria-hidden='true'></span>"; continue; }
-      const date = ws.period + "-" + wsModel.pad(day);
-      const d = byDate[date];
-      const nice = wsModel.dayLabel(date, true);
-      if (!d) {
-        const future = date > today;
-        const text = nice + ": " + (future ? "not yet recorded" : "no recorded sessions");
-        cells += !future && wsCanEdit()
-          ? "<button type='button' class='ws-cal-cell none' data-action='open-day' data-user='" + wsEsc(userId) + "' data-date='" + date + "' data-key='cal:" + wsEsc(userId) + ":" + date + "' aria-label='" + wsEsc(text) + "' title='" + wsEsc(wsModel.dayLabel(date) + " · No recorded sessions") + "'>" + day + "</button>"
-          : "<span class='ws-cal-cell " + (future ? "future" : "none") + "' role='img' aria-label='" + wsEsc(text) + "' title='" + wsEsc(wsModel.dayLabel(date) + " · " + (future ? "Not yet recorded" : "No recorded sessions")) + "' style='display:inline-flex;align-items:center;justify-content:center;font:11px var(--mono)'>" + day + "</span>";
-        continue;
-      }
-      const level = wsModel.workedLevel(d.minutes);
-      cells += "<button type='button' class='ws-cal-cell' style='--shade:" + wsModel.WORK_SHADES[level] + ";--ink:" + (level < 3 ? "#38220d" : "#ffeed7") + "' data-action='open-day' data-user='" + wsEsc(userId) + "' data-date='" + date + "' data-key='cal:" + wsEsc(userId) + ":" + date + "' data-minutes='" + d.minutes + "' aria-label='" + wsEsc(nice + ": " + wsModel.duration(d.minutes) + " worked") + "' title='" + wsEsc(wsModel.dayLabel(date) + " · " + wsModel.duration(d.minutes) + " worked") + "'>" + day + "</button>";
+      const date = cal.dates[week * 7 + row];
+      if (!date) { cells += "<span class='ws-cal-cell outside'></span>"; continue; }
+      const recorded = byDate.has(date), minutes = byDate.get(date) || 0, future = date > today;
+      const text = wsModel.dayLabel(date, true) + ", " + ws.year + ": " + (future ? "not yet recorded" : recorded ? wsModel.duration(minutes) + " worked" : "no recorded sessions");
+      const style = recorded ? " style='--shade:" + wsModel.WORK_SHADES[wsModel.workedLevel(minutes / (userId === null ? Math.max(1, wsMembers().length) : 1))] + "'" : "";
+      const className = "ws-cal-cell" + (future ? " future" : recorded ? "" : " none");
+      const attrs = " class='" + className + "'" + style + " tabindex='-1' aria-label='" + wsEsc(text) + "' title='" + wsEsc(text) + "'";
+      if (future) cells += "<span role='img'" + attrs + "></span>";
+      else cells += "<button type='button'" + attrs + " data-action='" + (userId === null ? "year-team-day" : "open-day") + "' data-user='" + wsEsc(userId || "") + "' data-date='" + date + "' data-key='cal:" + wsEsc(userId || "all") + ":" + date + "'" + (recorded ? " data-minutes='" + minutes + "'" : "") + "></button>";
     }
   }
-  return "<section class='ws-section'><div class='ws-section-head'><h2>Worked time by day</h2><small>" + wsEsc(wsModel.monthLabel(ws.period)) + "</small></div>" +
-    "<div class='ws-cal' style='--weeks:" + cal.weeks + "' role='group' aria-label='Daily worked time. Darker amber means more worked time.'>" + cells + "</div>" +
-    "<div class='ws-legend'><span>Less</span>" + wsModel.WORK_SHADES.map((shade, i) => "<i style='background:" + shade + "' title='" + wsModel.WORK_LEVELS[i] + "'></i>").join("") + "<span>More</span><span class='gap'></span><i class='none-key'></i><span>No sessions</span><span class='gap'></span><i class='future-key'></i><span>Not yet recorded</span></div>" +
-    "<p class='ws-note'>Darker amber means more worked time, excluding breaks. Select a day to see its sessions and breaks.</p></section>";
+  return "<section class='ws-contributions'><div class='ws-section-head'><h2>" + byDate.size + " recorded day" + (byDate.size === 1 ? "" : "s") + " in " + wsWindowLabel() + "</h2></div>" +
+    "<div class='ws-contribution-frame' style='--cell-size:10px'><div class='ws-year-scroll' data-window='" + ws.year + "' tabindex='0' aria-label='Full-year activity chart, scroll horizontally on smaller screens'><div class='ws-cal-months' aria-hidden='true' style='--weeks:" + cal.weeks + "'><span></span>" + months + "</div><div class='ws-cal' tabindex='0' style='--weeks:" + cal.weeks + "' role='group' aria-label='Daily worked time in " + ws.year + "'>" + cells + "</div></div>" +
+    "<div class='ws-chart-footer'><span>" + (userId === null ? "Intensity: worked time per team member" : "Select a day to review sessions") + ". Drag across days to zoom." + "</span><div class='ws-legend'><span>Less</span><i class='none-key'></i>" + wsModel.WORK_SHADES.map((shade, i) => "<i style='background:" + shade + "' title='" + wsModel.WORK_LEVELS[i] + (userId === null ? " per team member" : "") + "'></i>").join("") + "<span>More</span></div></div></div></section>";
+}
+function wsRangeChartHtml(days, userId) {
+  const byDate = new Map();
+  for (const day of days) byDate.set(day.date, (byDate.get(day.date) || 0) + day.minutes);
+  const dates = wsModel.yearCalendar(ws.year, ws.window.start, ws.window.end).dates.filter(Boolean).sort();
+  const max = Math.max(120, Math.ceil(Math.max(0, ...byDate.values()) / 120) * 120);
+  const stride = Math.max(1, Math.ceil(dates.length / 8));
+  const bars = dates.map((date, index) => {
+    const minutes = byDate.get(date) || 0, future = date > wsDataToday();
+    const text = wsModel.dayLabel(date, true) + ": " + (future ? "not yet recorded" : byDate.has(date) ? wsModel.duration(minutes) + " worked" : "no recorded sessions");
+    const attrs = " class='ws-range-point" + (byDate.has(date) ? " recorded" : "") + "' style='height:" + (minutes / max * 100) + "%' aria-label='" + wsEsc(text) + "' title='" + wsEsc(text) + "'";
+    return "<div class='ws-range-column'>" + (future ? "<span role='img'" + attrs + "></span>" : "<button type='button'" + attrs + " data-action='" + (userId === null ? "year-team-day" : "open-day") + "' data-user='" + wsEsc(userId || "") + "' data-date='" + date + "' data-range-date='" + date + "' data-key='range:" + date + "'></button>") +
+      (index % stride === 0 ? "<span class='ws-range-label'>" + date.slice(5).replace("-", "/") + "</span>" : "") + "</div>";
+  }).join("");
+  return "<section class='ws-contributions'><div class='ws-section-head'><h2>" + wsEsc(wsWindowLabel()) + "</h2><small>" + byDate.size + " recorded days</small></div><div class='ws-range-frame'><div class='ws-range-axis' aria-hidden='true'><span>" + max / 60 + "h</span><span>" + max / 120 + "h</span><span>0h</span></div><div class='ws-range-scroll' tabindex='0' aria-label='Daily worked time for selected dates'><div class='ws-range-bars' style='min-width:" + Math.max(100, dates.length * 18) + "px'><div class='ws-range-rule top'></div><div class='ws-range-rule middle'></div><div class='ws-range-rule bottom'></div>" + bars + "</div></div></div><p class='ws-range-note'>Each bar is one day's worked time, excluding breaks. Select a day for sessions.</p></section>";
+}
+function wsOpenYearTeamDay(date, opener) {
+  ws.sheetId = "";
+  ws.sheetDay = date;
+  const members = wsMembers().filter((member) => member.days.some((day) => day.date === date));
+  $("dlgSheetBody").innerHTML = wsDialogHead("dlgSheetTitle", wsModel.dayLabel(date, true)) + "<p class='sub'>Team worked time on this day</p><div class='ws-recent-days'>" +
+    (members.length ? members.map((member) => "<button type='button' data-action='open-day' data-user='" + wsEsc(member.id) + "' data-date='" + date + "'><span>" + wsEsc(member.name) + "</span><span class='mono'>" + wsModel.duration(member.days.find((day) => day.date === date).minutes) + "</span></button>").join("") : "<p class='ws-note'>No sessions recorded on this day.</p>") + "</div>";
+  if (!$("dlgSheet").open) wsOpenDialog("dlgSheet", opener);
 }
 
 // ---- member sheet (Stats) ----
 function wsOpenSheet(id, opener) {
   ws.sheetId = id;
+  ws.sheetDay = "";
   wsRenderSheet();
   wsOpenDialog("dlgSheet", opener);
 }
 function wsRenderSheet() {
-  const m = wsMember(ws.sheetId);
+  const m = ws.page === "stats" ? wsStatsMembers().find((member) => member.id === ws.sheetId) : wsMember(ws.sheetId);
   const body = $("dlgSheetBody");
   const top = body.scrollTop;
   if (!m) { body.innerHTML = wsDialogHead("dlgSheetTitle", "Member") + "<p>This member is no longer on the team.</p>"; return; }
   body.innerHTML = wsDialogHead("dlgSheetTitle", m.name) +
-    "<p class='sub'>" + wsEsc(wsModel.monthLabel(ws.period)) + " · " + m.stats.recordedDays + " recorded day" + (m.stats.recordedDays === 1 ? "" : "s") + "</p>" +
+    "<p class='sub'>" + wsEsc(ws.page === "stats" ? wsWindowLabel() : wsModel.monthLabel(ws.period)) + " · " + m.stats.recordedDays + " recorded day" + (m.stats.recordedDays === 1 ? "" : "s") + "</p>" +
     "<div class='ws-sheet-summary'><div>Worked<strong>" + wsModel.duration(m.stats.workedMinutes) + "</strong></div><div>Avg. break time / day<strong>" + wsModel.shortDuration(m.stats.avgBreakMinutes) + "</strong></div><div>Breaks / day<strong>" + wsModel.rate(m.stats.breaksPerDay) + "</strong></div></div>" +
     wsMemberDetail(m, true);
   body.scrollTop = top;
 }
-function wsRefreshSheet() { if ($("dlgSheet").open) wsRenderSheet(); }
+function wsRefreshSheet() {
+  if (!$("dlgSheet").open) return;
+  if (ws.sheetDay) wsOpenYearTeamDay(ws.sheetDay); else wsRenderSheet();
+}
 
 // ---- day dialog ----
-function wsMemberTarget(userId) {
+function wsMemberTarget(userId, period = ws.period) {
   const query = "organizationId=" + encodeURIComponent(orgId) + "&userId=" + encodeURIComponent(userId);
-  return { key: userId + ":" + ws.period, period: ws.period, label: userId,
-    hoursUrl: "/api/team/hours?" + query + "&period=" + ws.period, editUrl: "/api/team/manual-session?" + query };
+  return { key: userId + ":" + period, period, label: userId,
+    hoursUrl: "/api/team/hours?" + query + "&period=" + period, editUrl: "/api/team/manual-session?" + query };
 }
 function wsOpenDay(userId, date, opener) {
   ws.day = { userId: userId || "", date };
   if (userId) {
-    const target = wsMemberTarget(userId);
+    const target = wsMemberTarget(userId, date.slice(0, 7));
     if (ws.memberKey !== target.key || !ws.memberData) memberView.load(target);
+  } else if (!ws.personal || ws.personal.period !== date.slice(0, 7)) {
+    const period = date.slice(0, 7);
+    personalView.load({ key: ws.me.user.id + ":" + period, period, label: ws.me.user.email,
+      hoursUrl: "/api/hours?period=" + period, editUrl: "/api/manual-session" });
   }
   wsRefreshDay(true);
   wsOpenDialog("dlgDay", opener);
 }
 function wsDayData() {
   if (!ws.day) return null;
-  if (!ws.day.userId) return ws.personal;
-  return ws.memberKey === ws.day.userId + ":" + ws.period ? ws.memberData : null;
+  const period = ws.day.date ? ws.day.date.slice(0, 7) : ws.period;
+  if (!ws.day.userId) return ws.personal && ws.personal.period === period ? ws.personal : null;
+  return ws.memberKey === ws.day.userId + ":" + period ? ws.memberData : null;
 }
 function wsSourceLabel(s, ownerName) {
   if (s.entry) {
@@ -578,6 +660,8 @@ async function wsRemoveSession(button) {
 function wsAfterEdit() {
   if (ws.day) wsFeedback("dayMsg", "Saved.", "ok");
   if (wsIsTeam()) wsLoadOverview(true);
+  ws.annualKey = "";
+  if (ws.page === "stats") wsLoadYear(true);
 }
 
 // ---- send ----
@@ -896,20 +980,75 @@ function wsOpenAccount(opener) {
   wsOpenDialog("dlgAccount", opener);
 }
 
+let wsBrush = null;
+$("wsMain").addEventListener("pointerdown", (event) => {
+  if (event.pointerType === "touch" || event.button !== 0) return;
+  const cell = event.target.closest(".ws-cal button[data-date]");
+  if (!cell) return;
+  wsBrush = { start: cell.dataset.date, end: cell.dataset.date, x: event.clientX, y: event.clientY, moved: false };
+});
+document.addEventListener("pointermove", (event) => {
+  if (!wsBrush) return;
+  const cell = document.elementFromPoint(event.clientX, event.clientY)?.closest(".ws-cal [data-date]");
+  if (cell) wsBrush.end = cell.dataset.date;
+  wsBrush.moved = wsBrush.moved || Math.hypot(event.clientX - wsBrush.x, event.clientY - wsBrush.y) > 5;
+  if (wsBrush.moved) {
+    const first = [wsBrush.start, wsBrush.end].sort()[0], last = [wsBrush.start, wsBrush.end].sort()[1];
+    document.querySelectorAll(".ws-cal button[data-date]").forEach((cell) => cell.classList.toggle("brushed", cell.dataset.date >= first && cell.dataset.date <= last));
+  }
+});
+document.addEventListener("pointerup", () => {
+  if (!wsBrush) return;
+  const brush = wsBrush; wsBrush = null;
+  if (brush.moved) { ws.suppressClick = true; wsSetWindow(brush.start, brush.end); setTimeout(() => { ws.suppressClick = false; }, 0); }
+});
+document.addEventListener("pointercancel", () => { wsBrush = null; document.querySelectorAll(".brushed").forEach((cell) => cell.classList.remove("brushed")); });
+
 // ---- events ----
+$("wsMain").addEventListener("keydown", (event) => {
+  const chart = event.target.closest(".ws-cal");
+  if (!chart) return;
+  const cells = Array.from(chart.querySelectorAll("button[data-date]")).sort((a, b) => a.dataset.date.localeCompare(b.dataset.date));
+  const index = cells.indexOf(event.target);
+  const steps = { ArrowRight: 7, ArrowLeft: -7, ArrowDown: 1, ArrowUp: -1 };
+  let next;
+  if (event.key === "Home") next = 0;
+  else if (event.key === "End") next = cells.length - 1;
+  else if (event.key in steps) next = Math.max(0, Math.min(cells.length - 1, index < 0 ? 0 : index + steps[event.key]));
+  else return;
+  event.preventDefault();
+  if (cells[next]) cells[next].focus();
+});
+$("wsMain").addEventListener("toggle", (event) => {
+  const week = event.target.dataset.week;
+  if (!week) return;
+  if (event.target.open) ws.closedWeeks.delete(week); else ws.closedWeeks.add(week);
+}, true);
 $("workspace").addEventListener("click", (event) => {
   const el = event.target.closest("[data-action], [data-page]");
   if (!el || !$("workspace").contains(el)) return;
+  if (ws.suppressClick) { event.preventDefault(); return; }
   if (el.dataset.page) {
-    if (ws.page !== el.dataset.page) { ws.page = el.dataset.page; wsSyncUrl(); wsRender(); }
+    if (ws.page !== el.dataset.page) { ws.page = el.dataset.page; wsSyncUrl(); wsRender(); wsLoadPage(); }
     return;
   }
   const action = el.dataset.action;
-  if (action === "toggle-member") {
+  if (action === "zoom-reset") { ws.window = null; wsRender(); }
+  else if (action === "zoom-apply") {
+    const start = $("wsZoomStart"), end = $("wsZoomEnd");
+    if (start.reportValidity() && end.reportValidity()) wsSetWindow(start.value, end.value);
+  } else if (action === "zoom-preset") {
+    const end = ws.year === wsToday().y ? wsDataToday() : ws.year + "-12-31";
+    const start = new Date(Date.parse(end + "T00:00:00Z") - (Number(el.dataset.days) - 1) * 86400000).toISOString().slice(0, 10);
+    wsSetWindow(start < ws.year + "-01-01" ? ws.year + "-01-01" : start, end);
+  } else if (action === "year") { ws.year = Number(el.dataset.year); ws.window = null; wsSyncUrl(); wsLoadYear(); }
+  else if (action === "reload-year") wsLoadYear(true);
+  else if (action === "year-team-day") wsOpenYearTeamDay(el.dataset.date, el);
+  else if (action === "toggle-member") {
     if (ws.expanded.has(el.dataset.id)) ws.expanded.delete(el.dataset.id); else ws.expanded.add(el.dataset.id);
     wsRenderRoster();
     const again = document.querySelector("#wsRosterBody [data-key='member:" + el.dataset.id + "']");
-    if (again && el.classList.contains("ws-member")) again.focus({ preventScroll: true });
+    if (again && el.classList.contains("ws-person-toggle")) again.focus({ preventScroll: true });
   } else if (action === "toggle-all") {
     const all = wsMembers().every((m) => ws.expanded.has(m.id));
     if (all) ws.expanded.clear();
@@ -971,6 +1110,10 @@ async function startWorkspace(me) {
   const month = params.get("month");
   ws.period = month && /^\d{4}-\d{2}$/.test(month) && month <= wsCurrentPeriod() ? month : wsModel.lastCompleteMonth(t);
   ws.page = params.get("view") === "stats" ? "stats" : "timesheets";
+  const year = Number(params.get("year"));
+  ws.year = Number.isInteger(year) && year >= 2000 && year <= t.y ? year : t.y;
+  ws.window = null; ws.closedWeeks = new Set();
+  ++ws.annualVersion; ws.annual = null; ws.annualError = ""; ws.annualKey = ""; ws.annualLoading = false;
   ws.query = ""; ws.expanded = new Set(); ws.scope = "all"; ws.overview = null; ws.personal = null;
   ws.pending = []; ws.policy = undefined; ws.memberData = null; ws.memberKey = "";
   personalView.clear(true); memberView.clear(true);

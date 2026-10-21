@@ -17,7 +17,7 @@ export function createWorkspaceModel() {
     call: "call", manual: "manual", idle: "idle", lock: "lock",
     suspend: "sleep", shutdown: "shutdown", quit: "quit", crash: "crash", app: "app",
   };
-  const WORK_SHADES = ["#f5dfbd", "#dfb77c", "#bc8849", "#955d2b", "#663b1c"];
+  const WORK_SHADES = ["#49351d", "#705025", "#a57732", "#cf9845", "#f2b653"];
   const WORK_LEVELS = ["Under 2 hours", "2 to under 4 hours", "4 to under 6 hours", "6 to under 8 hours", "8 hours or more"];
 
   const model = {
@@ -128,7 +128,7 @@ export function createWorkspaceModel() {
       return entries.sort((a, b) => a.at - b.at || (a.kind === "break" ? 1 : 0) - (b.kind === "break" ? 1 : 0));
     },
 
-    /** Worked-time shade: 0 = lightest (under 2h) to 4 = darkest (8h or more). */
+    /** Worked-time intensity: 0 = faintest (under 2h), 4 = brightest (8h or more). */
     workedLevel(minutes: number): number {
       return minutes < 120 ? 0 : minutes < 240 ? 1 : minutes < 360 ? 2 : minutes < 480 ? 3 : 4;
     },
@@ -144,6 +144,48 @@ export function createWorkspaceModel() {
       const offset = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7;
       const last = model.daysInMonth(period);
       return { offset, last, weeks: Math.ceil((offset + last) / 7) };
+    },
+
+    yearCalendar(year: number, start = year + "-01-01", end = year + "-12-31") {
+      const first = Date.parse(start + "T00:00:00Z");
+      const offset = new Date(first).getUTCDay();
+      const last = Math.round((Date.parse(end + "T00:00:00Z") - first) / 86400000) + 1;
+      const weeks = Math.ceil((offset + last) / 7);
+      const dates = Array.from({ length: weeks * 7 }, (_, index) => {
+        const day = index - offset;
+        return day < 0 || day >= last ? "" : new Date(first + day * 86400000).toISOString().slice(0, 10);
+      });
+      const months = Array.from({ length: 12 }, (_, month) => {
+        const date = new Date(Date.UTC(year, month, 1));
+        const monthStart = date.toISOString().slice(0, 10);
+        const monthEnd = new Date(Date.UTC(year, month + 1, 0)).toISOString().slice(0, 10);
+        const day = Math.max(0, Math.round((date.getTime() - first) / 86400000));
+        return { label: new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" }).format(date), week: Math.floor((offset + day) / 7), visible: monthStart <= end && monthEnd >= start };
+      }).filter((month) => month.visible);
+      return { weeks, dates, months };
+    },
+
+    weekGroups<T extends { date: string; minutes: number; breakMinutes: number }>(days: readonly T[]) {
+      const groups = new Map<string, T[]>();
+      for (const day of [...days].sort((a, b) => a.date.localeCompare(b.date))) {
+        const date = new Date(day.date + "T00:00:00Z");
+        date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7);
+        const key = date.toISOString().slice(0, 10);
+        const group = groups.get(key) || [];
+        group.push(day); groups.set(key, group);
+      }
+      return [...groups].map(([start, rows]) => ({ start, days: rows,
+        minutes: rows.reduce((sum, day) => sum + day.minutes, 0),
+        breakMinutes: rows.reduce((sum, day) => sum + day.breakMinutes, 0) }));
+    },
+
+    statsForDays(days: readonly { minutes: number; breakMinutes: number; breakCount: number }[]) {
+      const workedMinutes = days.reduce((sum, day) => sum + day.minutes, 0);
+      const breakMinutes = days.reduce((sum, day) => sum + day.breakMinutes, 0);
+      const breakCount = days.reduce((sum, day) => sum + day.breakCount, 0);
+      return { workedMinutes, breakMinutes, breakCount, recordedDays: days.length,
+        avgBreakMinutes: days.length ? breakMinutes / days.length : 0,
+        breaksPerDay: days.length ? breakCount / days.length : 0 };
     },
 
     sortMembers<T extends { name: string; stats: { recordedDays: number; avgBreakMinutes: number; breaksPerDay: number } }>(members: T[], sort: string): T[] {
