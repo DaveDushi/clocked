@@ -11,6 +11,7 @@ import {
   formatDateLabel,
   formatHM,
   localYMD,
+  parseReportPeriod,
   reportBoundsUtc,
   reportDateBounds,
   nextLocalMidnightUtc,
@@ -429,7 +430,7 @@ export function summarizeMonth(
     minutes: day.minutes,
     ...(day.paidLunchMinutes !== undefined ? { paidLunchMinutes: day.paidLunchMinutes, overtimeMinutes: day.overtimeMinutes } : {}),
   }));
-  const expanded = period.length === 10 ? expandWeek(seed, period) : expandCalendarDays(
+  const expanded = parseReportPeriod(period).kind === "week" ? expandWeek(seed, period) : expandCalendarDays(
     seed.sort((a, b) => a.date.localeCompare(b.date)), period, localYMD(now, timezone),
   );
   // Monthly totals include recorded days even when calendar expansion hides them.

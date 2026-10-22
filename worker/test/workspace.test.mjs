@@ -115,6 +115,25 @@ test("edit forms read stored session bounds in the session timezone", () => {
   assert.equal(model.rate(1 / 3), "0.3");
 });
 
+test("overtime labels follow the configured rule for monthly and annual team views", async () => {
+  const html = await dashboardResponse().text();
+  const labelFunction = html.match(/function wsOvertimeLabel\(days\) \{[\s\S]*?\n\}/)[0];
+  const ws = { page: "timesheets", overview: { overtimeMode: "disabled" }, annual: null };
+  const label = runInNewContext("(" + labelFunction + ")", { ws, wsModel: model });
+  const paidLunchDay = [{ paidLunchMinutes: 30, overtimeMinutes: 0 }];
+  assert.equal(label(paidLunchDay), "Off");
+  ws.overview.overtimeMode = "daily";
+  assert.equal(label(paidLunchDay), "0h 00m");
+  assert.equal(label([{ overtimeMinutes: 45 }, { overtimeMinutes: 30 }]), "1h 15m");
+  ws.page = "stats";
+  ws.annual = { overtimeMode: "disabled" };
+  assert.equal(label(paidLunchDay), "Off");
+  ws.annual.overtimeMode = "weekly";
+  ws.overview = null;
+  assert.equal(label([]), "0h 00m");
+  assert.equal(label([{ overtimeMinutes: 90 }]), "1h 30m");
+});
+
 test("the shipped workspace script parses and its model survives bundler name preservation", async () => {
   const html = await dashboardResponse().text();
   const script = html.match(/<script>\s*([\s\S]*?)<\/script>/)[1];

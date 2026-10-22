@@ -1,5 +1,5 @@
 import type { Env } from "./types";
-import { getPrimaryMembership } from "./memberships.js";
+import { getPrimaryMembership, isManagerOf } from "./memberships.js";
 
 export type WorkingHours =
   | { mode: "disabled" }
@@ -65,9 +65,7 @@ export async function handleManagerWorkingHours(req: Request, env: Env, actorId:
   const url = new URL(req.url);
   const orgId = url.searchParams.get("organizationId") ?? "";
   const targetId = url.searchParams.get("userId");
-  const manager = await env.DB.prepare("SELECT role FROM member WHERE organizationId = ? AND userId = ?")
-    .bind(orgId, actorId).first<{ role: string }>();
-  if (!manager?.role.split(",").some((role) => ["owner", "admin"].includes(role.trim()))) {
+  if (!(await isManagerOf(env, actorId, orgId))) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
   const member = targetId === null ? null : await env.DB.prepare("SELECT id FROM member WHERE organizationId = ? AND userId = ?")

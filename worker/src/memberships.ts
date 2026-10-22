@@ -10,6 +10,20 @@ export type PrimaryMembership = {
   createdAt: string;
 };
 
+export function isManagerRole(role: string): boolean {
+  return role.split(",").some((role) => {
+    const name = role.trim();
+    return name === "owner" || name === "admin";
+  });
+}
+
+export async function isManagerOf(env: Env, userId: string, organizationId: string): Promise<boolean> {
+  if (!organizationId) return false;
+  const member = await env.DB.prepare("SELECT role FROM member WHERE userId = ? AND organizationId = ?")
+    .bind(userId, organizationId).first<{ role: string }>();
+  return member !== null && isManagerRole(member.role);
+}
+
 export function normalizeMembershipDate(value: string | number): string {
   const parsed = typeof value === "number" ? value
     : /^\d+$/.test(value) ? Number(value)

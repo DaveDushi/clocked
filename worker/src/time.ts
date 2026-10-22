@@ -101,12 +101,38 @@ export function formatHM(date: Date, tz: string): string {
   return timeFmt(tz).format(date);
 }
 
-/** Report periods are a calendar month (YYYY-MM) or a seven-day start (YYYY-MM-DD). */
-export function reportDateBounds(period: string): { start: string; end: string } {
+export type ReportPeriod = {
+  kind: "month" | "week";
+  start: string;
+  end: string;
+};
+
+/** Interpret a validated YYYY-MM month or YYYY-MM-DD seven-day start once.
+ * Calendar dates use an exclusive end, independently of the report timezone. */
+export function parseReportPeriod(period: string): ReportPeriod {
   const [y, m, d] = period.split("-").map(Number);
+  const kind = d === undefined ? "month" : "week";
   const start = new Date(Date.UTC(y, m - 1, d ?? 1));
-  const end = d === undefined ? new Date(Date.UTC(y, m, 1)) : new Date(Date.UTC(y, m - 1, d + 7));
-  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+  const end = kind === "month" ? new Date(Date.UTC(y, m, 1)) : new Date(Date.UTC(y, m - 1, d + 7));
+  return { kind, start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+}
+
+export function reportDateBounds(period: string): { start: string; end: string } {
+  const { start, end } = parseReportPeriod(period);
+  return { start, end };
+}
+
+export function reportPeriodTitle(period: string): string {
+  const { kind, start, end } = parseReportPeriod(period);
+  if (kind === "week") {
+    const last = new Date(Date.parse(end + "T00:00:00Z") - 86400000).toISOString().slice(0, 10);
+    return `${start} to ${last}`;
+  }
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    month: "long",
+    year: "numeric",
+  }).format(new Date(start + "T00:00:00Z"));
 }
 
 export function reportBoundsUtc(period: string, timezone: string): { start: Date; end: Date } {

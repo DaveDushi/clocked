@@ -60,7 +60,7 @@ import {
 } from "./security";
 import type { Env } from "./types";
 import { effectiveWorkingHours, handleManagerWorkingHours } from "./working-hours";
-import { getPrimaryMembership, normalizeMembershipDate, selectPrimaryMembership } from "./memberships";
+import { getPrimaryMembership, isManagerOf, isManagerRole, normalizeMembershipDate, selectPrimaryMembership } from "./memberships";
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -653,23 +653,6 @@ async function membershipsFor(env: Env, userId: string) {
       memberCount: r.memberCount,
     };
   });
-}
-
-function isManagerRole(role: string): boolean {
-  return role.split(",").some((r) => {
-    const t = r.trim();
-    return t === "owner" || t === "admin";
-  });
-}
-
-async function isManagerOf(env: Env, userId: string, organizationId: string): Promise<boolean> {
-  if (!organizationId) return false;
-  const row = await env.DB.prepare(
-    `SELECT role FROM member WHERE userId = ? AND organizationId = ?`,
-  )
-    .bind(userId, organizationId)
-    .first<{ role: string }>();
-  return !!row && isManagerRole(row.role);
 }
 
 /**

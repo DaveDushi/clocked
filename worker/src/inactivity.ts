@@ -1,5 +1,5 @@
 import type { Env } from "./types";
-import { getPrimaryMembership } from "./memberships.js";
+import { getPrimaryMembership, isManagerOf } from "./memberships.js";
 
 export type InactivityPolicy = { timeout_secs: number; warning_secs: number };
 
@@ -29,9 +29,7 @@ export async function effectiveInactivity(env: Env, userId: string): Promise<Ina
 
 export async function handleManagerInactivity(req: Request, env: Env, actorId: string): Promise<Response> {
   const orgId = new URL(req.url).searchParams.get("organizationId") ?? "";
-  const manager = await env.DB.prepare("SELECT role FROM member WHERE organizationId = ? AND userId = ?")
-    .bind(orgId, actorId).first<{ role: string }>();
-  if (!manager?.role.split(",").some((role) => ["owner", "admin"].includes(role.trim()))) {
+  if (!(await isManagerOf(env, actorId, orgId))) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
   if (req.method !== "GET" && req.method !== "POST") {

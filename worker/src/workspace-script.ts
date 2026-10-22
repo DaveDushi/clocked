@@ -168,7 +168,7 @@ async function wsLoadYear(force) {
         target.days.push(...member.days); target.enteredSessions += member.enteredSessions;
       }
       const members = Array.from(byId.values()).map((member) => ({ ...member, days: member.days.sort((a, b) => a.date.localeCompare(b.date)), stats: wsModel.statsForDays(member.days) }));
-      ws.annual = { members, today: results.map((month) => month.today).sort().at(-1) };
+      ws.annual = { members, today: results.map((month) => month.today).sort().at(-1), overtimeMode: results[0]?.overtimeMode };
     } else {
       const days = results.flatMap((month) => month.recordedDays || []).map((day) => ({ ...day, breakCount: day.breaks.length })).sort((a, b) => a.date.localeCompare(b.date));
       ws.annual = { days };
@@ -343,8 +343,8 @@ function wsTimeAccounting(days) {
     (flags ? (accounting ? " / " : "") + flags + " long break" + (flags === 1 ? "" : "s") + " flagged" : "");
 }
 function wsOvertimeLabel(days) {
-  const enabled = days.some((day) => day.overtimeMinutes !== undefined) ||
-    ws.overview && ["daily", "weekly"].includes(ws.overview.overtimeMode);
+  const report = ws.page === "stats" ? ws.annual : ws.overview;
+  const enabled = report && ["daily", "weekly"].includes(report.overtimeMode);
   return enabled ? wsModel.duration(days.reduce((sum, day) => sum + (day.overtimeMinutes || 0), 0)) : "Off";
 }
 function wsMemberDetail(m, inSheet) {

@@ -1,4 +1,5 @@
 import type { Env } from "./types";
+import { isManagerOf } from "./memberships.js";
 
 export interface TimePolicy {
   paidLunchMinutes: number;
@@ -53,9 +54,7 @@ export async function getTimePolicy(env: Env, organizationId: string): Promise<T
 
 export async function handleManagerTimePolicy(req: Request, env: Env, actorId: string): Promise<Response> {
   const orgId = new URL(req.url).searchParams.get("organizationId") ?? "";
-  const manager = await env.DB.prepare("SELECT role FROM member WHERE organizationId = ? AND userId = ?")
-    .bind(orgId, actorId).first<{ role: string }>();
-  if (!manager?.role.split(",").some((role) => ["owner", "admin"].includes(role.trim()))) {
+  if (!(await isManagerOf(env, actorId, orgId))) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
   if (req.method !== "GET" && req.method !== "POST") {
