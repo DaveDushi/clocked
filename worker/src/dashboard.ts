@@ -19,20 +19,20 @@ const HTML = /* html */ `<!doctype html>
 <meta name="description" content="Automatic time tracking for Windows and macOS. Clock in from unlock and activity, clock out from lock and idle. Optional project labels, cloud sync, teams, and monthly timesheet email." />
 <meta name="theme-color" content="#0a0b10" />
 <meta name="robots" content="index,follow" />
-<link rel="canonical" href="https://clocked.daviddusi.com/" />
+<link rel="canonical" href="https://clocked.easytomanage.com/" />
 <meta property="og:type" content="website" />
-<meta property="og:url" content="https://clocked.daviddusi.com/" />
+<meta property="og:url" content="https://clocked.easytomanage.com/" />
 <meta property="og:title" content="clocked — automatic Windows time tracking" />
 <meta property="og:description" content="Automatic time tracking with an open-source desktop app. Request hosted access for yourself or your team, with cloud sync and monthly timesheet email." />
-<meta property="og:image" content="https://clocked.daviddusi.com/og.jpg" />
+<meta property="og:image" content="https://clocked.easytomanage.com/og.jpg" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="675" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="clocked — automatic Windows time tracking" />
 <meta name="twitter:description" content="Automatic time tracking for Windows. No timers. No spyware. Monthly timesheet by email." />
-<meta name="twitter:image" content="https://clocked.daviddusi.com/og.jpg" />
+<meta name="twitter:image" content="https://clocked.easytomanage.com/og.jpg" />
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareApplication","name":"clocked","applicationCategory":"BusinessApplication","operatingSystem":"Windows, macOS","description":"Automatic time tracking from power and session events. Local SQLite, optional project attribution, cloud sync, teams, and monthly timesheet email.","url":"https://clocked.daviddusi.com/","downloadUrl":"https://clocked.daviddusi.com/download","softwareVersion":"0.1.14","license":"https://opensource.org/licenses/MIT","codeRepository":"https://github.com/DaveDushi/clocked"}
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"clocked","applicationCategory":"BusinessApplication","operatingSystem":"Windows, macOS","description":"Automatic time tracking from power and session events. Local SQLite, optional project attribution, cloud sync, teams, and monthly timesheet email.","url":"https://clocked.easytomanage.com/","downloadUrl":"https://clocked.easytomanage.com/download","softwareVersion":"0.1.14","license":"https://opensource.org/licenses/MIT","codeRepository":"https://github.com/DaveDushi/clocked"}
 </script>
 <link rel="icon" type="image/png" href="/favicon.ico" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />

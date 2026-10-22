@@ -4,12 +4,12 @@ Ready-to-post copy for launch.
 
 | | |
 |--|--|
-| Site | https://clocked.daviddusi.com |
-| Download | https://clocked.daviddusi.com/download |
-| Press | https://clocked.daviddusi.com/press |
+| Site | https://clocked.easytomanage.com |
+| Download | https://clocked.easytomanage.com/download |
+| Press | https://clocked.easytomanage.com/press |
 | Source | https://github.com/DaveDushi/clocked |
-| OG image | https://clocked.daviddusi.com/og.jpg |
-| SEO | https://clocked.daviddusi.com/sitemap.xml · /robots.txt · /llms.txt |
+| OG image | https://clocked.easytomanage.com/og.jpg |
+| SEO | https://clocked.easytomanage.com/sitemap.xml · /robots.txt · /llms.txt |
 
 **Note:** Agents cannot create or operate X/Reddit/HN/Product Hunt accounts for you.
 Post the copy below from your accounts (or grant a social integration later).
@@ -39,8 +39,8 @@ Post the copy below from your accounts (or grant a social integration later).
 
 3/ Desktop is open source. Hosted cloud is free too (solo + teams), just sign up. Self-host the Worker if you want.
 
-4/ Try it: https://clocked.daviddusi.com  
-Download: https://clocked.daviddusi.com/download  
+4/ Try it: https://clocked.easytomanage.com  
+Download: https://clocked.easytomanage.com/download  
 GitHub: https://github.com/DaveDushi/clocked
 
 ---
@@ -52,7 +52,7 @@ Most time trackers ask you to babysit a timer.
 
 Local SQLite is source of truth. Cloud sync + dashboard + monthly email when you’re ready. Desktop is open source; the hosted cloud is free for solo and small teams.
 
-https://clocked.daviddusi.com
+https://clocked.easytomanage.com
 
 ---
 
@@ -62,7 +62,7 @@ https://clocked.daviddusi.com
 
 Tray app clocks in/out on unlock, lock, sleep, idle. Local SQLite, optional Cloudflare Worker sync + monthly timesheet email. Desktop MIT, hosted cloud free.
 
-https://clocked.daviddusi.com  
+https://clocked.easytomanage.com  
 https://github.com/DaveDushi/clocked
 
 ---
@@ -93,7 +93,7 @@ Hi —
 I built clocked so I wouldn’t have to remember to start a timer.  
 It runs in the tray, tracks from OS events, and can email a monthly timesheet.  
 Desktop is open source; cloud is optional and free.  
-→ https://clocked.daviddusi.com  
+→ https://clocked.easytomanage.com  
 
 ---
 

@@ -11,6 +11,7 @@ export const WORKSPACE_MARKUP = /* html */ `
       <div class="wordmark">clocked<small>.</small></div>
       <span id="wsName" class="ws-name"></span>
     </div>
+    <label id="wsTeamSwitch" class="ws-team-switch hidden"><span class="sr-only">Team workspace</span><select id="wsTeam" aria-label="Team workspace"></select></label>
     <div class="ws-actions">
       <button id="wsSettings" class="text-button" type="button" aria-haspopup="dialog">${SETTINGS_ICON}<span class="settings-label">Settings</span></button>
       <button id="wsAccount" class="ws-avatar" type="button" aria-haspopup="dialog" aria-label="Your account"></button>
@@ -46,7 +47,7 @@ export const WORKSPACE_MARKUP = /* html */ `
         <input id="inviteEmail" type="email" placeholder="name@company.com" required autocomplete="off" />
         <label for="inviteRole">Role</label>
         <select id="inviteRole"><option value="member">Worker</option><option value="admin">Manager</option></select>
-        <p class="sub" style="margin-top:10px">Workers see only their own hours. Managers can review and adjust everyone's hours.</p>
+        <p class="sub" style="margin-top:10px">Workers see only their own hours. Managers can review and adjust everyone's hours without installing the desktop app or tracking their own time.</p>
         <div id="inviteMsg" class="ws-feedback" role="status"></div>
         <div id="inviteLinkBox" class="invitelink hidden">
           <input id="inviteLink" type="text" readonly aria-label="Invite link" />

@@ -2,7 +2,7 @@
 
 **Automatic desktop time tracking — no timers.**
 
-[Live site](https://clocked.daviddusi.com) · [Download](https://clocked.daviddusi.com/download) · [Press kit](https://clocked.daviddusi.com/press)
+[Live site](https://clocked.easytomanage.com) · [Download](https://clocked.easytomanage.com/download) · [Press kit](https://clocked.easytomanage.com/press)
 
 A background tray app clocks you in/out from machine **power** and **session**
 events, stores sessions locally in SQLite, and syncs them to a Cloudflare Worker
@@ -143,7 +143,7 @@ working hours) plus:
 ### Browser extension (optional)
 
 For accurate browser sites (not just window-title guesses), download the
-extension zip from [clocked.daviddusi.com/download/extension](https://clocked.daviddusi.com/download/extension)
+extension zip from [clocked.easytomanage.com/download/extension](https://clocked.easytomanage.com/download/extension)
 (or use `extension/chrome` from the repo). Unzip, load unpacked in Chrome/Edge
 Developer mode, and paste that computer's **same** `clk_…` device token in Options. The tray app
 listens on `http://127.0.0.1:19532` and only accepts that token; only hostnames
@@ -159,12 +159,12 @@ its own token, so adding or revoking one device does not disconnect the others.
 Then right-click
 the tray icon ? **Settings?**, paste the token into **Bearer token**, and click
 **Save** ? syncing starts automatically (no restart needed). The app defaults to
-`https://clocked.daviddusi.com`; changing the Worker URL is tucked under
+`https://clocked.easytomanage.com`; changing the Worker URL is tucked under
 **Advanced settings** for self-hosted/dev installs. This writes the same
 `%APPDATA%\clocked\data\config.toml`:
 
 ```toml
-worker_url   = "https://clocked.daviddusi.com"
+worker_url   = "https://clocked.easytomanage.com"
 bearer_token = "<the clk_… token from your account's dashboard>"
 
 # Optional behavior tuning (defaults shown):
@@ -201,7 +201,8 @@ npx wrangler d1 migrations apply clocked --remote
 #    honored if you also set ALLOW_LEGACY_BEARER_TOKEN=true (not recommended).
 npx wrangler secret put BETTER_AUTH_SECRET
 # Default email provider. See "Switch email providers" below for alternatives.
-npx wrangler secret put RESEND_API_KEY
+# Only needed if you select EMAIL_PROVIDER=resend instead of Cloudflare.
+# npx wrangler secret put RESEND_API_KEY
 
 # 4. Edit wrangler.jsonc:
 #      REPORT_TZ       -> your IANA timezone, e.g. "America/New_York"
@@ -211,6 +212,34 @@ npx wrangler secret put RESEND_API_KEY
 
 npm run deploy
 ```
+
+### Production deployment
+
+The production Worker and D1 database are in **Edusi@easytomanage.com's Account**.
+The site is <https://clocked.easytomanage.com>. Deploy from `worker` with
+`npm run deploy`; the root `deploy.ps1` publishes desktop releases separately.
+
+To finish outbound email setup, onboard **clocked.easytomanage.com** under
+**Compute > Email Service > Email Sending** in edusi. The configured sender is
+`timesheet@clocked.easytomanage.com`. The Worker already has its `EMAIL` binding
+and `EMAIL_PROVIDER=cloudflare`. Sending remains unavailable until the domain
+is verified; ordinary recipients require Workers Paid. Email Sending does not
+require moving the apex domain's incoming mail to Cloudflare.
+
+Add this authorized redirect URI to the existing Google OAuth web client:
+`https://clocked.easytomanage.com/api/auth/callback/google`. Until it is
+registered, Google sign-in returns `redirect_uri_mismatch`. The migrated
+credentials remain configured; desktop token login works independently.
+
+The old `clocked.daviddusi.com` Worker forwards API, desktop policy, and sync
+requests to production and redirects web pages to the new domain. Its cron
+schedule is empty. Keep it running while installed desktop clients use the old
+address. To redeploy that compatibility Worker, run
+`npx wrangler deploy --config legacy/wrangler.jsonc` from `worker`.
+
+Run `node scripts/verify-deployment.mjs` from `worker` to check both live domains
+without sending mail. New desktop builds default to the new domain; existing
+release downloads continue to work through the compatibility Worker.
 
 ### Switch email providers
 

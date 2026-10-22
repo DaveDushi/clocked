@@ -15,7 +15,7 @@
 
 import type { Env } from "./types";
 
-const SITE = "https://clocked.daviddusi.com";
+const SITE = "https://clocked.easytomanage.com";
 const INDEXNOW_KEY_META = "indexnow_key";
 
 interface Tip {
@@ -29,62 +29,62 @@ const TIP_POOL: Tip[] = [
   {
     title: "No more timer babysitting",
     body: "clocked clocks you in on unlock and out on lock/idle — so your timesheet matches real presence, not the last time you remembered to click Start.",
-    x: "Stop babysitting a timer. clocked (Windows) clocks in/out from unlock, lock, and idle — then emails a monthly timesheet. https://clocked.daviddusi.com",
+    x: "Stop babysitting a timer. clocked (Windows) clocks in/out from unlock, lock, and idle — then emails a monthly timesheet. https://clocked.easytomanage.com",
   },
   {
     title: "Laptop asleep? Report still sends",
     body: "Sessions live on your PC and sync when you're online. The cloud emails the monthly timesheet on schedule even if the laptop was closed that day.",
-    x: "Your laptop can be asleep at month-end. clocked still emails the timesheet from the cloud. https://clocked.daviddusi.com",
+    x: "Your laptop can be asleep at month-end. clocked still emails the timesheet from the cloud. https://clocked.easytomanage.com",
   },
   {
     title: "Open-source desktop, free cloud",
     body: "The tray app is open source. Hosted sync, dashboard, and email are free with an account — or self-host the Worker.",
-    x: "Open-source Windows tray time tracker + optional cloud sync. Not spyware — power & input events only. https://clocked.daviddusi.com https://github.com/DaveDushi/clocked",
+    x: "Open-source Windows tray time tracker + optional cloud sync. Not spyware — power & input events only. https://clocked.easytomanage.com https://github.com/DaveDushi/clocked",
   },
   {
     title: "Built for people who bill hours",
     body: "Freelancers, consultants, small agencies — honest hours without screenshots or keylogging.",
-    x: "For freelancers who bill time: automatic Windows tracking from real PC events. No screenshots. No keylogging. https://clocked.daviddusi.com",
+    x: "For freelancers who bill time: automatic Windows tracking from real PC events. No screenshots. No keylogging. https://clocked.easytomanage.com",
   },
   {
     title: "Teams without surveillance theater",
     body: "Managers see member hours and can fix wrong clockings. Workers aren't live-monitored — hours come from the app they installed.",
-    x: "Team timesheets without surveillance theater. Managers review hours; the tray app tracks presence, not keystrokes. https://clocked.daviddusi.com",
+    x: "Team timesheets without surveillance theater. Managers review hours; the tray app tracks presence, not keystrokes. https://clocked.easytomanage.com",
   },
   {
     title: "Idle is not billable",
     body: "After idle timeout, clocked ends the session at last input so coffee runs don't inflate the day.",
-    x: "Idle ≠ billable. clocked backdates clock-out to last input after idle — clean hours by default. https://clocked.daviddusi.com",
+    x: "Idle ≠ billable. clocked backdates clock-out to last input after idle — clean hours by default. https://clocked.easytomanage.com",
   },
   {
     title: "One token, sync done",
     body: "Create an account, paste the clk_ token into tray Settings, and sessions sync over HTTPS.",
-    x: "Install tray app → account → paste sync token. Hours accumulate. Monthly CSV email. That's the whole loop. https://clocked.daviddusi.com",
+    x: "Install tray app → account → paste sync token. Hours accumulate. Monthly CSV email. That's the whole loop. https://clocked.easytomanage.com",
   },
   {
     title: "Timesheets that survive a closed laptop",
     body: "Your sessions live on your PC and sync when online, but the monthly email is sent from the cloud — so a laptop that's shut on the 1st doesn't cost you the invoice.",
-    x: "Bill on the 1st? clocked emails your timesheet from the cloud even if your laptop's shut. https://clocked.daviddusi.com",
+    x: "Bill on the 1st? clocked emails your timesheet from the cloud even if your laptop's shut. https://clocked.easytomanage.com",
   },
   {
     title: "Invoice-ready CSV, every month",
     body: "The monthly email carries a day-by-day CSV: total hours, days worked, vacation days flagged. Drop it straight into an invoice or a client report — no manual tallying.",
-    x: "Month-end = a CSV in your inbox with total hours, days worked, and vacation flagged. Invoice, done. https://clocked.daviddusi.com",
+    x: "Month-end = a CSV in your inbox with total hours, days worked, and vacation flagged. Invoice, done. https://clocked.easytomanage.com",
   },
   {
     title: "Presence first — apps optional, private by default",
     body: "clocked clocks hours from unlock, lock, sleep, and idle. Locally it can also attribute time to the focused app (titles off by default; never keystrokes or screenshots). Your machine stays the source of truth.",
-    x: "clocked: automatic hours from unlock/lock/idle + optional local app breakdown. No keylogging, no screenshots, titles off by default. https://clocked.daviddusi.com",
+    x: "clocked: automatic hours from unlock/lock/idle + optional local app breakdown. No keylogging, no screenshots, titles off by default. https://clocked.easytomanage.com",
   },
   {
     title: "Cheaper than the timer you forget",
     body: "A forgotten timer costs you real billed hours every week. clocked is a few cents a day and never forgets to start — it pays for itself the first time you'd have missed an afternoon.",
-    x: "The timer you forgot to start cost more than a whole year of clocked. Automatic tracking, cents a day. https://clocked.daviddusi.com",
+    x: "The timer you forgot to start cost more than a whole year of clocked. Automatic tracking, cents a day. https://clocked.easytomanage.com",
   },
   {
     title: "Fix a wrong clocking in two clicks",
     body: "Miss an idle timeout or leave the PC unlocked overnight? Open the dashboard, delete the bad session or add a manual one. Managers can correct any team member's hours the same way.",
-    x: "Bad clocking from an overnight unlock? Delete it or add a manual entry in two clicks. Managers can fix the whole team's. https://clocked.daviddusi.com",
+    x: "Bad clocking from an overnight unlock? Delete it or add a manual entry in two clicks. Managers can fix the whole team's. https://clocked.easytomanage.com",
   },
 ];
 
@@ -145,7 +145,7 @@ async function submitIndexNow(env: Env): Promise<{ ok: boolean; detail: string }
       method: "POST",
       headers: { "content-type": "application/json; charset=utf-8" },
       body: JSON.stringify({
-        host: "clocked.daviddusi.com",
+        host: "clocked.easytomanage.com",
         key,
         keyLocation: `${SITE}/${key}.txt`,
         urlList,

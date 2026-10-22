@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "clocked",
-  "account_id": "972f8c0c21865ac5fa34b14cfb73479e",
+  "account_id": "11b42dee5d79818e2232c6a4c86d13e9",
   "main": "src/index.ts",
   "compatibility_date": "2026-07-01",
   // better-auth imports node:crypto / node:async_hooks at load, so enable Node compat.
@@ -11,8 +11,7 @@
   // 14:00 UTC — marketing agent (IndexNow + site tips; optional X if secrets set).
   "triggers": { "crons": ["* * * * *", "0 14 * * *"] },
   "routes": [
-    { "pattern": "clocked.daviddusi.com", "custom_domain": true },
-    { "pattern": "clocked.daviddusi.com/*", "zone_name": "daviddusi.com" }
+    { "pattern": "clocked.easytomanage.com", "custom_domain": true }
   ],
   "observability": { "enabled": true, "head_sampling_rate": 1 },
 
@@ -20,23 +19,23 @@
     {
       "binding": "DB",
       "database_name": "clocked",
-      "database_id": "75d62c93-4892-46e8-a1aa-e11b6cf0941d",
+      "database_id": "8b9e7c1d-b7b0-4477-a8c1-579ba264ad40",
       "migrations_dir": "migrations"
     }
   ],
 
-  // For Cloudflare Email Sending, onboard MAIL_FROM's domain, then uncomment:
-  // "send_email": [{ "name": "EMAIL" }],
+  // Onboard clocked.easytomanage.com in edusi Email Sending before sending mail.
+  "send_email": [{ "name": "EMAIL" }],
 
   "vars": {
     // resend (default), cloudflare, or ses. See README for setup.
-    "EMAIL_PROVIDER": "resend",
+    "EMAIL_PROVIDER": "cloudflare",
     "REPORT_TZ": "America/New_York",
     // Legacy fallback only; per-user mail_to / account email is preferred.
     "MAIL_TO": "",
-    "MAIL_FROM": "timesheet@clocked.daviddusi.com",
+    "MAIL_FROM": "timesheet@clocked.easytomanage.com",
     // Public base URL of this worker (used by better-auth for the dashboard login).
-    "BETTER_AUTH_URL": "https://clocked.daviddusi.com"
+    "BETTER_AUTH_URL": "https://clocked.easytomanage.com"
   }
 
   // Secrets (do NOT put in vars):

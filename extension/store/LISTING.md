@@ -50,7 +50,7 @@ What it does not do
 • Does not send full URLs (no path or query string)
 
 Setup
-1. Install and run the clocked desktop app (https://clocked.daviddusi.com/download).
+1. Install and run the clocked desktop app (https://clocked.easytomanage.com/download).
 2. Create an account, copy your clk_… sync token from the dashboard.
 3. Paste that same token into this extension’s Options.
 4. Leave the desktop app running while you browse.
@@ -58,14 +58,14 @@ Setup
 Privacy
 • Talks only to http://127.0.0.1 on your machine (the desktop bridge).
 • Token is stored in chrome.storage.local on this device only.
-• Privacy policy: https://clocked.daviddusi.com/privacy/extension
+• Privacy policy: https://clocked.easytomanage.com/privacy/extension
 
 Source: https://github.com/DaveDushi/clocked
 ```
 
 ### Official URL
 ```
-https://clocked.daviddusi.com
+https://clocked.easytomanage.com
 ```
 
 ### Support email
@@ -117,7 +117,7 @@ POST the active hostname to the clocked desktop bridge listening on localhost on
 
 ### Privacy policy URL
 ```
-https://clocked.daviddusi.com/privacy/extension
+https://clocked.easytomanage.com/privacy/extension
 ```
 
 ### Certify remote code

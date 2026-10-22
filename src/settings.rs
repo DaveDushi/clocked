@@ -539,7 +539,7 @@ unsafe fn build_controls(hwnd: HWND) {
     label_id(
         hwnd,
         ID_WORKER_URL_LABEL,
-        "Worker URL   ?   defaults to clocked.daviddusi.com",
+        "Worker URL   ?   defaults to clocked.easytomanage.com",
         m,
         advanced_y + 36,
         fw,

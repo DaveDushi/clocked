@@ -4,7 +4,7 @@
 use chrono::{DateTime, Local, NaiveTime, Weekday};
 use serde::{Deserialize, Serialize};
 
-pub const DEFAULT_WORKER_URL: &str = "https://clocked.daviddusi.com";
+pub const DEFAULT_WORKER_URL: &str = "https://clocked.easytomanage.com";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Config {
@@ -149,7 +149,7 @@ impl Config {
         format!(
             "# clocked configuration\n\
              # Managed by the tray Settings page, but safe to edit by hand.\n\
-             # Worker URL defaults to https://clocked.daviddusi.com and is usually hidden in Advanced settings.\n\
+             # Worker URL defaults to https://clocked.easytomanage.com and is usually hidden in Advanced settings.\n\
              # The bearer token is stored separately in the OS credential store, not in this file.\n\
              \n\
              worker_url   = \"{worker_url}\"\n\

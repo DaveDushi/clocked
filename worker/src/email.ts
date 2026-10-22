@@ -11,9 +11,9 @@ import { isScheduleDue, periodForSchedule } from "./schedule.js";
  * product's best organic growth loop. UTM tags attribute the traffic.
  */
 const MARKETING_URL =
-  "https://clocked.daviddusi.com/?utm_source=timesheet_email&utm_medium=email&utm_campaign=footer";
+  "https://clocked.easytomanage.com/?utm_source=timesheet_email&utm_medium=email&utm_campaign=footer";
 const MARKETING_FOOTER_TEXT =
-  "— Sent automatically by clocked, automatic time tracking for Windows. https://clocked.daviddusi.com";
+  "— Sent automatically by clocked, automatic time tracking for Windows. https://clocked.easytomanage.com";
 
 /** "2026-06" -> "June 2026". */
 function monthTitle(period: string): string {

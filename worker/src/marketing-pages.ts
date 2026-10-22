@@ -1,6 +1,6 @@
 /** Public marketing / SEO endpoints (robots, sitemap, press kit, llms.txt). */
 
-const SITE = "https://clocked.daviddusi.com";
+const SITE = "https://clocked.easytomanage.com";
 
 export function robotsTxtResponse(): Response {
   const body = [
@@ -251,7 +251,7 @@ export function extensionPrivacyPageResponse(): Response {
       <li>A short window <strong>title</strong> (capped length), when available</li>
       <li>Your <strong>sync token</strong> (<code>clk_…</code>) in an HTTP Authorization header so only your local bridge accepts the message</li>
     </ul>
-    <p>These messages go only to <code>http://127.0.0.1</code> (localhost) on a port you configure (default <code>19532</code>). The extension does <strong>not</strong> call clocked.daviddusi.com, Google, or any other remote server for tracking.</p>
+    <p>These messages go only to <code>http://127.0.0.1</code> (localhost) on a port you configure (default <code>19532</code>). The extension does <strong>not</strong> call clocked.easytomanage.com, Google, or any other remote server for tracking.</p>
   </div>
 
   <h2>Where data is stored</h2>

@@ -13,7 +13,7 @@ use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 #[cfg(windows)]
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
-pub const DOWNLOAD_URL: &str = "https://clocked.daviddusi.com/download";
+pub const DOWNLOAD_URL: &str = "https://clocked.easytomanage.com/download";
 const LATEST_RELEASE_API: &str = "https://api.github.com/repos/DaveDushi/clocked/releases/latest";
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 

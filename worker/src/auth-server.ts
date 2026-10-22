@@ -90,6 +90,7 @@ export function makeAuth(env: Env) {
     // app's own origins, so this doesn't widen the trust surface.
     trustedOrigins: [
       env.BETTER_AUTH_URL,
+      "https://clocked.easytomanage.com",
       "https://clocked.daviddusi.com",
       // Local dev only — production is HTTPS.
       "http://localhost:8787",

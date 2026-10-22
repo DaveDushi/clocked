@@ -47,6 +47,10 @@ export const WORKSPACE_STYLE = /* css */ `
   .ws-brand .wordmark { font-size:20px; }
   .ws-name { color:var(--wsmuted); font-size:12px; padding-left:18px; margin-left:8px; border-left:1px solid var(--border); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .ws-actions { display:flex; align-items:center; gap:16px; }
+  .ws-team-switch { min-width:0; max-width:280px; }
+  .ws .ws-team-switch { margin-right:auto; }
+  .ws .ws-team-switch select { width:100%; text-overflow:ellipsis; }
+  .ws-team-switch.hidden, .ws-name.hidden { display:none; }
   .ws-actions .text-button { gap:7px; }
   .ws-avatar { width:32px; height:32px; padding:0 !important; border-radius:50% !important; font:11px var(--mono) !important; color:var(--amber) !important; background:rgba(242,169,80,.04) !important; }
   .ws-nav { display:flex; gap:26px; padding:0 32px; border-bottom:1px solid var(--border); }
@@ -390,6 +394,9 @@ export const WORKSPACE_STYLE = /* css */ `
   }
   @media (max-width:440px) {
     .ws-header { padding:14px 16px; }
+    .ws-header:has(.ws-team-switch:not(.hidden)) { flex-wrap:wrap; gap:12px; }
+    .ws-team-switch { order:3; flex-basis:100%; max-width:none; }
+    .ws .ws-team-switch select { min-height:44px; }
     .ws-name { display:none; }
     .ws-actions .settings-label { display:none; }
     .ws-nav { padding:0 16px; }

@@ -1,0 +1,13 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "clocked",
+  "account_id": "972f8c0c21865ac5fa34b14cfb73479e",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "routes": [
+    { "pattern": "clocked.daviddusi.com", "custom_domain": true },
+    { "pattern": "clocked.daviddusi.com/*", "zone_name": "daviddusi.com" }
+  ],
+  "triggers": { "crons": [] },
+  "observability": { "enabled": true }
+}

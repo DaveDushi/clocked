@@ -3,7 +3,7 @@
   "name": "clocked",
   "version": "1.0.0",
   "description": "Send the active tab's hostname to the clocked desktop app for accurate site time attribution. Local only — never uploads URLs to the cloud.",
-  "homepage_url": "https://clocked.daviddusi.com",
+  "homepage_url": "https://clocked.easytomanage.com",
   "permissions": ["tabs", "storage", "alarms"],
   "host_permissions": ["http://127.0.0.1/*"],
   "background": {

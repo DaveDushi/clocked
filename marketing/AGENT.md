@@ -27,14 +27,14 @@ Create an X developer app with **Read and Write**, generate user access tokens f
 ```bash
 npx wrangler secret put MARKETING_AGENT_SECRET   # long random string
 
-curl -X POST https://clocked.daviddusi.com/api/marketing/run \
+curl -X POST https://clocked.easytomanage.com/api/marketing/run \
   -H "Authorization: Bearer YOUR_SECRET"
 ```
 
 ## Status
 
-https://clocked.daviddusi.com/api/marketing/status  
-https://clocked.daviddusi.com/news  
+https://clocked.easytomanage.com/api/marketing/status  
+https://clocked.easytomanage.com/news  
 
 ## What it will never do
 

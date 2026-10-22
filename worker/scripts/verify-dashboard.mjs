@@ -39,7 +39,7 @@ const people = [
   ["cy", "Cy Lindqvist", "cy@example.test", "member"],
   ["dee", "Dee Park", "dee@example.test", "admin"],
 ];
-const others = [["solo", "Sam Solo", "solo@example.test"], ["outsider", "Otto Side", "outsider@example.test"], ["legacy", "Lee Solo", "legacy@example.test"], ["mixed", "Pat Joined", "mixed@example.test"]];
+const others = [["solo", "Sam Solo", "solo@example.test"], ["outsider", "Otto Side", "outsider@example.test"], ["legacy", "Lee Solo", "legacy@example.test"], ["mixed", "Pat Joined", "mixed@example.test"], ["supervisor", "Alex Manager", "supervisor@example.test"]];
 const salt = randomBytes(16);
 const hash = `pbkdf2$100000$${salt.toString("base64")}$${pbkdf2Sync(password, salt, 100000, 32, "sha256").toString("base64")}`;
 const sql = [];
@@ -98,6 +98,20 @@ for (const [period, last] of [["2026-09", 30], ["2026-10", 16]]) {
   });
 }
 session("outsider", "2026-09-01", "09:00", "17:00");
+
+// A manager with no desktop sessions can manage two teams, but not a third team where they are a worker.
+sql.push(`INSERT INTO organization (id, name, slug, createdAt, metadata) VALUES
+  ('management-a', 'Harbor Studio', 'harbor', '2026-01-01', '{"plan":"team"}'),
+  ('management-b', 'Orchard Studio', 'orchard', '2026-01-01', '{"plan":"team"}');`);
+sql.push(`INSERT INTO member (id, organizationId, userId, role, createdAt) VALUES
+  ('supervisor-a', 'management-a', 'supervisor', 'owner', '2026-01-01T00:00:00Z'),
+  ('supervisor-b', 'management-b', 'supervisor', 'admin', '2026-01-02T00:00:00Z'),
+  ('supervisor-worker', 'other', 'supervisor', 'member', '2026-01-03T00:00:00Z'),
+  ('managed-ana', 'management-a', 'ana', 'member', '2026-02-01T00:00:00Z'),
+  ('managed-ben', 'management-b', 'ben', 'member', '2026-02-01T00:00:00Z');`);
+sql.push(`INSERT INTO org_settings (organizationId, mail_to, send_day, send_time, send_timezone) VALUES
+  ('management-a', 'harbor-payroll@example.test', 1, '09:00', 'UTC'),
+  ('management-b', 'orchard-payroll@example.test', 2, '10:00', 'Europe/Berlin');`);
 
 wrangler(["d1", "migrations", "apply", "clocked", "--local"]);
 const seed = join(directory, "seed.sql");
@@ -228,9 +242,32 @@ try {
   assert.equal(pending.status, 200, await pending.clone().text());
   const invitation = await pending.json();
 
-  console.log("PASS: team overview, normalized break stats, role boundaries, session edits, reviewed bulk send, and legacy personal-to-team history isolation (mock email binding).");
+  await login("supervisor", "supervisor@example.test");
+  const supervisorMe = await (await api("supervisor", "/api/me")).json();
+  assert.equal(supervisorMe.orgs.length, 3);
+  assert.equal((await (await api("supervisor", "/api/hours?period=2026-09")).json()).totalMinutes, 0);
+  for (const [team, worker, recipient] of [["management-a", "ana", "harbor-payroll@example.test"], ["management-b", "ben", "orchard-payroll@example.test"]]) {
+    const overviewResponse = await api("supervisor", `/api/team/overview?organizationId=${team}&period=2026-09`);
+    assert.equal(overviewResponse.status, 200);
+    const managed = await overviewResponse.json();
+    assert.deepEqual(managed.members.map((m) => m.id).sort(), [worker, "supervisor"].sort());
+    assert.equal(managed.members.find((m) => m.id === "supervisor").stats.workedMinutes, 0);
+    const settings = await (await api("supervisor", `/api/team/settings?organizationId=${team}`)).json();
+    assert.deepEqual(settings.recipients, [recipient]);
+    assert.equal((await api("supervisor", `/api/team/settings?organizationId=${team}`, settings)).status, 200);
+    const hours = await (await api("supervisor", `/api/team/hours?organizationId=${team}&userId=${worker}&period=2026-09`)).json();
+    const session = hours.sessions[0];
+    const edited = await api("supervisor", `/api/team/manual-session?organizationId=${team}&userId=${worker}`, { id: session.id, date: session.date, start: "09:00", end: "10:00" }, "PATCH");
+    assert.equal(edited.status, 200, await edited.clone().text());
+  }
+  assert.equal((await api("supervisor", "/api/team/overview?organizationId=other&period=2026-09")).status, 403);
+  assert.equal((await api("supervisor", "/api/team/settings?organizationId=other", { recipients: ["wrong@example.test"] })).status, 403);
+  assert.equal((await api("supervisor", "/api/team/manual-session?organizationId=management-a&userId=ben", { date: "2026-09-01", start: "09:00", end: "10:00" })).status, 403);
+  assert.equal((await (await api("supervisor", "/api/hours?period=2026-09")).json()).totalMinutes, 0);
+
+  console.log("PASS: team overview, role boundaries, session edits, bulk send, history isolation, and management of two teams without recording personal time (mock email binding).");
   if (process.argv.includes("--serve")) {
-    console.log(`Browser fixture: ${base}  manager@example.test (team owner), ana@example.test (worker), solo@example.test (personal), legacy@example.test (legacy personal owner), mixed@example.test (legacy personal owner who joined a team); password ${password}`);
+    console.log(`Browser fixture: ${base}  supervisor@example.test (two teams, no tracked hours), manager@example.test (team owner), ana@example.test (worker), solo@example.test (personal), legacy@example.test (legacy personal owner), mixed@example.test (legacy personal owner who joined a team); password ${password}`);
     console.log(`Pending team invitation for legacy@example.test: ${base}/?invitation=${encodeURIComponent(invitation.id)}`);
     await new Promise((done) => server.on("exit", done));
   }

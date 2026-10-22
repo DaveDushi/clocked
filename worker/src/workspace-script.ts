@@ -7,6 +7,7 @@ import { selectPrimaryMembership } from "./memberships.js";
 export const WORKSPACE_SCRIPT = "const wsModel = (" + createWorkspaceModel.toString() + ")();\n" +
   "const wsPrimaryMembership = (" + selectPrimaryMembership.toString() + ");\n" + String.raw`
 const ws = {
+  version: 0,
   closedWeeks: new Set(), window: null, suppressClick: false, year: 0, annual: null, annualError: "", annualVersion: 0, annualLoading: false, annualKey: "",
   me: null, mode: "personal", page: "timesheets", period: "", query: "", expanded: new Set(),
   scope: "all", sort: "average", overview: null, overviewError: "", overviewVersion: 0,
@@ -199,23 +200,27 @@ async function wsLoadOverview(keep) {
   if (ws.page === "timesheets") wsRefreshSheet();
 }
 async function wsLoadPending() {
+  const version = ws.version;
   try {
     const response = await api("/api/auth/organization/list-invitations?organizationId=" + encodeURIComponent(orgId));
     const data = await response.json();
+    if (version !== ws.version) return;
     if (!response.ok) throw new Error();
     const list = Array.isArray(data) ? data : (data.invitations || []);
     ws.pending = list.filter((inv) => inv.status === "pending" && (!inv.expiresAt || new Date(inv.expiresAt) > new Date()));
-  } catch { ws.pending = null; }
+  } catch { if (version !== ws.version) return; ws.pending = null; }
   if (ws.page === "timesheets") wsRenderBottom();
   wsRenderPending();
 }
 async function wsLoadPolicy() {
+  const version = ws.version;
   try {
     const response = await api("/api/team/inactivity?organizationId=" + encodeURIComponent(orgId));
     const data = await response.json();
+    if (version !== ws.version) return;
     if (!response.ok) throw new Error();
     ws.policy = data.policy || null;
-  } catch { ws.policy = undefined; }
+  } catch { if (version !== ws.version) return; ws.policy = undefined; }
   $("inactivitySummary").textContent = ws.policy === undefined ? "Could not load the team policy"
     : ws.policy ? "Team limit: " + Math.round(ws.policy.timeout_secs / 60) + " minutes without input" : "Each computer uses its own setting";
   if (ws.page === "stats") wsRender();
@@ -224,6 +229,7 @@ async function wsLoadPolicy() {
 // ---- URL state ----
 function wsSyncUrl() {
   const url = new URL(location.href);
+  if (wsIsTeam()) url.searchParams.set("team", orgId); else url.searchParams.delete("team");
   url.searchParams.set("view", ws.page);
   url.searchParams.set("month", ws.period);
   if (ws.page === "stats") url.searchParams.set("year", ws.year); else url.searchParams.delete("year");
@@ -518,7 +524,7 @@ function wsRefreshSheet() {
 // ---- day dialog ----
 function wsMemberTarget(userId, period = ws.period) {
   const query = "organizationId=" + encodeURIComponent(orgId) + "&userId=" + encodeURIComponent(userId);
-  return { key: userId + ":" + period, period, label: userId,
+  return { key: orgId + ":" + userId + ":" + period, period, label: userId,
     hoursUrl: "/api/team/hours?" + query + "&period=" + period, editUrl: "/api/team/manual-session?" + query };
 }
 function wsOpenDay(userId, date, opener) {
@@ -538,7 +544,7 @@ function wsDayData() {
   if (!ws.day) return null;
   const period = ws.day.date ? ws.day.date.slice(0, 7) : ws.period;
   if (!ws.day.userId) return ws.personal && ws.personal.period === period ? ws.personal : null;
-  return ws.memberKey === ws.day.userId + ":" + period ? ws.memberData : null;
+  return ws.memberKey === wsMemberTarget(ws.day.userId, period).key ? ws.memberData : null;
 }
 function wsSourceLabel(s, ownerName) {
   if (s.entry) {
@@ -589,12 +595,13 @@ function wsRefreshDay(force) {
 
 // ---- edit / add session ----
 async function wsOpenAddDay(userId, opener) {
+  const version = ws.version;
   ws.day = { userId: userId || "", date: "" };
   if (userId) {
     const target = wsMemberTarget(userId);
     if (ws.memberKey !== target.key || !ws.memberData) await memberView.load(target);
   }
-  if (!wsDayData()) return;
+  if (version !== ws.version || !wsDayData()) return;
   wsOpenEdit("", opener);
 }
 function wsOpenEdit(sessionId, opener) {
@@ -635,6 +642,7 @@ function wsOpenEdit(sessionId, opener) {
 function wsActiveView() { return ws.day && ws.day.userId ? memberView : personalView; }
 async function wsSubmitEdit(event) {
   event.preventDefault();
+  const version = ws.version;
   const date = $("editDate").value, start = $("editStart").value, end = $("editEnd").value;
   const overnight = $("editOvernight").checked;
   if (!date || !start || !end) { wsFeedback("editMsg", "Enter a date, clock-in and clock-out."); return; }
@@ -645,9 +653,10 @@ async function wsSubmitEdit(event) {
   if (editing) body.id = ws.edit.id;
   wsFeedback("editMsg", "Saving…", "ok");
   const saved = await wsActiveView().edit(editing ? "PATCH" : "POST", body);
-  if (saved) { wsCloseDialog("dlgEdit"); wsAfterEdit(); }
+  if (saved && version === ws.version) { wsCloseDialog("dlgEdit"); wsAfterEdit(); }
 }
 async function wsRemoveSession(button) {
+  const version = ws.version;
   if (!ws.edit || !ws.edit.id) return;
   if (!ws.edit.armed) {
     ws.edit.armed = true; button.textContent = "Confirm removal";
@@ -655,7 +664,7 @@ async function wsRemoveSession(button) {
     return;
   }
   const removed = await wsActiveView().edit("DELETE", { id: ws.edit.id });
-  if (removed) { wsCloseDialog("dlgEdit"); wsAfterEdit(); }
+  if (removed && version === ws.version) { wsCloseDialog("dlgEdit"); wsAfterEdit(); }
 }
 function wsAfterEdit() {
   if (ws.day) wsFeedback("dayMsg", "Saved.", "ok");
@@ -673,10 +682,12 @@ async function wsLoadRecipients(teamEndpoint) {
 }
 function wsOpenSendAll(opener) {
   if (!ws.overview) return;
+  const version = ws.version;
   ws.send = { selected: new Set(wsMembers().map((m) => m.id)), recipients: null, error: "", done: false, period: ws.period };
   wsRenderSendAll();
   wsOpenDialog("dlgSend", opener);
-  wsLoadRecipients(true).then((list) => { ws.send.recipients = list; wsUpdateSend(); }).catch((error) => { ws.send.error = error.message; wsUpdateSend(); });
+  wsLoadRecipients(true).then((list) => { if (version !== ws.version) return; ws.send.recipients = list; wsUpdateSend(); })
+    .catch((error) => { if (version !== ws.version) return; ws.send.error = error.message; wsUpdateSend(); });
 }
 function wsRenderSendAll() {
   const members = wsMembers();
@@ -721,6 +732,7 @@ function wsUpdateSend() {
 }
 async function wsSubmitSendAll(event) {
   event.preventDefault();
+  const version = ws.version;
   if (!ws.send || ws.send.sending || ws.send.selected.size === 0) return;
   const userIds = wsMembers().filter((m) => ws.send.selected.has(m.id)).map((m) => m.id);
   ws.send.sending = true; wsUpdateSend();
@@ -729,6 +741,7 @@ async function wsSubmitSendAll(event) {
   try {
     const response = await api("/api/team/send?organizationId=" + encodeURIComponent(orgId), { method: "POST", body: JSON.stringify({ period: ws.send.period, userIds }) });
     const data = await response.json().catch(() => ({}));
+    if (version !== ws.version) return;
     if (!data.results) throw new Error(data.error || "Could not send timesheets.");
     const failed = data.results.filter((r) => !r.ok);
     ws.send.done = failed.length === 0;
@@ -739,13 +752,15 @@ async function wsSubmitSendAll(event) {
       document.querySelectorAll("[data-send-member]").forEach((box) => { box.checked = ws.send.selected.has(box.dataset.sendMember); });
     }
   } catch (error) {
+    if (version !== ws.version) return;
     wsFeedback("sendMsg", error.message || "Could not send timesheets.");
   } finally {
-    ws.send.sending = false; wsUpdateSend();
+    if (version === ws.version) { ws.send.sending = false; wsUpdateSend(); }
   }
 }
 function wsOpenPersonalSend(opener) {
   if (!ws.personal) return;
+  const version = ws.version;
   ws.send = { period: ws.period, sending: false, done: false };
   $("dlgSendBody").innerHTML = wsDialogHead("dlgSendTitle", "Send your timesheet") + wsPeriodNotice() +
     "<div class='ws-day-summary'><div>Worked time<strong>" + wsModel.duration(ws.personal.totalMinutes) + "</strong></div><div>Recorded days<strong>" + ws.personal.activeDays + "</strong></div></div>" +
@@ -761,23 +776,27 @@ function wsOpenPersonalSend(opener) {
     try {
       const response = await api("/api/send?period=" + ws.send.period, { method: "POST" });
       const data = await response.json().catch(() => ({}));
+      if (version !== ws.version) return;
       if (!response.ok) throw new Error(data.error || "Send failed.");
       wsFeedback("sendMsg", "Sent " + wsModel.monthLabel(data.period) + " to " + data.recipients + " recipient" + (data.recipients === 1 ? "" : "s") + ".", "ok");
       button.textContent = "Sent";
     } catch (error) {
+      if (version !== ws.version) return;
       wsFeedback("sendMsg", error.message || "Send failed.");
       button.disabled = false;
     }
   });
   wsOpenDialog("dlgSend", opener);
   wsLoadRecipients(emailMode === "manager").then((list) => {
+    if (version !== ws.version) return;
     $("sendRecipients").textContent = list.join(", ") || "None set";
     $("personalSendConfirm").disabled = list.length === 0;
-  }).catch((error) => { $("sendRecipients").textContent = error.message; });
+  }).catch((error) => { if (version === ws.version) $("sendRecipients").textContent = error.message; });
 }
 
 // ---- CSV preview ----
 async function wsOpenPreview(userId, opener) {
+  const version = ws.version;
   const member = userId ? wsMember(userId) : null;
   const title = "Preview · " + (member ? member.name + " · " : "") + wsModel.monthLabel(ws.period);
   $("dlgPreviewBody").innerHTML = wsDialogHead("dlgPreviewTitle", title) + "<p class='sub' role='status'>Loading…</p>";
@@ -799,7 +818,7 @@ async function wsOpenPreview(userId, opener) {
           head.map((_, i) => "<td>" + wsEsc(cells[i] || "") + "</td>").join("") + "</tr>").join("") + "</tbody></table></div>";
     }
   } catch { html = "<p class='ws-feedback err'>Could not load the preview.</p>"; }
-  if ($("dlgPreview").open) $("dlgPreviewBody").innerHTML = wsDialogHead("dlgPreviewTitle", title) + html;
+  if (version === ws.version && $("dlgPreview").open) $("dlgPreviewBody").innerHTML = wsDialogHead("dlgPreviewTitle", title) + html;
 }
 
 // ---- settings ----
@@ -882,6 +901,7 @@ function wsOpenMemberSettings(id, opener) {
   wsOpenDialog("dlgMember", opener);
 }
 $("memberRemove").addEventListener("click", async () => {
+  const version = ws.version;
   const m = wsMember(ws.settingsMember);
   if (!m) return;
   const button = $("memberRemove");
@@ -890,12 +910,14 @@ $("memberRemove").addEventListener("click", async () => {
   try {
     const response = await api("/api/auth/organization/remove-member", { method: "POST", body: JSON.stringify({ memberIdOrEmail: m.email, organizationId: orgId }) });
     const data = await response.json().catch(() => ({}));
+    if (version !== ws.version) return;
     if (!response.ok) throw new Error(data.message || data.error || "Could not remove member.");
     ws.expanded.delete(m.id);
     wsCloseDialog("dlgMember");
     if ($("dlgSheet").open && ws.sheetId === m.id) wsCloseDialog("dlgSheet");
     wsLoadOverview(true);
   } catch (error) {
+    if (version !== ws.version) return;
     wsFeedback("memberRemoveMsg", error.message);
   } finally { button.disabled = false; }
 });
@@ -921,6 +943,7 @@ function wsRenderPending() {
 }
 $("inviteForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const version = ws.version;
   const email = $("inviteEmail").value.trim();
   $("inviteLinkBox").classList.add("hidden");
   if (!email || !$("inviteEmail").checkValidity()) { wsFeedback("inviteMsg", "Enter a valid email to invite."); return; }
@@ -928,6 +951,7 @@ $("inviteForm").addEventListener("submit", async (event) => {
   try {
     const response = await api("/api/auth/organization/invite-member", { method: "POST", body: JSON.stringify({ email, role: $("inviteRole").value, organizationId: orgId }) });
     const data = await response.json().catch(() => ({}));
+    if (version !== ws.version) return;
     if (!response.ok) throw new Error(data.message || data.error || "Could not create invite.");
     const id = data.id || (data.invitation && data.invitation.id) || "";
     if (id) {
@@ -938,19 +962,22 @@ $("inviteForm").addEventListener("submit", async (event) => {
     $("inviteEmail").value = "";
     wsLoadPending();
   } catch (error) {
+    if (version !== ws.version) return;
     wsFeedback("inviteMsg", error.message || "Could not create invite.");
-  } finally { $("inviteBtn").disabled = orgCap < 1000000 && memberCount >= orgCap; }
+  } finally { if (version === ws.version) $("inviteBtn").disabled = orgCap < 1000000 && memberCount >= orgCap; }
 });
 $("copyInvite").addEventListener("click", async () => {
   try { await navigator.clipboard.writeText($("inviteLink").value); wsFeedback("inviteMsg", "Invite link copied. Only share it with the person you invited.", "ok"); }
   catch { $("inviteLink").select(); }
 });
 async function wsCancelInvite(id, button) {
+  const version = ws.version;
   button.disabled = true;
   try {
     const response = await api("/api/auth/organization/cancel-invitation", { method: "POST", body: JSON.stringify({ invitationId: id }) });
     if (!response.ok) throw new Error();
-  } catch { wsFeedback("inviteMsg", "Could not cancel that invitation."); button.disabled = false; return; }
+  } catch { if (version !== ws.version) return; wsFeedback("inviteMsg", "Could not cancel that invitation."); button.disabled = false; return; }
+  if (version !== ws.version) return;
   wsLoadPending();
 }
 
@@ -1086,13 +1113,33 @@ $("wsMain").addEventListener("input", (event) => {
 });
 $("wsSettings").onclick = (event) => wsOpenSettings(event.currentTarget);
 $("wsAccount").onclick = (event) => wsOpenAccount(event.currentTarget);
+$("wsTeam").onchange = () => startWorkspace(ws.me, $("wsTeam").value);
+
+function wsWorkspaceMemberships(me) {
+  const memberships = me.orgs || [];
+  const primary = wsPrimaryMembership(memberships);
+  return memberships.filter((membership) => membership === primary ||
+    (membership.plan !== "single" && isManagerRoleC(membership.role)));
+}
 
 /** Show the workspace for this account. Called after sign-in passes the access gates. */
-async function startWorkspace(me) {
+async function startWorkspace(me, selectedTeam) {
+  ++ws.version; ++ws.overviewVersion;
+  for (const frame of [...wsDialogs].reverse()) wsCloseDialog(frame.id);
+  wsDialogs.length = 0;
+  wsInvalidateSettings();
+  ws.day = null; ws.edit = null; ws.send = null; ws.sheetId = ""; ws.sheetDay = "";
+  ws.settingsMember = ""; ws.messageTarget = ""; ws.busy = false;
   ws.me = me;
   meEmail = (me.user && me.user.email) || "";
   orgId = ""; orgName = ""; orgRole = ""; orgPlanKey = ""; orgCap = 0; memberCount = 0;
-  const membership = wsPrimaryMembership(me.orgs || []);
+  const params = new URLSearchParams(location.search);
+  const memberships = wsWorkspaceMemberships(me);
+  const storageKey = "clocked:management-team:" + me.user.id;
+  let rememberedTeam = "";
+  try { rememberedTeam = localStorage.getItem(storageKey) || ""; } catch {}
+  const requestedTeam = selectedTeam || params.get("team") || rememberedTeam;
+  const membership = memberships.find((item) => item.organizationId === requestedTeam) || wsPrimaryMembership(me.orgs || []);
   if (membership) {
     orgId = membership.organizationId; orgName = membership.name || ""; orgRole = membership.role || ""; orgPlanKey = membership.plan || "";
     orgCap = membership.cap || 0; memberCount = membership.memberCount || 1;
@@ -1105,7 +1152,9 @@ async function startWorkspace(me) {
   } else {
     ws.mode = "personal"; emailMode = "solo"; canEditTimes = true;
   }
-  const params = new URLSearchParams(location.search);
+  try {
+    if (wsIsTeam()) localStorage.setItem(storageKey, orgId); else localStorage.removeItem(storageKey);
+  } catch {}
   const t = wsToday();
   const month = params.get("month");
   ws.period = month && /^\d{4}-\d{2}$/.test(month) && month <= wsCurrentPeriod() ? month : wsModel.lastCompleteMonth(t);
@@ -1114,10 +1163,15 @@ async function startWorkspace(me) {
   ws.year = Number.isInteger(year) && year >= 2000 && year <= t.y ? year : t.y;
   ws.window = null; ws.closedWeeks = new Set();
   ++ws.annualVersion; ws.annual = null; ws.annualError = ""; ws.annualKey = ""; ws.annualLoading = false;
-  ws.query = ""; ws.expanded = new Set(); ws.scope = "all"; ws.overview = null; ws.personal = null;
+  ws.query = ""; ws.expanded = new Set(); ws.scope = "all"; ws.overview = null; ws.overviewError = ""; ws.personal = null; ws.personalError = "";
   ws.pending = []; ws.policy = undefined; ws.memberData = null; ws.memberKey = "";
   personalView.clear(true); memberView.clear(true);
   $("wsName").textContent = ws.mode === "personal" ? "Personal account" : orgName;
+  const switchable = memberships.length > 1;
+  wsShow("wsName", !switchable); wsShow("wsTeamSwitch", switchable);
+  $("wsTeam").innerHTML = memberships.map((item) => "<option value='" + wsEsc(item.organizationId) + "'>" +
+    wsEsc(item.name) + " · " + (wsRoleTag(item.role) || "Worker") + "</option>").join("");
+  $("wsTeam").value = orgId;
   $("wsSettings").setAttribute("aria-label", "Settings");
   $("settingsTeamTab").hidden = !(wsIsTeam() && isManagerRoleC(orgRole));
   wsShow("settingsTeamTab", !$("settingsTeamTab").hidden);
