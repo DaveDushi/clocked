@@ -100,3 +100,20 @@ export function formatDateLabel(date: Date, tz: string): string {
 export function formatHM(date: Date, tz: string): string {
   return timeFmt(tz).format(date);
 }
+
+/** Report periods are a calendar month (YYYY-MM) or a seven-day start (YYYY-MM-DD). */
+export function reportDateBounds(period: string): { start: string; end: string } {
+  const [y, m, d] = period.split("-").map(Number);
+  const start = new Date(Date.UTC(y, m - 1, d ?? 1));
+  const end = d === undefined ? new Date(Date.UTC(y, m, 1)) : new Date(Date.UTC(y, m - 1, d + 7));
+  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+}
+
+export function reportBoundsUtc(period: string, timezone: string): { start: Date; end: Date } {
+  const dates = reportDateBounds(period);
+  const convert = (date: string) => {
+    const [y, m, d] = date.split("-").map(Number);
+    return wallToUtc(y, m, d, 0, 0, 0, timezone);
+  };
+  return { start: convert(dates.start), end: convert(dates.end) };
+}

@@ -4,7 +4,7 @@ import { buildTimesheet } from "../.tmp-test/report.js";
 import { getTeamSessionScope, getEffectiveSessionScope } from "../.tmp-test/team-scope.js";
 import { handleManualSession } from "../.tmp-test/manual-session.js";
 import { buildTeamOverview, sendTeamTimesheets } from "../.tmp-test/team-overview.js";
-import { buildAndSendReport, sendMonthlyReports } from "../.tmp-test/email.js";
+import { buildAndSendReport, sendScheduledReports } from "../.tmp-test/email.js";
 import { testDatabase } from "./helpers/database.mjs";
 
 function fixture(t) {
@@ -83,7 +83,7 @@ test('manual and bulk team email attachments use current membership scope and re
 
 test('scheduled primary-team delivery excludes history even with an older personal workspace', async t => {
   const {env,messages} = fixture(t);
-  await sendMonthlyReports(env,new Date('2026-10-01T06:00:00Z'));
+  await sendScheduledReports(env,new Date('2026-10-01T06:00:00Z'));
   const workerMessage = messages.find(m=>m.attachments);
   assert.ok(workerMessage);
   assert.match(csvOf(workerMessage),/Total,3:00/);

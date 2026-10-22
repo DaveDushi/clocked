@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { getEffectiveDelivery, getTeamDelivery, handleDeliverySettings, listDeliveries } from "../.tmp-test/delivery.js";
-import { buildAndSendReport, sendMonthlyReports } from "../.tmp-test/email.js";
+import { buildAndSendReport, sendScheduledReports } from "../.tmp-test/email.js";
 import { sendTeamTimesheets } from "../.tmp-test/team-overview.js";
 import { testDatabase } from "./helpers/database.mjs";
 
@@ -175,7 +175,7 @@ test("scheduled and forced sends use the same effective delivery and report time
     messages.push(message);
     return { messageId: "id" };
   } } });
-  await sendMonthlyReports(env, new Date("2026-10-01T00:00:00Z"));
+  await sendScheduledReports(env, new Date("2026-10-01T00:00:00Z"));
   assert.equal(messages.length, 1);
   const delivery = await getEffectiveDelivery(env, personal);
   const sent = await buildAndSendReport(env, "2026-09", {
@@ -188,7 +188,7 @@ test("scheduled and forced sends use the same effective delivery and report time
     assert.equal(message.attachments[0].filename, "clocked-2026-09.csv");
     assert.match(Buffer.from(message.attachments[0].content).toString("utf8"), /September 1, 2026",09:00,10:00/);
   }
-  await sendMonthlyReports(env, new Date("2026-10-01T00:00:00Z"));
+  await sendScheduledReports(env, new Date("2026-10-01T00:00:00Z"));
   assert.equal(messages.length, 2);
 });
 
@@ -219,7 +219,7 @@ test("saved team recipients both reach Cloudflare for team, personal and schedul
   })).ok, true);
   assert.equal(messages.length, 4);
 
-  await sendMonthlyReports(env, new Date("2026-10-01T06:00:00Z"));
+  await sendScheduledReports(env, new Date("2026-10-01T06:00:00Z"));
   // The fixture has five accounts, all due at 06:00 UTC.
   assert.equal(messages.length, 12);
   const workerReports = messages.filter((message) => message.text.includes("Total hours: 8:00"));
@@ -231,4 +231,67 @@ test("saved team recipients both reach Cloudflare for team, personal and schedul
   for (const message of workerReports) {
     assert.equal(message.attachments[0].filename, "clocked-2026-09.csv");
   }
+});
+
+for (const target of [personal, team]) {
+  test(`${target.kind} weekly delivery is opt-in, round-trips, validates weekdays, and can be disabled`, async (t) => {
+    const { request, env } = fixture(t);
+    const weekly = { ...chosen, sendFrequency: "weekly", sendDay: 5 };
+    assert.equal((await request(target, weekly)).status, 200);
+    const saved = await (await request(target)).json();
+    assert.equal(saved.sendFrequency, "weekly");
+    assert.equal(saved.sendDay, 5);
+    if (target.kind === "team") {
+      const effective = await getEffectiveDelivery(env, { userId: "worker", email: "worker@example.test" });
+      assert.equal(effective.schedule.frequency, "weekly");
+      assert.equal(effective.schedule.day, 5);
+    }
+    for (const patch of [{ sendDay: 8 }, { sendDay: 99 }, { sendFrequency: "daily" }]) {
+      assert.equal((await request(target, { ...weekly, ...patch })).status, 400);
+      assert.deepEqual(await (await request(target)).json(), saved);
+    }
+    await request(target, { ...weekly, sendDay: 0 });
+    assert.equal((await (await request(target)).json()).sendDay, 0);
+    await request(target, chosen);
+    assert.equal((await (await request(target)).json()).sendFrequency, undefined);
+  });
+}
+
+test("weekly cron emails and CSV contain only the completed week across New Year, and repeat sends skip", async (t) => {
+  const { env, request, sqlite } = fixture(t);
+  await request(personal, { recipients: ["solo@example.test"], sendFrequency: "weekly", sendDay: 1, sendTime: "09:00", sendTimezone: "Asia/Tokyo" });
+  sqlite.exec(`INSERT INTO sessions (id, user_id, start_utc, end_utc, timezone) VALUES
+    ('before', 'solo', '2025-12-28T13:00:00.000Z', '2025-12-28T14:00:00.000Z', 'Asia/Tokyo'),
+    ('cross-start', 'solo', '2025-12-28T14:30:00.000Z', '2025-12-28T15:30:00.000Z', 'Asia/Tokyo'),
+    ('new-year', 'solo', '2026-01-01T00:00:00.000Z', '2026-01-01T01:00:00.000Z', 'Asia/Tokyo'),
+    ('cross-end', 'solo', '2026-01-04T14:30:00.000Z', '2026-01-04T15:30:00.000Z', 'Asia/Tokyo'),
+    ('after', 'solo', '2026-01-05T00:00:00.000Z', '2026-01-05T01:00:00.000Z', 'Asia/Tokyo');
+    INSERT INTO activity_day (user_id, day, app, project, secs, updated_at) VALUES
+    ('solo', '2025-12-28', 'editor', 'Outside', 3600, 'now'),
+    ('solo', '2025-12-29', 'editor', 'Weekly', 1800, 'now'),
+    ('solo', '2026-01-01', 'editor', 'Weekly', 1800, 'now'),
+    ('solo', '2026-01-05', 'editor', 'Outside', 3600, 'now');`);
+  const messages = [];
+  Object.assign(env, { MAIL_FROM: "reports@example.test", EMAIL_PROVIDER: "cloudflare", EMAIL: { async send(message) {
+    messages.push(message);
+    return { messageId: "id" };
+  } } });
+  const due = new Date("2026-01-05T00:00:00Z");
+  await sendScheduledReports(env, due);
+  assert.equal(messages.length, 1);
+  assert.match(messages[0].subject, /2025-12-29 to 2026-01-04/);
+  assert.match(messages[0].text, /Total hours: 2:00/);
+  assert.match(messages[0].text, /Days worked: 3/);
+  assert.match(messages[0].text, /Weekly: 1:00/);
+  const csv = Buffer.from(messages[0].attachments[0].content).toString("utf8");
+  assert.equal(messages[0].attachments[0].filename, "clocked-2025-12-29.csv");
+  assert.match(csv, /December 29, 2025",00:00,00:30/);
+  assert.match(csv, /January 4, 2026",23:30,00:00/);
+  assert.doesNotMatch(csv, /December 28|January 5|Outside/);
+  assert.match(csv, /Total,2:00/);
+  await sendScheduledReports(env, due);
+  assert.equal(messages.length, 1);
+  await request(personal, { recipients: ["solo@example.test"], sendFrequency: "weekly", sendDay: 0 });
+  await sendScheduledReports(env, new Date("2026-01-12T06:00:00Z"));
+  assert.equal(messages.length, 1);
 });

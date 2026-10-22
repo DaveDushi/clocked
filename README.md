@@ -405,7 +405,7 @@ named `clk_` Bearer tokens. Each account only sees its own sessions. The desktop
 token; a global `BEARER_TOKEN` secret, if set, still works as a legacy fallback
 (those sessions land unattributed to any account).
 
-### Monthly send
+### Automatic timesheet emails
 
 A cron checks each account's dashboard-configured **day, time, and IANA
 timezone**, emailing its **previous full calendar month** exactly once (tracked
@@ -413,6 +413,13 @@ per account in the `sent_reports` table). Existing accounts default to the
 original 06:00 UTC schedule. Each account's recipient is the address it set in
 the dashboard, falling back to its sign-up email. Team managers control the
 shared delivery schedule for their members.
+
+Delivery settings also offer an opt-in **Weekly** frequency. Choose a weekday,
+time, and timezone. Each weekly email and CSV covers the seven completed local
+dates before that weekday. Monday delivery covers the previous Monday through
+Sunday, including weeks across month and year boundaries. Existing schedules
+remain monthly. Turn off **Email automatically** to stop scheduled delivery.
+Apply migration `0023_weekly_delivery.sql` before deploying the updated Worker.
 
 ---
 

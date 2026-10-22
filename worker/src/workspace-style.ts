@@ -340,7 +340,7 @@ export const WORKSPACE_STYLE = /* css */ `
   .ws-settings .recipient input { min-width:0; }
   .ws-settings .recipient .del, .ws-settings .mentry .del { flex:none; width:38px; padding:8px 0; }
   .ws-settings .schedule { gap:12px; margin:0; }
-  .ws-settings .sendday { display:grid; grid-template-columns:minmax(100px,.8fr) minmax(120px,1fr) minmax(0,1.6fr); align-items:end; gap:12px; padding:0 0 0 24px; }
+  .ws-settings .sendday { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:end; gap:12px; padding:0 0 0 24px; }
   .ws-settings .sendday > div { min-width:0; }
   .ws-settings .sendday input, .ws-settings .sendday select { width:100%; min-height:40px; }
   .ws-settings .ws-actions-row, .ws-settings .inline-actions, .ws-settings .setupbox,
@@ -365,8 +365,6 @@ export const WORKSPACE_STYLE = /* css */ `
   .ws-settings .ws-settings-help [role=tooltip] { position:absolute; z-index:5; right:0; top:calc(100% + 6px); width:240px; max-width:calc(100vw - 72px); padding:10px 12px; border:1px solid #485064; border-radius:8px; background:#1b1f2b; color:var(--fg); box-shadow:0 8px 24px rgba(0,0,0,.35); font-size:12px; line-height:1.6; visibility:hidden; opacity:0; pointer-events:none; }
   .ws-settings .ws-settings-help:hover [role=tooltip], .ws-settings .ws-settings-help:focus-within [role=tooltip] { visibility:visible; opacity:1; }
   @media (max-width:540px) {
-    .ws-settings .sendday { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
-    .ws-settings .sendday .ws-settings-field:last-of-type { grid-column:1 / -1; }
     .ws-settings .setupbox > .btn { flex:1 1 180px; }
     .ws-settings .token-row { flex-wrap:wrap; }
     .ws-settings .token-row-main { flex-basis:100%; }

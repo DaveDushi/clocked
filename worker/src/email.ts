@@ -2,6 +2,7 @@ import { getEffectiveSessionScope, getTeamSessionScope } from "./team-scope.js";
 import type { Env } from "./types";
 import { sendEmail } from "./email-provider.js";
 import { buildTimesheet, formatHours, isWorkDay, type HoursReport } from "./report.js";
+import { reportDateBounds } from "./time.js";
 import { listDeliveries } from "./delivery.js";
 import { isScheduleDue, periodForSchedule } from "./schedule.js";
 
@@ -16,7 +17,12 @@ const MARKETING_FOOTER_TEXT =
   "— Sent automatically by clocked, automatic time tracking for Windows. https://clocked.easytomanage.com";
 
 /** "2026-06" -> "June 2026". */
-function monthTitle(period: string): string {
+function periodTitle(period: string): string {
+  if (period.length === 10) {
+    const { start, end } = reportDateBounds(period);
+    const last = new Date(Date.parse(end + "T00:00:00Z") - 86400000).toISOString().slice(0, 10);
+    return `${start} to ${last}`;
+  }
   const [y, m] = period.split("-").map(Number);
   return new Intl.DateTimeFormat("en-US", {
     timeZone: "UTC",
@@ -41,7 +47,7 @@ function renderReportEmail(
   report: HoursReport,
   projects: { project: string; minutes: number }[],
 ): { html: string; text: string } {
-  const title = monthTitle(period);
+  const title = periodTitle(period);
   const total = formatHours(report.totalMinutes);
   const worked = report.activeDays;
   const vacation = report.days.filter((d) => d.minutes === 0 && isWorkDay(d.date)).length;
@@ -171,12 +177,12 @@ export async function buildAndSendReport(
       ? renderReportEmail(period, report, projects)
       : {
           html: undefined,
-          text: `No sessions recorded for this month.\n\n${MARKETING_FOOTER_TEXT}`,
+          text: `No sessions recorded for this period.\n\n${MARKETING_FOOTER_TEXT}`,
         };
 
   const sent = await sendEmail(env, {
     to,
-    subject: `Hours — ${monthTitle(period)}`,
+    subject: `Hours — ${periodTitle(period)}`,
     html: body.html,
     text: body.text,
     attachments: rows > 0 ? [{
@@ -284,13 +290,13 @@ export async function sendAccessRequest(
 }
 
 /**
- * Monthly cron fan-out: email every account whose configured local delivery
+ * Scheduled cron fan-out: email every account whose configured local delivery
  * minute is due. For a team member, the manager's org-level schedule wins; for
  * a solo user, their personal schedule is used.
  * Recipients are likewise the effective ones — the manager's team destination in
  * a team, or the user's own `mail_to`/account email when solo.
  */
-export async function sendMonthlyReports(env: Env, now: Date): Promise<void> {
+export async function sendScheduledReports(env: Env, now: Date): Promise<void> {
   const users = await listDeliveries(env);
   for (const u of users) {
     const { schedule, recipients } = u;

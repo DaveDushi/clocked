@@ -52,3 +52,16 @@ test("disabled schedules never become due", () => {
   const schedule = { day: 0, time: "06:00", timezone: "UTC" };
   assert.equal(isScheduleDue(schedule, new Date("2026-09-01T06:00:00Z")), false);
 });
+
+test("weekly delivery follows local weekdays and reports the prior seven complete dates", () => {
+  const schedule = { frequency: "weekly", day: 1, time: "09:30", timezone: "Asia/Tokyo" };
+  assert.equal(isScheduleDue(schedule, new Date("2026-01-05T00:30:00Z")), true);
+  assert.equal(isScheduleDue(schedule, new Date("2026-01-05T00:29:00Z")), false);
+  assert.equal(isScheduleDue(schedule, new Date("2026-01-06T00:30:00Z")), false);
+  assert.equal(periodForSchedule(schedule, new Date("2026-01-05T00:30:00Z")), "2025-12-29");
+  assert.equal(isScheduleDue({ ...schedule, day: 0 }, new Date("2026-01-05T00:30:00Z")), false);
+  const sunday = { frequency: "weekly", day: 7, time: "01:30", timezone: "America/New_York" };
+  assert.equal(isScheduleDue(sunday, new Date("2026-11-01T05:30:00Z")), true);
+  assert.equal(isScheduleDue(sunday, new Date("2026-11-01T06:30:00Z")), false);
+  assert.equal(isScheduleDue({ ...sunday, time: "02:30" }, new Date("2026-03-08T07:30:00Z")), true);
+});

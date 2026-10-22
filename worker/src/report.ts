@@ -10,7 +10,8 @@ import {
   formatDateLabel,
   formatHM,
   localYMD,
-  monthBoundsUtc,
+  reportBoundsUtc,
+  reportDateBounds,
   nextLocalMidnightUtc,
 } from "./time.js";
 
@@ -70,14 +71,14 @@ export interface RecordedDay {
 }
 
 export interface HoursReport {
-  period: string; // "YYYY-MM"
+  period: string; // YYYY-MM month or YYYY-MM-DD week start
   tz: string;
   days: DayHours[];
   activeDays: number;
   totalMinutes: number;
 }
 
-/** Clamp sessions to a month, split them at local midnight, and group by day. */
+/** Clamp sessions to the report period, split at local midnight, and group by day. */
 function splitSessions(
   rows: readonly SessionRow[],
   period: string,
@@ -87,7 +88,7 @@ function splitSessions(
   const byDay = new Map<string, LocalDayIntervals>();
   for (const row of rows) {
     const tz = validTimezoneOr(row.timezone, fallbackTz);
-    const { start, end } = monthBoundsUtc(period, tz);
+    const { start, end } = reportBoundsUtc(period, tz);
     const rawStart = Date.parse(row.start_utc);
     const rawEnd = Date.parse(row.end_utc);
     if (Number.isNaN(rawStart) || Number.isNaN(rawEnd) || rawEnd <= rawStart) continue;
@@ -143,16 +144,13 @@ function splitSessions(
   return { grouped: byDay, sessions };
 }
 
-/** Query broadly enough to include a local month in every supported timezone;
- * each row is then clamped to its own exact local month. */
+/** Include the local report period in every supported timezone, then clamp each row. */
 export function periodQueryBounds(period: string): { start: Date; end: Date } {
-  const [y, m] = period.split("-").map(Number);
-  const nextY = m === 12 ? y + 1 : y;
-  const nextM = m === 12 ? 1 : m + 1;
+  const dates = reportDateBounds(period);
   const padding = 15 * 60 * 60 * 1000;
   return {
-    start: new Date(Date.UTC(y, m - 1, 1) - padding),
-    end: new Date(Date.UTC(nextY, nextM - 1, 1) + padding),
+    start: new Date(Date.parse(dates.start + "T00:00:00Z") - padding),
+    end: new Date(Date.parse(dates.end + "T00:00:00Z") + padding),
   };
 }
 
@@ -298,6 +296,17 @@ function mergeZonedTimeIntervals(intervals: ZonedTimeInterval[]): ZonedTimeInter
   return merged;
 }
 
+function expandWeek(seed: DayHours[], period: string): { days: DayHours[]; activeDays: number } {
+  const byDate = new Map(seed.map((day) => [day.date, day]));
+  const start = Date.parse(period + "T00:00:00Z");
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const date = new Date(start + i * 86400000);
+    const key = date.toISOString().slice(0, 10);
+    return byDate.get(key) ?? { date: key, label: formatDateLabel(date, "UTC"), minutes: 0 };
+  });
+  return { days, activeDays: days.filter((day) => day.minutes > 0).length };
+}
+
 export interface Timesheet {
   report: HoursReport;
   sessions: SessionSegment[];
@@ -316,7 +325,7 @@ export interface MonthSummary {
   spanByDate: Map<string, DaySpan>;
 }
 
-/** Day accounting for one account's closed sessions in a local month. */
+/** Day accounting for one account's closed sessions in a report period. */
 export function summarizeMonth(
   rows: readonly SessionRow[],
   period: string,
@@ -376,7 +385,7 @@ export function summarizeMonth(
     label: labelByDate.get(date) ?? "",
     minutes: span.minutes,
   }));
-  const expanded = expandCalendarDays(
+  const expanded = period.length === 10 ? expandWeek(seed, period) : expandCalendarDays(
     seed.sort((a, b) => a.date.localeCompare(b.date)), period, localYMD(now, timezone),
   );
   // Monthly totals include recorded days even when calendar expansion hides them.

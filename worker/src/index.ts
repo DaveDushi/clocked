@@ -27,7 +27,7 @@ import {
   newsPageResponse,
   runMarketingAgent,
 } from "./marketing-agent";
-import { buildAndSendReport, sendMonthlyReports } from "./email";
+import { buildAndSendReport, sendScheduledReports } from "./email";
 import { handleActivityIngest } from "./activity";
 import { handleIngest } from "./ingest";
 import { buildTimesheet } from "./report";
@@ -82,7 +82,7 @@ export default {
       );
       return;
     }
-    ctx.waitUntil(sendMonthlyReports(env, now));
+    ctx.waitUntil(sendScheduledReports(env, now));
   },
 } satisfies ExportedHandler<Env>;
 

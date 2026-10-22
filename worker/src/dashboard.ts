@@ -1467,12 +1467,24 @@ function recipientValues() {
 }
 // ---- auto-send schedule ----
 function ordinal(n) { const v = n % 100; return n + (["th","st","nd","rd"][(v > 3 && v < 21) ? 0 : (n % 10 < 4 ? n % 10 : 0)]); }
-function fillSendDays() {
+const sendWeekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+function fillSendDays(selected) {
+  const weekly = $("sendFrequency").value === "weekly";
   const sel = $("sendDay");
-  if (sel.options.length) return;
-  for (let d = 1; d <= 28; d++) sel.add(new Option(ordinal(d), String(d)));
-  sel.add(new Option("last day", "99")); // 99 = last day of the month
+  sel.replaceChildren();
+  if (weekly) sendWeekdays.forEach((name, i) => sel.add(new Option(name, String(i + 1))));
+  else {
+    for (let d = 1; d <= 28; d++) sel.add(new Option(ordinal(d), String(d)));
+    sel.add(new Option("last day", "99"));
+  }
+  sel.value = String(selected || 1);
+  $("sendDayLabel").textContent = weekly ? "Day of week" : "Day of month";
+  sel.setAttribute("aria-label", weekly ? "Day of week" : "Day of month");
+  $("sendPeriodHint").textContent = weekly
+    ? "Weekly emails cover the seven completed days before delivery."
+    : "Monthly emails cover the previous calendar month.";
 }
+$("sendFrequency").onchange = () => fillSendDays(1);
 function fillTimeZones() {
   const list = $("sendTimezones");
   if (list.children.length) return;
@@ -1488,6 +1500,7 @@ function fillTimeZones() {
 }
 function syncSendDayState() {
   const on = $("autoSend").checked;
+  $("sendFrequency").disabled = !on;
   $("sendDay").disabled = !on;
   $("sendTime").disabled = !on;
   $("sendTimezone").disabled = !on;
@@ -1512,16 +1525,18 @@ async function loadEmailSettings(context) {
     $("emailReadonly").classList.toggle("hidden", editable);
     if (editable) {
       renderRecipients(data.recipients.length ? data.recipients : (data.defaultRecipients || []));
-      setSchedule(data.sendDay, data.sendTime, data.sendTimezone);
+      setSchedule(data.sendDay, data.sendTime, data.sendTimezone, data.sendFrequency);
       $("saveEmail").disabled = false;
-    } else renderEmailReadonly(data.recipients || [], data.sendDay, data.sendTime, data.sendTimezone);
+    } else renderEmailReadonly(data.recipients || [], data.sendDay, data.sendTime, data.sendTimezone, data.sendFrequency);
   } catch (error) {
     if (version !== emailLoadVersion) return;
     $("emailReadonly").textContent = error.message || "Could not load delivery settings.";
   }
 }
 
-function setSchedule(day, time, timezone) {
+function setSchedule(day, time, timezone, frequency) {
+  $("sendFrequency").value = frequency || "monthly";
+  fillSendDays(Number(day));
   day = Number(day);
   $("autoSend").checked = day !== 0;
   $("sendDay").value = String(day === 0 ? 1 : day);
@@ -1530,14 +1545,14 @@ function setSchedule(day, time, timezone) {
   syncSendDayState();
 }
 
-function renderEmailReadonly(recipients, sendDay, sendTime, sendTimezone) {
+function renderEmailReadonly(recipients, sendDay, sendTime, sendTimezone, frequency) {
   const day = Number(sendDay);
   const when = day === 0
     ? "not emailed automatically"
-    : (day === 99 ? "emailed on the last day of each month" : "emailed on the " + ordinal(day) + " of each month") +
+    : (frequency === "weekly" ? "emailed every " + sendWeekdays[day - 1] : day === 99 ? "emailed on the last day of each month" : "emailed on the " + ordinal(day) + " of each month") +
       " at " + pvEsc(sendTime || "06:00") + " (" + pvEsc(sendTimezone || "UTC") + ")";
   const who = (recipients && recipients.length) ? recipients.map(pvEsc).join(", ") : "your manager";
-  $("emailReadonly").innerHTML = "<p class='muted' style='font-size:13.5px;margin:0;line-height:1.6'>Your monthly timesheet is " + when + " to <b style='color:var(--fg)'>" + who + "</b> — set by your team manager.</p>";
+  $("emailReadonly").innerHTML = "<p class='muted' style='font-size:13.5px;margin:0;line-height:1.6'>Your timesheet is " + when + " to <b style='color:var(--fg)'>" + who + "</b> — set by your team manager.</p>";
 }
 
 $("signout").onclick = async () => {
@@ -1564,6 +1579,7 @@ $("saveEmail").onclick = async () => {
   $("emailMsg").textContent = ""; $("emailMsg").className = "msg";
   if (!recipients.length) { $("emailMsg").textContent = "Add at least one recipient."; $("emailMsg").className = "msg err"; return; }
   const sendDay = $("autoSend").checked ? Number($("sendDay").value) : 0;
+  const sendFrequency = $("sendFrequency").value;
   const sendTime = $("sendTime").value;
   const sendTimezone = $("sendTimezone").value.trim();
   if ($("autoSend").checked && (!sendTime || !sendTimezone)) {
@@ -1571,7 +1587,7 @@ $("saveEmail").onclick = async () => {
   }
   $("saveEmail").disabled = true;
   try {
-    const response = await api(context.path, { method:"POST", body: JSON.stringify({ recipients, sendDay, sendTime, sendTimezone }) });
+    const response = await api(context.path, { method:"POST", body: JSON.stringify({ recipients, sendDay, sendTime, sendTimezone, sendFrequency }) });
     const data = await response.json();
     if (version !== emailLoadVersion) return;
     if (!response.ok) throw new Error(data.error || "Save failed.");

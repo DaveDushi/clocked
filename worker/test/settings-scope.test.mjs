@@ -28,7 +28,7 @@ function harness({ mode = "team", role = "owner", plan = "team", managed = true,
     wsShow: (id, visible) => $(id).classList.toggle("hidden", !visible),
     fillSendDays() {}, fillTimeZones() {}, loadWorkingHoursEditor() {}, loadInactivityEditor() {}, loadWorkingHoursSummary() {},
     renderRecipients(recipients) { context.recipients = recipients; },
-    renderEmailReadonly(recipients) { context.readonly = recipients; }, setSchedule() {},
+    renderEmailReadonly(recipients) { context.readonly = recipients; }, setSchedule(day, time, timezone, frequency) { $("sendFrequency").value = frequency || "monthly"; },
     recipientValues: () => ["payroll@example.test"],
     api: async (path, options) => {
       requests.push({ path, options });
@@ -100,7 +100,7 @@ test("legacy single-seat owners can change delivery from Personal settings", asy
     assert.equal(h.requests.at(-1).path, "/api/team/settings?organizationId=selected-team");
     assert.equal(h.requests.at(-1).options.method, "POST");
     assert.deepEqual(JSON.parse(h.requests.at(-1).options.body), {
-      recipients: ["payroll@example.test"], sendDay: 12, sendTime: "09:30", sendTimezone: "Europe/Berlin",
+      recipients: ["payroll@example.test"], sendFrequency: "monthly", sendDay: 12, sendTime: "09:30", sendTimezone: "Europe/Berlin",
     });
     assert.equal(h.$("emailMsg").textContent, "Saved.");
   }

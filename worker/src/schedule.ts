@@ -6,6 +6,8 @@ export const DEFAULT_SEND_TIMEZONE = "UTC";
 export const SEND_DAY_LAST = 99;
 
 export interface SendSchedule {
+  /** Omitted for legacy monthly schedules. Weekly days are ISO weekdays 1..7. */
+  frequency?: "monthly" | "weekly";
   /** 0 disables automatic delivery; 99 means the last day of the month. */
   day: number;
   /** 24-hour wall-clock time in HH:MM form. */
@@ -44,17 +46,24 @@ export function isValidTimeZone(value: unknown): value is string {
 export function isScheduleDue(schedule: SendSchedule, now: Date): boolean {
   if (schedule.day === 0) return false;
   const { y, m, d } = localYMD(now, schedule.timezone);
-  const target =
-    schedule.day === SEND_DAY_LAST
-      ? new Date(Date.UTC(y, m, 0)).getUTCDate()
-      : schedule.day;
-  if (d !== target) return false;
+  if (schedule.frequency === "weekly") {
+    const weekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay() || 7;
+    if (weekday !== schedule.day) return false;
+  } else {
+    const target = schedule.day === SEND_DAY_LAST
+      ? new Date(Date.UTC(y, m, 0)).getUTCDate() : schedule.day;
+    if (d !== target) return false;
+  }
   const [hour, minute] = schedule.time.split(":").map(Number);
   const due = wallToUtc(y, m, d, hour, minute, 0, schedule.timezone);
   return Math.floor(due.getTime() / 60_000) === Math.floor(now.getTime() / 60_000);
 }
 
-/** The report remains for the prior local calendar month, matching existing behavior. */
+/** YYYY-MM for the prior month, or YYYY-MM-DD for the start of a completed week. */
 export function periodForSchedule(schedule: SendSchedule, now: Date): string {
+  if (schedule.frequency === "weekly") {
+    const { y, m, d } = localYMD(now, schedule.timezone);
+    return new Date(Date.UTC(y, m - 1, d - 7)).toISOString().slice(0, 10);
+  }
   return previousMonthPeriod(now, schedule.timezone);
 }

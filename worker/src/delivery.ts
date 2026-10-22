@@ -15,6 +15,7 @@ type DeliveryTarget =
   | { kind: "team"; organizationId: string };
 
 interface StoredDelivery {
+  send_frequency: string | null;
   mail_to: string | null;
   send_day: number | null;
   send_time: string | null;
@@ -37,7 +38,8 @@ interface AccountDelivery extends EffectiveDelivery {
 
 function normalizeSchedule(row: StoredDelivery | null): SendSchedule {
   return {
-    day: isValidSendDay(row?.send_day) ? row.send_day : 1,
+    ...(row?.send_frequency === "weekly" ? { frequency: "weekly" } : {}),
+    day: isValidSendDay(row?.send_day) && (row?.send_frequency !== "weekly" || row.send_day <= 7) ? row.send_day : 1,
     time: isValidSendTime(row?.send_time) ? row.send_time : DEFAULT_SEND_TIME,
     timezone: isValidTimeZone(row?.send_timezone) ? row.send_timezone : DEFAULT_SEND_TIMEZONE,
   };
@@ -64,6 +66,7 @@ async function readDeliveries(
             CASE WHEN fm.organizationId IS NOT NULL THEN os.send_day ELSE us.send_day END AS send_day,
             CASE WHEN fm.organizationId IS NOT NULL THEN os.send_time ELSE us.send_time END AS send_time,
             CASE WHEN fm.organizationId IS NOT NULL THEN os.send_timezone ELSE us.send_timezone END AS send_timezone,
+            CASE WHEN fm.organizationId IS NOT NULL THEN os.send_frequency ELSE us.send_frequency END AS send_frequency,
             manager_user.email AS manager_email
        FROM user u
        LEFT JOIN first_membership fm ON fm.userId = u.id AND fm.position = 1
@@ -125,7 +128,7 @@ export async function getTeamDelivery(env: Env, organizationId: string): Promise
   defaultRecipients: string[];
 }> {
   const row = await env.DB.prepare(
-    "SELECT mail_to, send_day, send_time, send_timezone FROM org_settings WHERE organizationId = ?",
+    "SELECT mail_to, send_day, send_time, send_timezone, send_frequency FROM org_settings WHERE organizationId = ?",
   ).bind(organizationId).first<StoredDelivery>();
   const managers = await env.DB.prepare(
     `SELECT u.email FROM member m JOIN user u ON u.id = m.userId
@@ -149,9 +152,11 @@ function parseDelivery(input: unknown): Delivery | string {
   if (recipients.length > 20) return "too many recipients";
   if (!recipients.every((value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))) return "invalid email";
 
+  const frequency = "sendFrequency" in body ? body.sendFrequency : "monthly";
+  if (frequency !== "monthly" && frequency !== "weekly") return "invalid send frequency";
   const rawDay = "sendDay" in body ? body.sendDay : undefined;
   const day = rawDay === undefined ? 1 : Number(rawDay);
-  if (!isValidSendDay(day)) return "invalid send day";
+  if (!isValidSendDay(day) || (frequency === "weekly" && day > 7)) return "invalid send day";
   const rawTime = "sendTime" in body ? body.sendTime : undefined;
   const time = rawTime === undefined ? DEFAULT_SEND_TIME
     : typeof rawTime === "string" ? rawTime.trim() : rawTime;
@@ -160,11 +165,11 @@ function parseDelivery(input: unknown): Delivery | string {
   const timezone = rawTimezone === undefined ? DEFAULT_SEND_TIMEZONE
     : typeof rawTimezone === "string" ? rawTimezone.trim() : rawTimezone;
   if (!isValidTimeZone(timezone)) return "invalid timezone";
-  return { recipients, schedule: { day, time, timezone } };
+  return { recipients, schedule: { day, time, timezone, ...(frequency === "weekly" ? { frequency } : {}) } };
 }
 
 function settingsFields({ recipients, schedule }: Delivery) {
-  return { recipients, sendDay: schedule.day, sendTime: schedule.time, sendTimezone: schedule.timezone };
+  return { recipients, ...(schedule.frequency === "weekly" ? { sendFrequency: "weekly" } : {}), sendDay: schedule.day, sendTime: schedule.time, sendTimezone: schedule.timezone };
 }
 
 /** Callers authenticate the account and authorize access to the selected team. */
@@ -189,9 +194,9 @@ export async function handleDeliverySettings(req: Request, env: Env, target: Del
     ? ["org_settings", "organizationId", target.organizationId]
     : ["user_settings", "userId", target.userId];
   await env.DB.prepare(
-    `INSERT INTO ${table} (${column}, mail_to, send_day, send_time, send_timezone) VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO ${table} (${column}, mail_to, send_day, send_time, send_timezone, send_frequency) VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(${column}) DO UPDATE SET mail_to = excluded.mail_to, send_day = excluded.send_day,
-       send_time = excluded.send_time, send_timezone = excluded.send_timezone`,
-  ).bind(id, recipients.join("\n"), schedule.day, schedule.time, schedule.timezone).run();
+       send_time = excluded.send_time, send_timezone = excluded.send_timezone, send_frequency = excluded.send_frequency`,
+  ).bind(id, recipients.join("\n"), schedule.day, schedule.time, schedule.timezone, schedule.frequency ?? "monthly").run();
   return Response.json({ ok: true, ...settingsFields(delivery) });
 }

@@ -78,14 +78,16 @@ export const WORKSPACE_MARKUP = /* html */ `
           <div id="emailEdit">
             <div id="recipients" class="recipients"></div>
             <div class="schedule">
-              <label class="check"><input type="checkbox" id="autoSend"> Email automatically each month</label>
+              <label class="check"><input type="checkbox" id="autoSend"> Email automatically</label>
               <div id="sendDayWrap" class="sendday">
-                <div class="ws-settings-field"><label for="sendDay">Day of month</label><select id="sendDay" aria-label="Day of month"></select></div>
+                <div class="ws-settings-field"><label for="sendFrequency">Frequency</label><select id="sendFrequency"><option value="monthly">Monthly</option><option value="weekly">Weekly</option></select></div>
+                <div class="ws-settings-field"><label id="sendDayLabel" for="sendDay">Day of month</label><select id="sendDay" aria-label="Day of month"></select></div>
                 <div class="ws-settings-field"><label for="sendTime">Delivery time</label><input id="sendTime" type="time" step="60" aria-label="Delivery time" /></div>
                 <div class="ws-settings-field"><label for="sendTimezone">Timezone</label><input id="sendTimezone" type="text" list="sendTimezones" maxlength="100" placeholder="Timezone" aria-label="Delivery timezone" autocomplete="off" /></div>
                 <datalist id="sendTimezones"></datalist>
               </div>
             </div>
+            <p id="sendPeriodHint" class="hint">Monthly emails cover the previous calendar month.</p>
             <div class="ws-actions-row split">
               <button id="addRecipient" type="button">+ Recipient</button>
               <button id="saveEmail" class="primary" type="button">Save delivery</button>

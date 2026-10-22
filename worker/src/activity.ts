@@ -1,3 +1,4 @@
+import { reportDateBounds } from "./time.js";
 import type { Env } from "./types";
 import { getTrackProjects, setTrackProjects } from "./settings.js";
 
@@ -138,7 +139,7 @@ export async function projectTotalsForPeriod(
     return [];
   }
 
-  const prefix = period; // "YYYY-MM"
+  const { start, end } = reportDateBounds(period);
   try {
     const res = await env.DB.prepare(
       `SELECT project, SUM(secs) AS total
@@ -147,7 +148,7 @@ export async function projectTotalsForPeriod(
         GROUP BY project
         ORDER BY total DESC`,
     )
-      .bind(userId, `${prefix}-01`, nextMonthStart(prefix))
+      .bind(userId, start, end)
       .all<{ project: string; total: number }>();
     return (res.results ?? []).map((r) => ({
       project: r.project,
@@ -157,12 +158,6 @@ export async function projectTotalsForPeriod(
     // Migration not applied yet.
     return [];
   }
-}
-
-function nextMonthStart(period: string): string {
-  const [y, m] = period.split("-").map(Number);
-  if (m === 12) return `${y + 1}-01-01`;
-  return `${y}-${String(m + 1).padStart(2, "0")}-01`;
 }
 
 function json(obj: unknown, status = 200): Response {
