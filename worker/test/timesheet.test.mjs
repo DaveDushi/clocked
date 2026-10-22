@@ -169,7 +169,7 @@ test("email body and attachment reuse one session selection and one project roll
   assert.equal(result.ok, true);
   assert.equal(messages.length, 1);
   assert.match(messages[0].html, /1:00/);
-  assert.match(Buffer.from(messages[0].attachments[0].content, "base64").toString("utf8"), /,,,Total,1:00\n/);
+  assert.match(Buffer.from(messages[0].attachments[0].content).toString("utf8"), /,,,Total,1:00\n/);
   assert.equal(queries.filter((sql) => sql.includes("FROM sessions")).length, 1);
   assert.equal(queries.filter((sql) => sql.includes("FROM activity_day")).length, 1);
 });

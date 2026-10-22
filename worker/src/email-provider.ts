@@ -71,7 +71,7 @@ function createEmailProvider(env: EmailEnvironment): EmailProvider {
       return {
         async send(message) {
           const attachments = message.attachments?.map((attachment) => ({
-            filename: attachment.filename, content: base64(attachment.content),
+            filename: attachment.filename, content: attachment.content,
             type: attachment.contentType, disposition: "attachment",
           } satisfies EmailAttachment));
           // Separate submissions give each recipient its own delivery outcome.

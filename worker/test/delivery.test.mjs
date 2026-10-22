@@ -186,7 +186,7 @@ test("scheduled and forced sends use the same effective delivery and report time
   for (const message of messages) {
     assert.deepEqual(message.to, ["reports@example.test"]);
     assert.equal(message.attachments[0].filename, "clocked-2026-09.csv");
-    assert.match(Buffer.from(message.attachments[0].content, "base64").toString("utf8"), /September 1, 2026",09:00,10:00/);
+    assert.match(Buffer.from(message.attachments[0].content).toString("utf8"), /September 1, 2026",09:00,10:00/);
   }
   await sendMonthlyReports(env, new Date("2026-10-01T00:00:00Z"));
   assert.equal(messages.length, 2);

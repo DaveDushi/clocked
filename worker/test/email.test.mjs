@@ -45,8 +45,21 @@ test("Cloudflare submits each recipient separately with sender and attachment me
     from: { email: "reports@example.test", name: "clocked" },
     to: [recipient], subject: "Monthly hours",
     text: "Hello", html: "<p>Hello</p>", replyTo: "manager@example.test",
-    attachments: [{ filename: "hours.csv", content: "SsO2cmcsOAo=", type: "text/csv; charset=utf-8", disposition: "attachment" }],
+    attachments: [{ filename: "hours.csv", content: new TextEncoder().encode("Jörg,8\n"), type: "text/csv; charset=utf-8", disposition: "attachment" }],
   })));
+});
+
+test("Cloudflare attachment bytes contain CSV data without a second Base64 decode", async () => {
+  const csv = "Date,Clock In,Clock Out,Breaks,Hours Worked\n2026-09-01,09:00,17:00,,8:00\n";
+  const received = [];
+  const env = { ...sender, EMAIL_PROVIDER: "cloudflare", EMAIL: { async send(value) {
+    for (const attachment of value.attachments) received.push(Buffer.from(attachment.content).toString("utf8"));
+    return { messageId: "id" };
+  } } };
+  assert.deepEqual(await sendEmail(env, { ...message, attachments: [{
+    filename: "hours.csv", contentType: "text/csv; charset=utf-8", content: new TextEncoder().encode(csv),
+  }] }), { ok: true });
+  assert.deepEqual(received, [csv, csv]);
 });
 
 for (const rejected of ["alice@example.test", "bob@example.test"]) {
@@ -153,17 +166,17 @@ test("reports record only successful sends, skip repeats and allow forced sends"
   assert.equal((await buildAndSendReport(env, "2026-09", { ...opts, force: true })).ok, true);
   assert.equal(messages.length, 3);
   assert.equal(messages[2].attachments[0].filename, "clocked-2026-09.csv");
-  assert.match(Buffer.from(messages[2].attachments[0].content, "base64").toString("utf8"), /September/);
+  assert.match(Buffer.from(messages[2].attachments[0].content).toString("utf8"), /September/);
 });
 
-test("large CSV attachments encode without exceeding the JavaScript argument limit", async () => {
+test("large Cloudflare CSV attachments preserve their UTF-8 bytes", async () => {
   const csv = "Jörg,8\n".repeat(40_000);
   let sent;
   const env = { ...sender, EMAIL_PROVIDER: "cloudflare", EMAIL: { async send(value) { sent = value; return { messageId: "id" }; } } };
   assert.deepEqual(await sendEmail(env, { ...message, attachments: [{
     filename: "large.csv", contentType: "text/csv", content: new TextEncoder().encode(csv),
   }] }), { ok: true });
-  assert.equal(Buffer.from(sent.attachments[0].content, "base64").toString("utf8"), csv);
+  assert.equal(Buffer.from(sent.attachments[0].content).toString("utf8"), csv);
 });
 
 test("an empty recipient list fails before contacting a provider", async (t) => {

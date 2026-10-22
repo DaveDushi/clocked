@@ -29,7 +29,7 @@ function fixture(t) {
   return { env, sqlite, messages };
 }
 
-const csvOf = message => Buffer.from(message.attachments[0].content,'base64').toString('utf8');
+const csvOf = message => Buffer.from(message.attachments[0].content).toString('utf8');
 const request = (method,body) => new Request('https://clocked.test/api/team/manual-session',{method,headers:{'content-type':'application/json'},body:JSON.stringify(body)});
 
 test('team hours, CSV and overview omit earlier and crossing sessions while personal history survives', async t => {
