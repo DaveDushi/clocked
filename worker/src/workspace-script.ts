@@ -711,13 +711,14 @@ function wsRenderSendAll() {
     "<div class='ws-select-head'><label class='ws-check' style='margin:0 !important'><input id='sendAll' type='checkbox' checked /> Select all members</label><span id='sendCount'></span></div>" +
     "<div class='ws-send-list'>" + members.map((m) => {
       const facts = wsModel.sendFacts(m, reference == null ? null : Math.round(reference));
-      return "<label class='ws-send-member'><input type='checkbox' data-send-member='" + wsEsc(m.id) + "' checked /><span><strong>" + wsEsc(m.name) + "</strong><small>" + m.stats.recordedDays + " recorded day" + (m.stats.recordedDays === 1 ? "" : "s") + "</small>" +
-        facts.map((f) => "<small class='fact'>" + wsEsc(f) + "</small>").join("") + "</span><span class='mono'>" + wsModel.duration(m.stats.workedMinutes) + "</span></label>";
+      return "<div class='ws-send-row'><label class='ws-send-member'><input type='checkbox' data-send-member='" + wsEsc(m.id) + "' checked /><span><strong>" + wsEsc(m.name) + "</strong><small>" + m.stats.recordedDays + " recorded day" + (m.stats.recordedDays === 1 ? "" : "s") + "</small>" +
+        facts.map((f) => "<small class='fact'>" + wsEsc(f) + "</small>").join("") + "</span><span class='mono'>" + wsModel.duration(m.stats.workedMinutes) + "</span></label>" +
+        "<button type='button' class='text-button' data-action='preview' data-user='" + wsEsc(m.id) + "' aria-label='Preview CSV for " + wsEsc(m.name) + "'>Preview CSV</button></div>";
     }).join("") + "</div>" +
     "<div class='ws-send-total'><span>Selected worked time</span><strong id='sendTotal'></strong></div>" +
-    "<p class='sub' style='margin-top:12px'>One timesheet per selected member, emailed to the recipients above. Everyone on the team is listed, whatever your search. Pending invitations are not included.</p>" +
+    "<p class='sub' style='margin-top:12px'>One email to each recipient above. Team delivery settings choose separate member CSVs or one Excel workbook with a summary and employee tabs. Preview the selected reports below before sending. Pending invitations are not included.</p>" +
     "<div id='sendMsg' class='ws-feedback' role='status'></div><div id='sendResults' class='ws-results'></div>" +
-    "<div class='ws-send-footer'><div class='ws-actions-row'><button type='button' data-close>Cancel</button><button type='submit' id='sendConfirm' class='primary'></button></div></div></form>";
+    "<div class='ws-send-footer'><div class='ws-actions-row split'><button type='button' id='teamPreviewConfirm' data-action='team-preview'>Preview email files</button><div style='display:flex;gap:10px'><button type='button' data-close>Cancel</button><button type='submit' id='sendConfirm' class='primary'></button></div></div></div></form>";
   $("sendForm").addEventListener("submit", wsSubmitSendAll);
   $("sendAll").addEventListener("change", (event) => {
     ws.send.selected = event.target.checked ? new Set(wsMembers().map((m) => m.id)) : new Set();
@@ -741,8 +742,9 @@ function wsUpdateSend() {
   all.indeterminate = size > 0 && size < total;
   $("sendRecipients").textContent = ws.send.error ? ws.send.error : ws.send.recipients ? (ws.send.recipients.join(", ") || "None set") : "Loading…";
   const button = $("sendConfirm");
-  button.textContent = ws.send.done ? "Sent" : "Send " + size + " timesheet" + (size === 1 ? "" : "s");
+  button.textContent = ws.send.done ? "Sent" : "Send 1 team email";
   button.disabled = ws.send.done || ws.send.sending || size === 0 || !ws.send.recipients || ws.send.recipients.length === 0;
+  $("teamPreviewConfirm").disabled = size === 0 || ws.send.sending;
 }
 async function wsSubmitSendAll(event) {
   event.preventDefault();
@@ -750,7 +752,7 @@ async function wsSubmitSendAll(event) {
   if (!ws.send || ws.send.sending || ws.send.selected.size === 0) return;
   const userIds = wsMembers().filter((m) => ws.send.selected.has(m.id)).map((m) => m.id);
   ws.send.sending = true; wsUpdateSend();
-  wsFeedback("sendMsg", "Sending " + userIds.length + " timesheet" + (userIds.length === 1 ? "" : "s") + "…", "ok");
+  wsFeedback("sendMsg", "Sending one team email with " + userIds.length + " timesheet" + (userIds.length === 1 ? "" : "s") + "…", "ok");
   $("sendResults").textContent = "";
   try {
     const response = await api("/api/team/send?organizationId=" + encodeURIComponent(orgId), { method: "POST", body: JSON.stringify({ period: ws.send.period, userIds }) });
@@ -759,7 +761,7 @@ async function wsSubmitSendAll(event) {
     if (!data.results) throw new Error(data.error || "Could not send timesheets.");
     const failed = data.results.filter((r) => !r.ok);
     ws.send.done = failed.length === 0;
-    wsFeedback("sendMsg", (data.sent || 0) + " of " + data.results.length + " timesheets for " + wsModel.monthLabel(data.period) + " sent to " + data.recipients.join(", ") + ".", failed.length ? "err" : "ok");
+    wsFeedback("sendMsg", failed.length ? "The team email could not be sent." : "One team email for " + wsModel.monthLabel(data.period) + " sent to " + data.recipients.join(", ") + ".", failed.length ? "err" : "ok");
     if (failed.length) {
       $("sendResults").textContent = "Not sent: " + failed.map((r) => { const m = wsMember(r.userId); return (m ? m.name : r.userId) + " (" + r.error + ")"; }).join(", ") + ". Select only these people to try again.";
       ws.send.selected = new Set(failed.map((r) => r.userId));
@@ -809,6 +811,36 @@ function wsOpenPersonalSend(opener) {
 }
 
 // ---- CSV preview ----
+function wsCsvPreview(text) {
+  if (!text.trim()) return "<p class='sub'>No sessions recorded for this month.</p>";
+  const rows = text.trim().split(String.fromCharCode(10)).map(pvParseLine);
+  const head = rows[0];
+  return "<div class='pv-scroll'><table class='pv'><thead><tr>" + head.map((h) => "<th>" + wsEsc(h) + "</th>").join("") + "</tr></thead><tbody>" +
+    rows.slice(1).filter((cells) => cells.join("") !== "").map((cells) => "<tr" + (cells.indexOf("Total") !== -1 ? " class='pv-total'" : cells.indexOf("Vacation") !== -1 ? " class='pv-vac'" : "") + ">" +
+      head.map((_, i) => "<td>" + wsEsc(cells[i] || "") + "</td>").join("") + "</tr>").join("") + "</tbody></table></div>";
+}
+async function wsOpenTeamPreview(opener) {
+  if (!ws.send || !ws.send.selected.size) return;
+  const version = ws.version;
+  const title = "Team email files · " + wsModel.monthLabel(ws.send.period);
+  $("dlgPreviewBody").innerHTML = wsDialogHead("dlgPreviewTitle", title) + "<p class='sub' role='status'>Loading…</p>";
+  wsOpenDialog("dlgPreview", opener);
+  let html;
+  try {
+    const response = await api("/api/team/preview-bundle?organizationId=" + encodeURIComponent(orgId), {
+      method: "POST", body: JSON.stringify({ period: ws.send.period, userIds: wsMembers().filter((m) => ws.send.selected.has(m.id)).map((m) => m.id) }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not load the preview.");
+    html = "<p class='sub'>" + data.files.length + " file" + (data.files.length === 1 ? "" : "s") + " in one email per recipient.</p>" +
+      data.files.map((file, fileIndex) => "<h3>" + wsEsc(file.filename) + "</h3><div class='ws-sheet-tabs' role='tablist' aria-label='" + wsEsc(file.filename) + " sheets'>" +
+        file.sheets.map((sheet, i) => "<button type='button' role='tab' id='sheet-tab-" + fileIndex + "-" + i + "' aria-controls='sheet-panel-" + fileIndex + "-" + i + "' aria-selected='" + (i === 0) + "' data-action='preview-sheet' data-file='" + fileIndex + "' data-sheet='" + i + "'>" + wsEsc(sheet.name) + "</button>").join("") + "</div>" +
+        file.sheets.map((sheet, i) => "<section role='tabpanel' id='sheet-panel-" + fileIndex + "-" + i + "' aria-labelledby='sheet-tab-" + fileIndex + "-" + i + "' data-preview-file='" + fileIndex + "' data-preview-sheet='" + i + "'" + (i ? " hidden" : "") + "><div class='pv-scroll'><table class='pv'><tbody>" +
+          sheet.rows.map((row) => "<tr>" + row.map((value) => "<td" + (row.length === 1 ? " colspan='" + Math.max(...sheet.rows.map((r) => r.length)) + "'" : "") + ">" + wsEsc(value) + "</td>").join("") + "</tr>").join("") + "</tbody></table></div></section>").join("")).join("") +
+      "<details><summary>Email summary</summary><pre style='white-space:pre-wrap'>" + wsEsc(data.text) + "</pre></details>";
+  } catch (error) { html = "<p class='ws-feedback err'>" + wsEsc(error.message || "Could not load the preview.") + "</p>"; }
+  if (version === ws.version && $("dlgPreview").open) $("dlgPreviewBody").innerHTML = wsDialogHead("dlgPreviewTitle", title) + html;
+}
 async function wsOpenPreview(userId, opener) {
   const version = ws.version;
   const member = userId ? wsMember(userId) : null;
@@ -822,15 +854,7 @@ async function wsOpenPreview(userId, opener) {
   try {
     const response = await api(url);
     if (!response.ok) throw new Error();
-    const text = (await response.text()).trim();
-    if (!text) html = "<p class='sub'>No sessions recorded for this month.</p>";
-    else {
-      const rows = text.split(String.fromCharCode(10)).map(pvParseLine);
-      const head = rows[0];
-      html = "<div class='pv-scroll'><table class='pv'><thead><tr>" + head.map((h) => "<th>" + wsEsc(h) + "</th>").join("") + "</tr></thead><tbody>" +
-        rows.slice(1).filter((cells) => cells.join("") !== "").map((cells) => "<tr" + (cells.indexOf("Total") !== -1 ? " class='pv-total'" : cells.indexOf("Vacation") !== -1 ? " class='pv-vac'" : "") + ">" +
-          head.map((_, i) => "<td>" + wsEsc(cells[i] || "") + "</td>").join("") + "</tr>").join("") + "</tbody></table></div>";
-    }
+    html = wsCsvPreview(await response.text());
   } catch { html = "<p class='ws-feedback err'>Could not load the preview.</p>"; }
   if (version === ws.version && $("dlgPreview").open) $("dlgPreviewBody").innerHTML = wsDialogHead("dlgPreviewTitle", title) + html;
 }
@@ -1162,6 +1186,11 @@ $("workspace").addEventListener("click", (event) => {
   else if (action === "open-sheet") wsOpenSheet(el.dataset.id, el);
   else if (action === "member-settings") wsOpenMemberSettings(el.dataset.id, el);
   else if (action === "preview") wsOpenPreview(el.dataset.user, el);
+  else if (action === "team-preview") wsOpenTeamPreview(el);
+  else if (action === "preview-sheet") {
+    document.querySelectorAll("[data-preview-file='" + el.dataset.file + "']").forEach((panel) => { panel.hidden = panel.dataset.previewSheet !== el.dataset.sheet; });
+    document.querySelectorAll("[data-action='preview-sheet'][data-file='" + el.dataset.file + "']").forEach((tab) => { tab.setAttribute("aria-selected", String(tab === el)); });
+  }
   else if (action === "edit-session") wsOpenEdit(el.dataset.id, el);
   else if (action === "add-session") wsOpenEdit("", el);
   else if (action === "add-day") wsOpenAddDay(el.dataset.user, el);

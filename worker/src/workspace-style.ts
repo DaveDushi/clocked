@@ -310,8 +310,10 @@ export const WORKSPACE_STYLE = /* css */ `
   .ws-recipients strong { font-weight:400; word-break:break-all; }
   .ws-select-head { display:flex; align-items:center; justify-content:space-between; font-size:11px; gap:12px; padding:14px 0 10px; border-top:1px solid var(--border); }
   .ws-send-list { max-height:300px; overflow:auto; border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
-  .ws-send-member { display:grid !important; grid-template-columns:18px minmax(0,1fr) auto; align-items:center; gap:12px; padding:11px 0; margin:0 !important; border-bottom:1px solid rgba(36,41,56,.5); cursor:pointer; }
-  .ws-send-member:last-child { border-bottom:0; }
+  .ws-send-row { display:flex; align-items:center; gap:12px; border-bottom:1px solid rgba(36,41,56,.5); }
+  .ws-send-row:last-child { border-bottom:0; }
+  .ws-send-row > button { flex-shrink:0; }
+  .ws-send-member { display:grid !important; flex:1; min-width:0; grid-template-columns:18px minmax(0,1fr) auto; align-items:center; gap:12px; padding:11px 0; margin:0 !important; cursor:pointer; }
   .ws-send-member input { width:15px; height:15px; accent-color:var(--amber); margin:0; }
   .ws-send-member strong { font-size:12px; font-weight:400; display:block; color:var(--fg); }
   .ws-send-member small { display:block; font-size:10px; margin-top:3px; }
@@ -321,6 +323,9 @@ export const WORKSPACE_STYLE = /* css */ `
   .ws-send-total strong { color:var(--fg); font-weight:400; }
   .ws-send-footer { position:sticky; bottom:-24px; background:var(--panel); padding:4px 0 0; }
   .ws-results { font-size:11px; margin-top:10px; color:var(--err); }
+  .ws-sheet-tabs { display:flex; gap:8px; overflow-x:auto; padding:8px 0; }
+  .ws-sheet-tabs [aria-selected='true'] { border-color:var(--amber); color:var(--fg); }
+  #dlgPreview [hidden] { display:none !important; }
   .ws-settings [hidden] { display:none !important; }
   .ws-settings-tabs { display:flex; gap:10px; margin-bottom:20px; border-bottom:1px solid var(--border); }
   .ws-settings-tabs [role=tab] { background:none; border:0; border-radius:0; padding:12px 8px; color:var(--wsmuted); }

@@ -27,7 +27,7 @@ import {
   newsPageResponse,
   runMarketingAgent,
 } from "./marketing-agent";
-import { buildAndSendReport, sendScheduledReports } from "./email";
+import { buildAndSendReport, buildTeamReport, sendScheduledReports } from "./email";
 import { handleActivityIngest } from "./activity";
 import { handleIngest } from "./ingest";
 import { buildTimesheet } from "./report";
@@ -314,7 +314,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const { report, sessions, recordedDays, csv } = await buildTimesheet({
       env, period, userId: targetId, timezone: schedule.timezone, scope,
       organizationId: orgId,
-      includeProjects: url.pathname === "/api/team/preview",
+      includeProjects: false,
     });
     if (url.pathname === "/api/team/preview") {
       return new Response(csv, { status: 200, headers: { "content-type": "text/csv" } });
@@ -335,16 +335,24 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   }
 
   // Send the reviewed selection of member timesheets to the team's recipients.
-  if (url.pathname === "/api/team/send" && req.method === "POST") {
+  if ((url.pathname === "/api/team/send" || url.pathname === "/api/team/preview-bundle") && req.method === "POST") {
     const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
     const orgId = url.searchParams.get("organizationId") ?? "";
     if (!(await isManagerOf(env, user.id, orgId))) return json({ error: "forbidden" }, 403);
-    const body = (await req.json().catch(() => ({}))) as { period?: unknown; userIds?: unknown };
-    const period = parsePeriodParam(typeof body.period === "string" ? body.period : null);
+    const body: unknown = await req.json().catch(() => ({}));
+    if (!body || typeof body !== "object") return json({ error: "invalid selection" }, 400);
+    const period = parsePeriodParam("period" in body && typeof body.period === "string" ? body.period : null);
     if (!period) return json({ error: "invalid period" }, 400);
-    const userIds = parseSelection(body.userIds);
+    const userIds = parseSelection("userIds" in body ? body.userIds : null);
     if (!userIds) return json({ error: "select at least one member" }, 400);
+    if (url.pathname === "/api/team/preview-bundle") {
+      const { schedule } = await getTeamDelivery(env, orgId);
+      const preview = await buildTeamReport(env, period, { force: true, organizationId: orgId,
+        userIds, to: [], timezone: schedule.timezone });
+      if (!preview.ok) return json({ error: preview.error }, 403);
+      return json({ text: preview.message.text, files: preview.previewFiles });
+    }
     if (!(await rateLimitAllowDurable(env.DB, `team-send:${orgId}`, 5, 60 * 60_000))) {
       return json({ error: "too many sends; try again later" }, 429);
     }

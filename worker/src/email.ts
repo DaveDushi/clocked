@@ -3,9 +3,10 @@ import type { Env } from "./types";
 import { sendEmail } from "./email-provider.js";
 import { buildTimesheet, formatHours, isWorkDay, type HoursReport } from "./report.js";
 import { reportDateBounds } from "./time.js";
-import { listDeliveries } from "./delivery.js";
+import { getTeamReportFormat, listDeliveries } from "./delivery.js";
 import { isScheduleDue, periodForSchedule } from "./schedule.js";
 import { getPrimaryMembership } from "./memberships.js";
+import { buildTeamWorkbook, timesheetCsvRows, type TeamSheetPreview, type WorkbookMember } from "./team-workbook.js";
 
 /**
  * Referral footer on outgoing timesheets. These land in clients'/managers'
@@ -210,6 +211,89 @@ export async function buildAndSendReport(
   return { ok: true, period, rows };
 }
 
+type TeamReportOptions = { force: boolean; userIds: readonly string[]; to: string[]; timezone: string; organizationId: string };
+type TeamReport =
+  | { ok: false; error: string }
+  | { ok: true; rows: number; userIds: string[]; message: Parameters<typeof sendEmail>[1]; previewFiles: { filename: string; sheets: TeamSheetPreview[] }[] };
+
+export async function buildTeamReport(
+  env: Env,
+  period: string,
+  opts: TeamReportOptions,
+): Promise<TeamReport> {
+  const organization = await env.DB.prepare("SELECT name FROM organization WHERE id = ?")
+    .bind(opts.organizationId).first<{ name: string }>();
+  const members = await env.DB.prepare(
+    "SELECT u.id, u.name, u.email FROM member m JOIN user u ON u.id = m.userId WHERE m.organizationId = ?",
+  ).bind(opts.organizationId).all<{ id: string; name: string; email: string }>();
+  const byId = new Map((members.results ?? []).map((member) => [member.id, member]));
+  if (!organization || !opts.userIds.every((id) => byId.has(id))) {
+    return { ok: false, error: "selection includes someone outside your team" };
+  }
+  const format = await getTeamReportFormat(env, opts.organizationId);
+  const workbookMembers: WorkbookMember[] = [];
+  const workbookFilename = `clocked-${period}-team.xlsx`;
+  const title = `${organization.name} - ${periodTitle(period)}`;
+  const previewFiles: { filename: string; sheets: TeamSheetPreview[] }[] = [];
+  const attachments: { filename: string; content: Uint8Array; contentType: string }[] = [];
+  const summaries: { userId: string; label: string; hours: string; filename: string | null; hasSessions: boolean }[] = [];
+  let rows = 0;
+  for (const userId of opts.userIds) {
+    if (!opts.force && await env.DB.prepare("SELECT period FROM sent_reports WHERE period = ? AND userId = ?")
+      .bind(period, userId).first()) continue;
+    const member = byId.get(userId);
+    const scope = await getTeamSessionScope(env, userId, opts.organizationId);
+    if (!member || !scope) return { ok: false, error: "user is not in your organization" };
+    const { csv, report } = await buildTimesheet({
+      env, period, userId, timezone: opts.timezone, scope, organizationId: opts.organizationId, includeProjects: false,
+    });
+    const safeName = (member.name || member.email).normalize("NFKC").replace(/[^\p{L}\p{N}._-]+/gu, "-").slice(0, 80) || "member";
+    if (format === "workbook") workbookMembers.push({ name: member.name, email: member.email, csv, report });
+    const filename = format === "workbook" ? workbookFilename : csv ? `clocked-${period}-${summaries.length + 1}-${safeName}.csv` : null;
+    if (filename) {
+      if (format === "per-member") {
+        attachments.push({ filename, content: new TextEncoder().encode(csv), contentType: "text/csv; charset=utf-8" });
+        previewFiles.push({ filename, sheets: [{ name: member.name, rows: timesheetCsvRows(csv) }] });
+      }
+      rows += csv.trimEnd().split("\n").length;
+    }
+    summaries.push({ userId, label: `${member.name} <${member.email}>`, hours: formatHours(report.totalMinutes), filename, hasSessions: csv.length > 0 });
+  }
+  if (workbookMembers.length) {
+    const workbook = buildTeamWorkbook({ title, timezone: opts.timezone, members: workbookMembers });
+    attachments.push({ filename: workbookFilename, content: workbook.content,
+      contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    previewFiles.push({ filename: workbookFilename, sheets: workbook.sheets });
+  }
+  const explanation = (format === "workbook" ? "One Excel workbook is attached, with a Summary tab and a detailed tab for each employee." : "One CSV per member with recorded sessions is attached.") +
+    " Members without sessions are listed below.";
+  const text = [title, "", explanation, "", ...summaries.map((s) =>
+    `${s.label}: ${s.hours}${s.hasSessions ? "" : " - No sessions recorded"}${s.filename ? ` - ${s.filename}` : ""}`), "", MARKETING_FOOTER_TEXT].join("\n");
+  const html = `<html><body style="font-family:Arial,sans-serif;color:#111827"><h1>${esc(title)}</h1><p>${explanation}</p>` +
+    `<table cellpadding="8"><thead><tr><th align="left">Member</th><th align="right">Hours</th><th align="left">File</th></tr></thead><tbody>` +
+    summaries.map((s) => `<tr><td>${esc(s.label)}</td><td align="right">${s.hours}</td><td>${esc(s.filename ?? "No sessions recorded")}</td></tr>`).join("") +
+    `</tbody></table><p>${esc(MARKETING_FOOTER_TEXT)}</p></body></html>`;
+  return { ok: true, rows, userIds: summaries.map((s) => s.userId), previewFiles, message: {
+    to: opts.to, subject: `Team hours - ${title}`, text, html, attachments: attachments.length ? attachments : undefined,
+  } };
+}
+
+export async function buildAndSendTeamReport(env: Env, period: string, opts: TeamReportOptions): Promise<SendResult> {
+  if (!opts.to.length) return { ok: false, period, rows: 0, error: "no recipients" };
+  const prepared = await buildTeamReport(env, period, opts);
+  if (!prepared.ok) return { ...prepared, period, rows: 0 };
+  const { rows, userIds, message } = prepared;
+  if (!userIds.length) return { ok: true, period, rows: 0, skipped: true };
+  const sent = await sendEmail(env, message);
+  if (!sent.ok) return { ...sent, period, rows };
+  if (!opts.force) {
+    await env.DB.batch(userIds.map((userId) => env.DB.prepare(
+      "INSERT OR IGNORE INTO sent_reports (period, userId, sent_utc) VALUES (?, ?, ?)",
+    ).bind(period, userId, new Date().toISOString())));
+  }
+  return { ok: true, period, rows };
+}
+
 /** Operator inbox: sales leads and new-signup approvals. */
 export const ADMIN_INBOX = "ddusi@easytomanage.com";
 
@@ -304,15 +388,30 @@ export async function sendAccessRequest(
  */
 export async function sendScheduledReports(env: Env, now: Date): Promise<void> {
   const users = await listDeliveries(env);
+  const teams = new Map<string, typeof users>();
   for (const u of users) {
     const { schedule, recipients } = u;
     if (!isScheduleDue(schedule, now)) continue;
     if (recipients.length === 0) continue;
+    if (u.teamOrganizationId) {
+      const members = teams.get(u.teamOrganizationId) ?? [];
+      members.push(u);
+      teams.set(u.teamOrganizationId, members);
+      continue;
+    }
     await buildAndSendReport(env, periodForSchedule(schedule, now), {
       force: false,
       userId: u.id,
       to: recipients,
       timezone: schedule.timezone,
+    });
+  }
+  for (const [organizationId, members] of teams) {
+    const first = members[0];
+    if (!first) continue;
+    await buildAndSendTeamReport(env, periodForSchedule(first.schedule, now), {
+      force: false, organizationId, userIds: members.map((member) => member.id),
+      to: first.recipients, timezone: first.schedule.timezone,
     });
   }
 }

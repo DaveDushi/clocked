@@ -1524,6 +1524,8 @@ async function loadEmailSettings(context) {
     $("emailEdit").classList.toggle("hidden", !editable);
     $("emailReadonly").classList.toggle("hidden", editable);
     if (editable) {
+      $("teamReportFormatField").hidden = context.kind !== "team" || orgPlanKey === "single";
+      $("teamReportFormat").value = data.reportFormat || "per-member";
       renderRecipients(data.recipients.length ? data.recipients : (data.defaultRecipients || []));
       setSchedule(data.sendDay, data.sendTime, data.sendTimezone, data.sendFrequency);
       $("saveEmail").disabled = false;
@@ -1587,7 +1589,8 @@ $("saveEmail").onclick = async () => {
   }
   $("saveEmail").disabled = true;
   try {
-    const response = await api(context.path, { method:"POST", body: JSON.stringify({ recipients, sendDay, sendTime, sendTimezone, sendFrequency }) });
+    const response = await api(context.path, { method:"POST", body: JSON.stringify({ recipients, sendDay, sendTime, sendTimezone, sendFrequency,
+      ...(context.kind === "team" && orgPlanKey !== "single" ? { reportFormat: $("teamReportFormat").value } : {}) }) });
     const data = await response.json();
     if (version !== emailLoadVersion) return;
     if (!response.ok) throw new Error(data.error || "Save failed.");

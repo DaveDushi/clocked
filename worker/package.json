@@ -22,7 +22,8 @@
   },
   "dependencies": {
     "aws4fetch": "^1.0.20",
-    "better-auth": "^1.6.23"
+    "better-auth": "^1.6.23",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.43.0",

@@ -6,6 +6,8 @@ import { handleManualSession } from "../.tmp-test/manual-session.js";
 import { handleIngest } from "../.tmp-test/ingest.js";
 import { buildTeamOverview, parseSelection, sendTeamTimesheets } from "../.tmp-test/team-overview.js";
 import { testDatabase } from "./helpers/database.mjs";
+import { buildTeamReport } from "../.tmp-test/email.js";
+import { read, utils } from "xlsx";
 
 function fixture(t) {
   const { DB, sqlite } = testDatabase();
@@ -192,10 +194,36 @@ test("bulk send emails exactly the reviewed members to the team recipients and r
   const sent = await sendTeamTimesheets(env, "team", "2026-09", ["alice", "carol"]);
   assert.deepEqual(sent, { ok: true, period: "2026-09", recipients: ["payroll@example.test"],
     results: [{ userId: "alice", ok: true }, { userId: "carol", ok: true }] });
-  assert.equal(emails.length, 2);
+  assert.equal(emails.length, 1);
   assert.ok(emails.every((message) => message.to.length === 1 && message.to[0] === "payroll@example.test"));
   assert.equal(emails[0].attachments.length, 1);
-  assert.equal(emails[1].attachments, undefined);
+  assert.equal(emails[0].attachments[0].filename, "clocked-2026-09-1-Alice.csv");
+  assert.match(emails[0].text, /Alice <alice@example.test>: 3:00/);
+  assert.match(emails[0].text, /Carol <carol@example.test>: 0:00 - No sessions recorded/);
+  assert.doesNotMatch(emails[0].text, /Bob|outsider/);
+});
+
+test("ten selected members produce one email with ten unique named CSVs", async (t) => {
+  const { env, session, emails, sqlite } = fixture(t);
+  const ids = ["alice", "bob"];
+  for (let i = 0; i < 8; i++) {
+    const id = `extra-${i}`;
+    ids.push(id);
+    sqlite.prepare("INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt) VALUES (?, ?, ?, 1, 1, 1)")
+      .run(id, "Jörg <Payroll>", `${id}@example.test`);
+    sqlite.prepare("INSERT INTO member (id, organizationId, userId, role, createdAt) VALUES (?, 'team', ?, 'member', 1)").run(id, id);
+  }
+  ids.forEach((id) => session(`s-${id}`, id, "2026-09-01T09:00:00Z", "2026-09-01T10:00:00Z"));
+  assert.equal((await sendTeamTimesheets(env, "team", "2026-09", ids)).ok, true);
+  assert.equal(emails.length, 1);
+  assert.equal(emails[0].attachments.length, 10);
+  assert.equal(new Set(emails[0].attachments.map((a) => a.filename)).size, 10);
+  assert.match(emails[0].html, /Jörg &lt;Payroll&gt;/);
+  assert.doesNotMatch(emails[0].html, /Jörg <Payroll>/);
+  for (const attachment of emails[0].attachments) {
+    assert.match(Buffer.from(attachment.content).toString("utf8"), /Total,1:00/);
+    assert.doesNotMatch(attachment.filename, /[<>/\\]/);
+  }
 });
 
 test("bulk send falls back to the managers when no team recipient is saved", async (t) => {
@@ -203,4 +231,45 @@ test("bulk send falls back to the managers when no team recipient is saved", asy
   const sent = await sendTeamTimesheets(env, "team", "2026-09", ["bob"]);
   assert.equal(sent.ok, true);
   assert.deepEqual(emails[0].to, ["alice@example.test"]);
+});
+
+test("workbook format previews and sends a summary plus one sheet per selected employee", async (t) => {
+  const { env, session, emails, sqlite } = fixture(t);
+  sqlite.exec("INSERT INTO org_settings (organizationId, mail_to, report_format) VALUES ('team', 'payroll@example.test', 'workbook')");
+  sqlite.exec(`UPDATE user SET name='Doe, "Alice"' WHERE id='alice'; UPDATE user SET name='=dangerous' WHERE id='bob'`);
+  session("a", "alice", "2026-09-01T09:00:00Z", "2026-09-01T10:00:00Z");
+  session("b", "bob", "2026-09-01T09:00:00Z", "2026-09-01T11:00:00Z");
+  const preview = await buildTeamReport(env, "2026-09", {
+    force: true, userIds: ["alice", "bob", "carol"], to: [], timezone: "UTC", organizationId: "team",
+  });
+  assert.equal(preview.ok, true);
+  assert.equal(emails.length, 0);
+  const book = read(preview.message.attachments[0].content, { type: "array", cellNF: true });
+  assert.deepEqual(book.SheetNames, ['Summary', 'Doe, "Alice"', '=dangerous', 'Carol']);
+  const summary = utils.sheet_to_json(book.Sheets.Summary, { header: 1, raw: false });
+  assert.deepEqual(summary[4], ['Doe, "Alice"', 'alice@example.test', '1:00', '1', '0:00', '0:00', 'Recorded']);
+  assert.deepEqual(summary[6], ['Carol', 'carol@example.test', '0:00', '0', '0:00', '0:00', 'No sessions recorded']);
+  assert.equal(book.Sheets.Summary.C8.f, 'SUM(C5:C7)');
+  assert.equal(summary[7][2], '3:00');
+  assert.equal(book.Sheets['=dangerous'].A1.t, 's');
+  assert.equal(book.Sheets['=dangerous'].A1.f, undefined);
+  assert.deepEqual(preview.previewFiles[0].sheets.map((s) => s.name), book.SheetNames);
+  assert.equal((await sendTeamTimesheets(env, "team", "2026-09", ["alice", "bob", "carol"])).ok, true);
+  assert.equal(emails.length, 1);
+  assert.equal(emails[0].attachments.length, 1);
+  assert.equal(emails[0].attachments[0].filename, "clocked-2026-09-team.xlsx");
+  assert.equal(emails[0].attachments[0].type, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  const sent = read(emails[0].attachments[0].content, { type: "array" });
+  assert.deepEqual(utils.sheet_to_json(sent.Sheets.Summary, { header: 1, raw: false }), summary);
+});
+
+test("an entirely empty team still has a summary and every selected employee tab", async (t) => {
+  const { env, emails, sqlite } = fixture(t);
+  sqlite.exec("INSERT INTO org_settings (organizationId, report_format) VALUES ('team', 'workbook')");
+  assert.equal((await sendTeamTimesheets(env, "team", "2026-09", ["alice", "bob"])).ok, true);
+  assert.equal(emails.length, 1);
+  const book = read(emails[0].attachments[0].content, { type: "array" });
+  assert.deepEqual(book.SheetNames, ['Summary', 'Alice', 'Bob']);
+  assert.equal(book.Sheets.Alice.A6.v, 'No sessions recorded');
+  assert.equal(book.Sheets.Summary.C7.v, 0);
 });

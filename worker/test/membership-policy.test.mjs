@@ -33,7 +33,7 @@ test("a legacy personal owner joining a team uses the team for all effective set
   assert.equal(await orgIdForUser(env, "legacy"), "team");
   const expected = { recipients: ["team@example.test"], schedule: { day: 12, time: "09:30", timezone: "Europe/Berlin" }, managed: true };
   assert.deepEqual(await getEffectiveDelivery(env, { userId: "legacy", email: "legacy@example.test" }), expected);
-  assert.deepEqual((await listDeliveries(env)).find((d) => d.id === "legacy"), { id: "legacy", email: "legacy@example.test", ...expected });
+  assert.deepEqual((await listDeliveries(env)).find((d) => d.id === "legacy"), { id: "legacy", email: "legacy@example.test", teamOrganizationId: "team", ...expected });
   assert.deepEqual(await effectiveWorkingHours(env, "legacy"), { schedule: { mode: "scheduled", start: "09:00", end: "17:00", days: [1,2,3,4,5] }, source: "team", organizationName: "Team" });
   assert.deepEqual(await effectiveInactivity(env, "legacy"), { timeout_secs: 1800, warning_secs: 120 });
   const response = await handleDeliverySettings(new Request("https://example.test/api/settings", { method: "POST", body: JSON.stringify({ recipients: ["changed@example.test"] }) }), env, { kind: "personal", userId: "legacy", email: "legacy@example.test" });

@@ -77,6 +77,11 @@ export const WORKSPACE_MARKUP = /* html */ `
           <div id="emailReadonly" class="hidden"></div>
           <div id="emailEdit">
             <div id="recipients" class="recipients"></div>
+            <div id="teamReportFormatField" class="ws-settings-field" hidden>
+              <label for="teamReportFormat">Team email attachments</label>
+              <select id="teamReportFormat"><option value="per-member">Separate CSV for each member</option><option value="workbook">One Excel workbook: summary + employee tabs</option></select>
+              <p class="hint">Both options send one email per recipient. Applies to manual and automatic team delivery.</p>
+            </div>
             <div class="schedule">
               <label class="check"><input type="checkbox" id="autoSend"> Email automatically</label>
               <div id="sendDayWrap" class="sendday">

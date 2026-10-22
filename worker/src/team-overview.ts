@@ -2,7 +2,7 @@ import { orgPlan } from "./plans.js";
 import { membershipSessionScope, sessionInScope } from "./team-scope.js";
 import { breakStats, teamBreakStats, type BreakStats } from "./break-stats.js";
 import { getTeamDelivery } from "./delivery.js";
-import { buildAndSendReport } from "./email.js";
+import { buildAndSendTeamReport } from "./email.js";
 import {
   periodQueryBounds,
   SESSION_COLUMNS,
@@ -125,7 +125,7 @@ export function parseSelection(value: unknown): string[] | null {
 }
 
 /**
- * Email one timesheet per selected member to the team's delivery recipients.
+ * Email the selected timesheets together to the team's delivery recipients.
  * Callers authorize the manager; this rejects the whole request if any selected
  * id is not a current member, so nobody outside the team can be included.
  */
@@ -144,12 +144,10 @@ export async function sendTeamTimesheets(
   const delivery = await getTeamDelivery(env, organizationId);
   const recipients = delivery.recipients.length ? delivery.recipients : delivery.defaultRecipients;
   if (recipients.length === 0) return { ok: false, status: 400, error: "no recipients" };
-  const results: { userId: string; ok: boolean; error?: string }[] = [];
-  for (const userId of userIds) {
-    const sent = await buildAndSendReport(env, period, {
-      force: true, userId, to: recipients, timezone: delivery.schedule.timezone, organizationId,
-    });
-    results.push(sent.ok ? { userId, ok: true } : { userId, ok: false, error: sent.error || "send failed" });
-  }
+  const sent = await buildAndSendTeamReport(env, period, {
+    force: true, userIds, to: recipients, timezone: delivery.schedule.timezone, organizationId,
+  });
+  const results = userIds.map((userId) => sent.ok
+    ? { userId, ok: true } : { userId, ok: false, error: sent.error || "send failed" });
   return { ok: true, period, recipients, results };
 }

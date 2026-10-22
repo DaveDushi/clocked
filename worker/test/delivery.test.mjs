@@ -4,6 +4,7 @@ import { getEffectiveDelivery, getTeamDelivery, handleDeliverySettings, listDeli
 import { buildAndSendReport, sendScheduledReports } from "../.tmp-test/email.js";
 import { sendTeamTimesheets } from "../.tmp-test/team-overview.js";
 import { testDatabase } from "./helpers/database.mjs";
+import { read } from "xlsx";
 
 const defaults = { day: 1, time: "06:00", timezone: "UTC" };
 const chosen = { recipients: ["reports@example.test"], sendDay: 12, sendTime: "09:30", sendTimezone: "Europe/Berlin" };
@@ -38,6 +39,19 @@ test("solo delivery defaults to the account email and historical schedule", asyn
   assert.deepEqual(await getEffectiveDelivery(env, { userId: "solo", email: "current@example.test" }), {
     recipients: ["current@example.test"], schedule: defaults, managed: false,
   });
+});
+
+test("team attachment format saves, validates, survives schedule edits and resets", async (t) => {
+  const { request, sqlite } = fixture(t);
+  assert.equal((await (await request(team)).json()).reportFormat, undefined);
+  assert.equal((await request(team, { ...chosen, reportFormat: "workbook" })).status, 200);
+  assert.equal((await (await request(team)).json()).reportFormat, "workbook");
+  await request(team, chosen);
+  assert.equal((await (await request(team)).json()).reportFormat, "workbook");
+  assert.equal((await request(team, { ...chosen, reportFormat: "xlsx" })).status, 400);
+  assert.equal(sqlite.prepare("SELECT report_format FROM org_settings WHERE organizationId='a'").get().report_format, "workbook");
+  assert.equal((await request(team, { ...chosen, reportFormat: "per-member" })).status, 200);
+  assert.equal((await (await request(team)).json()).reportFormat, undefined);
 });
 
 test("saving trims recipients, preserves duplicates, and replaces omitted schedule fields", async (t) => {
@@ -146,7 +160,7 @@ test("individual and bulk delivery choose the earliest membership including tied
   };
   assert.deepEqual(await getEffectiveDelivery(env, { userId: "worker", email: "worker@example.test" }), expected);
   assert.deepEqual((await listDeliveries(env)).find((delivery) => delivery.id === "worker"), {
-    id: "worker", email: "worker@example.test", ...expected,
+    id: "worker", email: "worker@example.test", teamOrganizationId: "b", ...expected,
   });
 });
 
@@ -220,17 +234,49 @@ test("saved team recipients both reach Cloudflare for team, personal and schedul
   assert.equal(messages.length, 4);
 
   await sendScheduledReports(env, new Date("2026-10-01T06:00:00Z"));
-  // The fixture has five accounts, all due at 06:00 UTC.
-  assert.equal(messages.length, 12);
-  const workerReports = messages.filter((message) => message.text.includes("Total hours: 8:00"));
+  // Three team members share one report; solo and the other team get their own.
+  assert.equal(messages.length, 8);
+  const workerReports = messages.filter((message) => message.attachments?.some((a) =>
+    Buffer.from(a.content).toString("utf8").includes("Total,8:00")));
   assert.deepEqual(workerReports.map((message) => message.to), [
     ["payroll@example.test"], ["AbrahamK@example.test"],
     ["payroll@example.test"], ["AbrahamK@example.test"],
     ["payroll@example.test"], ["AbrahamK@example.test"],
   ]);
   for (const message of workerReports) {
-    assert.equal(message.attachments[0].filename, "clocked-2026-09.csv");
+    assert.match(message.attachments[0].filename, /^clocked-2026-09(?:-\d+-worker)?\.csv$/);
   }
+});
+
+test("scheduled team delivery bundles members, retries failures and skips a successful repeat", async (t) => {
+  const { env, request, sqlite } = fixture(t);
+  await request(team, { recipients: ["payroll@example.test"], sendFrequency: "weekly", sendDay: 1, sendTime: "09:00", sendTimezone: "UTC", reportFormat: "workbook" });
+  sqlite.exec(`INSERT INTO sessions (id, user_id, start_utc, end_utc) VALUES
+    ('w', 'worker', '2026-09-29T09:00:00Z', '2026-09-29T10:00:00Z'),
+    ('o', 'owner', '2026-09-29T09:00:00Z', '2026-09-29T11:00:00Z');`);
+  const messages = [];
+  let fail = true;
+  t.mock.method(console, "error", () => {});
+  Object.assign(env, { MAIL_FROM: "reports@example.test", EMAIL_PROVIDER: "cloudflare", EMAIL: { async send(message) {
+    messages.push(message);
+    if (fail) throw new Error("rejected");
+    return { messageId: "ok" };
+  } } });
+  const due = new Date("2026-10-05T09:00:00Z");
+  await sendScheduledReports(env, due);
+  assert.equal(messages.length, 1);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM sent_reports").get().n, 0);
+  fail = false;
+  await sendScheduledReports(env, due);
+  assert.equal(messages.length, 2);
+  assert.equal(messages[1].attachments.length, 1);
+  const book = read(messages[1].attachments[0].content, { type: "array" });
+  assert.deepEqual([...book.SheetNames].sort(), ['Summary', 'admin', 'owner', 'worker']);
+  assert.match(messages[1].subject, /Acme - 2026-09-28 to 2026-10-04/);
+  assert.match(messages[1].text, /admin <admin@example.test>: 0:00 - No sessions recorded/);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM sent_reports").get().n, 3);
+  await sendScheduledReports(env, due);
+  assert.equal(messages.length, 2);
 });
 
 for (const target of [personal, team]) {

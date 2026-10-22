@@ -1,4 +1,5 @@
 import type { Env } from "./types";
+import { orgPlan } from "./plans.js";
 import { orgIdForUser } from "./settings.js";
 import { PRIMARY_MEMBERSHIP_ORDER_SQL } from "./memberships.js";
 import {
@@ -13,6 +14,14 @@ import {
 type DeliveryTarget =
   | { kind: "personal"; userId: string; email: string }
   | { kind: "team"; organizationId: string };
+
+export type TeamReportFormat = "per-member" | "workbook";
+
+export async function getTeamReportFormat(env: Env, organizationId: string): Promise<TeamReportFormat> {
+  const row = await env.DB.prepare("SELECT report_format FROM org_settings WHERE organizationId = ?")
+    .bind(organizationId).first<{ report_format: string }>();
+  return row?.report_format === "workbook" ? "workbook" : "per-member";
+}
 
 interface StoredDelivery {
   send_frequency: string | null;
@@ -34,6 +43,7 @@ interface EffectiveDelivery extends Delivery {
 interface AccountDelivery extends EffectiveDelivery {
   id: string;
   email: string;
+  teamOrganizationId: string | null;
 }
 
 function normalizeSchedule(row: StoredDelivery | null): SendSchedule {
@@ -56,12 +66,12 @@ async function readDeliveries(
 ): Promise<AccountDelivery[]> {
   const result = await env.DB.prepare(
     `WITH first_membership AS (
-       SELECT m.userId, m.organizationId,
+       SELECT m.userId, m.organizationId, o.metadata,
               ROW_NUMBER() OVER (PARTITION BY m.userId ORDER BY ${PRIMARY_MEMBERSHIP_ORDER_SQL}) AS position
          FROM member m JOIN organization o ON o.id = m.organizationId
          ${user ? "WHERE m.userId = ?" : ""}
      )
-     SELECT u.id, COALESCE(?, u.email) AS email, fm.organizationId,
+     SELECT u.id, COALESCE(?, u.email) AS email, fm.organizationId, fm.metadata,
             CASE WHEN fm.organizationId IS NOT NULL THEN os.mail_to ELSE us.mail_to END AS mail_to,
             CASE WHEN fm.organizationId IS NOT NULL THEN os.send_day ELSE us.send_day END AS send_day,
             CASE WHEN fm.organizationId IS NOT NULL THEN os.send_time ELSE us.send_time END AS send_time,
@@ -81,6 +91,7 @@ async function readDeliveries(
     id: string;
     email: string;
     organizationId: string | null;
+    metadata: string | null;
     manager_email: string | null;
   }>();
 
@@ -92,6 +103,7 @@ async function readDeliveries(
         delivery: {
           id: row.id,
           email: row.email,
+          teamOrganizationId: orgPlan(row.metadata) !== "single" ? row.organizationId : null,
           recipients: parseRecipients(row.mail_to),
           schedule: normalizeSchedule(row),
           managed: row.organizationId !== null,
@@ -177,7 +189,9 @@ export async function handleDeliverySettings(req: Request, env: Env, target: Del
   if (req.method === "GET") {
     if (target.kind === "team") {
       const delivery = await getTeamDelivery(env, target.organizationId);
-      return Response.json({ ...settingsFields(delivery), defaultRecipients: delivery.defaultRecipients });
+      const reportFormat = await getTeamReportFormat(env, target.organizationId);
+      return Response.json({ ...settingsFields(delivery), defaultRecipients: delivery.defaultRecipients,
+        ...(reportFormat === "workbook" ? { reportFormat } : {}) });
     }
     const delivery = await getEffectiveDelivery(env, target);
     return Response.json({ ...settingsFields(delivery), managed: delivery.managed });
@@ -189,14 +203,24 @@ export async function handleDeliverySettings(req: Request, env: Env, target: Del
   const input: unknown = await req.json().catch(() => ({}));
   const delivery = parseDelivery(input);
   if (typeof delivery === "string") return Response.json({ error: delivery }, { status: 400 });
+  const reportFormat = target.kind === "team" && input !== null && typeof input === "object" && "reportFormat" in input
+    ? input.reportFormat : undefined;
+  if (reportFormat !== undefined && reportFormat !== "per-member" && reportFormat !== "workbook") {
+    return Response.json({ error: "invalid team report format" }, { status: 400 });
+  }
   const { recipients, schedule } = delivery;
   const [table, column, id] = target.kind === "team"
     ? ["org_settings", "organizationId", target.organizationId]
     : ["user_settings", "userId", target.userId];
-  await env.DB.prepare(
+  const writes = [env.DB.prepare(
     `INSERT INTO ${table} (${column}, mail_to, send_day, send_time, send_timezone, send_frequency) VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(${column}) DO UPDATE SET mail_to = excluded.mail_to, send_day = excluded.send_day,
        send_time = excluded.send_time, send_timezone = excluded.send_timezone, send_frequency = excluded.send_frequency`,
-  ).bind(id, recipients.join("\n"), schedule.day, schedule.time, schedule.timezone, schedule.frequency ?? "monthly").run();
+  ).bind(id, recipients.join("\n"), schedule.day, schedule.time, schedule.timezone, schedule.frequency ?? "monthly")];
+  if (target.kind === "team" && reportFormat !== undefined) {
+    writes.push(env.DB.prepare("UPDATE org_settings SET report_format = ? WHERE organizationId = ?")
+      .bind(reportFormat, target.organizationId));
+  }
+  await env.DB.batch(writes);
   return Response.json({ ok: true, ...settingsFields(delivery) });
 }
