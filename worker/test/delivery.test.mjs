@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { getEffectiveDelivery, getTeamDelivery, handleDeliverySettings, listDeliveries } from "../.tmp-test/delivery.js";
 import { buildAndSendReport, sendMonthlyReports } from "../.tmp-test/email.js";
+import { sendTeamTimesheets } from "../.tmp-test/team-overview.js";
 import { testDatabase } from "./helpers/database.mjs";
 
 const defaults = { day: 1, time: "06:00", timezone: "UTC" };
@@ -189,4 +190,45 @@ test("scheduled and forced sends use the same effective delivery and report time
   }
   await sendMonthlyReports(env, new Date("2026-10-01T00:00:00Z"));
   assert.equal(messages.length, 2);
+});
+
+test("saved team recipients both reach Cloudflare for team, personal and scheduled sends", async (t) => {
+  const { env, request, sqlite } = fixture(t);
+  const saved = await request(team, {
+    recipients: ["payroll@example.test", "AbrahamK@example.test"],
+    sendDay: 1, sendTime: "06:00", sendTimezone: "UTC",
+  });
+  assert.equal(saved.status, 200);
+  assert.deepEqual((await (await request(team)).json()).recipients,
+    ["payroll@example.test", "AbrahamK@example.test"]);
+  sqlite.exec("INSERT INTO sessions (id, user_id, start_utc, end_utc) VALUES ('worker-session', 'worker', '2026-09-01T09:00:00Z', '2026-09-01T17:00:00Z')");
+  const messages = [];
+  Object.assign(env, { MAIL_FROM: "reports@example.test", EMAIL_PROVIDER: "cloudflare", EMAIL: { async send(message) {
+    messages.push(message);
+    return { messageId: "id" };
+  } } });
+
+  const teamSent = await sendTeamTimesheets(env, "a", "2026-09", ["worker"]);
+  assert.equal(teamSent.ok, true);
+  assert.deepEqual(teamSent.results, [{ userId: "worker", ok: true }]);
+  assert.equal(messages.length, 2);
+
+  const delivery = await getEffectiveDelivery(env, { userId: "worker", email: "worker@example.test" });
+  assert.equal((await buildAndSendReport(env, "2026-09", {
+    force: true, userId: "worker", to: delivery.recipients, timezone: delivery.schedule.timezone,
+  })).ok, true);
+  assert.equal(messages.length, 4);
+
+  await sendMonthlyReports(env, new Date("2026-10-01T06:00:00Z"));
+  // The fixture has five accounts, all due at 06:00 UTC.
+  assert.equal(messages.length, 12);
+  const workerReports = messages.filter((message) => message.text.includes("Total hours: 8:00"));
+  assert.deepEqual(workerReports.map((message) => message.to), [
+    ["payroll@example.test"], ["AbrahamK@example.test"],
+    ["payroll@example.test"], ["AbrahamK@example.test"],
+    ["payroll@example.test"], ["AbrahamK@example.test"],
+  ]);
+  for (const message of workerReports) {
+    assert.equal(message.attachments[0].filename, "clocked-2026-09.csv");
+  }
 });

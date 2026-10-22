@@ -70,15 +70,20 @@ function createEmailProvider(env: EmailEnvironment): EmailProvider {
       if (!binding) throw new Error("EMAIL send_email binding is required");
       return {
         async send(message) {
-          await binding.send({
+          const attachments = message.attachments?.map((attachment) => ({
+            filename: attachment.filename, content: base64(attachment.content),
+            type: attachment.contentType, disposition: "attachment",
+          } satisfies EmailAttachment));
+          // Separate submissions give each recipient its own delivery outcome.
+          const results = await Promise.allSettled(message.to.map(async (recipient) => binding.send({
             from: { email: env.MAIL_FROM, name: "clocked" },
-            to: message.to, subject: message.subject, text: message.text,
+            to: [recipient], subject: message.subject, text: message.text,
             html: message.html, replyTo: message.replyTo,
-            attachments: message.attachments?.map((attachment) => ({
-              filename: attachment.filename, content: base64(attachment.content),
-              type: attachment.contentType, disposition: "attachment",
-            } satisfies EmailAttachment)),
-          });
+            attachments,
+          })));
+          if (results.some((result) => result.status === "rejected")) {
+            throw new Error("Cloudflare rejected an email submission");
+          }
         },
       };
     }

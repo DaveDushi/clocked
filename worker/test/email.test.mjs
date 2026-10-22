@@ -35,19 +35,33 @@ test("default Resend preserves recipients, reply-to and UTF-8 attachments", asyn
   });
 });
 
-test("Cloudflare uses the binding with structured sender and attachment metadata", async (t) => {
+test("Cloudflare submits each recipient separately with sender and attachment metadata", async (t) => {
   const requests = captureFetch(t);
   const messages = [];
   const env = { ...sender, EMAIL_PROVIDER: "cloudflare", EMAIL: { async send(value) { messages.push(value); return { messageId: "id" }; } } };
   assert.deepEqual(await sendEmail(env, message), { ok: true });
   assert.equal(requests.length, 0);
-  assert.deepEqual(messages, [{
+  assert.deepEqual(messages, ["alice@example.test", "bob@example.test"].map((recipient) => ({
     from: { email: "reports@example.test", name: "clocked" },
-    to: ["alice@example.test", "bob@example.test"], subject: "Monthly hours",
+    to: [recipient], subject: "Monthly hours",
     text: "Hello", html: "<p>Hello</p>", replyTo: "manager@example.test",
     attachments: [{ filename: "hours.csv", content: "SsO2cmcsOAo=", type: "text/csv; charset=utf-8", disposition: "attachment" }],
-  }]);
+  })));
 });
+
+for (const rejected of ["alice@example.test", "bob@example.test"]) {
+  test(`Cloudflare attempts both recipients and returns failure when ${rejected} is rejected`, async (t) => {
+    t.mock.method(console, "error", () => {});
+    const attempted = [];
+    const env = { ...sender, EMAIL_PROVIDER: "cloudflare", EMAIL: { async send(value) {
+      attempted.push(value.to);
+      if (value.to.includes(rejected)) throw new Error("rejected");
+      return { messageId: "id" };
+    } } };
+    assert.deepEqual(await sendEmail(env, message), { ok: false, error: "email send failed" });
+    assert.deepEqual(attempted, [["alice@example.test"], ["bob@example.test"]]);
+  });
+}
 
 test("SES sends a SigV4-signed v2 request with attachments and temporary credentials", async (t) => {
   const requests = captureFetch(t);
