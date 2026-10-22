@@ -93,6 +93,15 @@ try {
       cookie: cookies[actor], origin: base, "content-type": "application/json",
     }, ...(settings === undefined ? {} : { body: JSON.stringify(settings) }) });
   }
+  const timePolicyPath = "/api/team/time-policy?organizationId=acme";
+  const timePolicy = { paidLunchMinutes: 30, lunchMinMinutes: 20, lunchMaxMinutes: 90, longBreakMinutes: 15,
+    overtime: { mode: "weekly", thresholdMinutes: 2400 } };
+  assert.equal((await fetch(base + timePolicyPath)).status, 401);
+  assert.equal((await delivery("employee", timePolicyPath)).status, 403);
+  assert.equal((await delivery("other-manager", timePolicyPath, timePolicy)).status, 403);
+  assert.deepEqual(await (await delivery("manager", timePolicyPath, timePolicy)).json(), { policy: timePolicy });
+  assert.equal((await delivery("manager", timePolicyPath, { ...timePolicy, lunchMinMinutes: 100 })).status, 400);
+  assert.deepEqual(await (await delivery("manager", timePolicyPath)).json(), { policy: timePolicy });
   const teamSettings = "/api/team/settings?organizationId=acme";
   const deliverySettings = {
     recipients: ["reports@example.test"], sendDay: 12, sendTime: "09:30", sendTimezone: "Europe/Berlin",

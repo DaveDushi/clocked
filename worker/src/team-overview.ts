@@ -11,6 +11,7 @@ import {
 } from "./report.js";
 import { localYMD } from "./time.js";
 import type { Env } from "./types";
+import { getTimePolicy, type TimePolicy } from "./time-policy.js";
 
 export interface OverviewDay {
   date: string;
@@ -19,6 +20,9 @@ export interface OverviewDay {
   end: string;
   breakMinutes: number;
   breakCount: number;
+  paidLunchMinutes?: number;
+  overtimeMinutes?: number;
+  longBreakCount?: number;
 }
 
 export interface OverviewMember {
@@ -34,6 +38,7 @@ export interface OverviewMember {
 
 export interface TeamOverview {
   period: string;
+  overtimeMode: TimePolicy["overtime"]["mode"];
   tz: string;
   /** Local date of "today" in the team timezone; the month is partial while it is inside it. */
   today: string;
@@ -50,6 +55,7 @@ export async function buildTeamOverview(
   timezone: string,
   now: Date = new Date(),
 ): Promise<TeamOverview> {
+  const policy = await getTimePolicy(env, organizationId);
   const members = await env.DB.prepare(
     `SELECT u.id AS id, u.name AS name, u.email AS email, m.role AS role, m.createdAt, o.metadata
        FROM member m JOIN user u ON u.id = m.userId JOIN organization o ON o.id = m.organizationId
@@ -57,6 +63,7 @@ export async function buildTeamOverview(
       ORDER BY u.name, u.email`,
   ).bind(organizationId).all<{ id: string; name: string; email: string; role: string; createdAt: string | number; metadata: string | null }>();
   const { start, end } = periodQueryBounds(period);
+  if (policy.overtime.mode === "weekly") start.setUTCDate(start.getUTCDate() - 6);
   const sessions = await env.DB.prepare(
     `SELECT ${SESSION_COLUMNS.split(", ").map((column) => "s." + column).join(", ")}
        FROM sessions s JOIN member m ON m.userId = s.user_id AND m.organizationId = ?
@@ -76,7 +83,7 @@ export async function buildTeamOverview(
   }
 
   const overview = (members.results ?? []).map((member): OverviewMember => {
-    const month = summarizeMonth(rowsByUser.get(member.id) ?? [], period, timezone, now);
+    const month = summarizeMonth(rowsByUser.get(member.id) ?? [], period, timezone, now, policy);
     return {
       id: member.id, email: member.email, role: member.role,
       name: member.name || member.email,
@@ -84,6 +91,8 @@ export async function buildTeamOverview(
       days: month.recordedDays.map((day) => ({
         date: day.date, minutes: day.minutes, start: day.start, end: day.end,
         breakMinutes: day.breakMinutes, breakCount: day.breaks.length,
+        ...(day.paidLunchMinutes !== undefined ? { paidLunchMinutes: day.paidLunchMinutes, overtimeMinutes: day.overtimeMinutes } : {}),
+        ...(day.longBreakCount !== undefined ? { longBreakCount: day.longBreakCount } : {}),
       })),
       enteredSessions: new Set(month.sessions.filter((s) => s.entry !== null).map((s) => s.id)).size,
     };
@@ -92,6 +101,7 @@ export async function buildTeamOverview(
   const today = localYMD(now, timezone);
   return {
     period,
+    overtimeMode: policy.overtime.mode,
     tz: timezone,
     today: `${today.y}-${String(today.m).padStart(2, "0")}-${String(today.d).padStart(2, "0")}`,
     members: overview,

@@ -31,6 +31,7 @@ import { buildAndSendReport, sendScheduledReports } from "./email";
 import { handleActivityIngest } from "./activity";
 import { handleIngest } from "./ingest";
 import { buildTimesheet } from "./report";
+import { handleManagerTimePolicy } from "./time-policy.js";
 import { breakStats } from "./break-stats";
 import { handleManualSession } from "./manual-session";
 import { buildTeamOverview, parseSelection, sendTeamTimesheets } from "./team-overview";
@@ -312,6 +313,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     if (!scope) return json({ error: "user is not in your organization" }, 403);
     const { report, sessions, recordedDays, csv } = await buildTimesheet({
       env, period, userId: targetId, timezone: schedule.timezone, scope,
+      organizationId: orgId,
       includeProjects: url.pathname === "/api/team/preview",
     });
     if (url.pathname === "/api/team/preview") {
@@ -352,6 +354,11 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     return json({ ...result, ok: failed === 0, sent: result.results.length - failed, failed }, failed ? 502 : 200);
   }
 
+  if (url.pathname === "/api/team/time-policy") {
+    const user = await requireActiveUser(req, env);
+    if (user instanceof Response) return user;
+    return handleManagerTimePolicy(req, env, user.id);
+  }
   if (url.pathname === "/api/team/inactivity") {
     const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;

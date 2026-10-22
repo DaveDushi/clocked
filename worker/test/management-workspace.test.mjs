@@ -39,7 +39,7 @@ function harness() {
     wsCloseDialog() {}, wsRender() {}, wsRefreshSheet() {}, wsRenderBottom() {}, wsRenderPending() {},
     wsToday: () => ({ y: 2026, m: 10, d: 22 }), wsCurrentPeriod: () => "2026-10",
     wsShow: (id, visible) => $(id).classList.toggle("hidden", !visible),
-    emailLoadVersion: 0, hoursLoadVersion: 0, inactivityLoadVersion: 0,
+    emailLoadVersion: 0, hoursLoadVersion: 0, inactivityLoadVersion: 0, timePolicyVersion: 0,
     api: async (path) => {
       requests.push(path);
       const team = new URL(path, "https://clocked.test").searchParams.get("organizationId");

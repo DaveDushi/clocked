@@ -305,11 +305,11 @@ function wsRenderRoster() {
       const day = byDate.get(ws.period + "-" + wsModel.pad(index + 1));
       return "<i style='background:" + (day ? wsModel.WORK_SHADES[wsModel.workedLevel(day.minutes)] : "var(--border)") + "'></i>";
     }).join("");
-    return "<article class='ws-person-ledger" + (open ? " open" : "") + "'><button type='button' class='ws-person-toggle' data-action='toggle-member' data-id='" + wsEsc(m.id) + "' data-key='member:" + wsEsc(m.id) + "' aria-expanded='" + open + "' aria-controls='detail-" + wsEsc(m.id) + "'><span class='ws-person-initials' aria-hidden='true'>" + wsEsc(wsModel.initials(m.name)) + "</span><span class='ws-person-name'>" + wsEsc(m.name) + "<small>" + m.stats.recordedDays + " recorded days" + (tag ? " / " + tag : "") + "</small></span><span class='ws-person-pulse' aria-hidden='true'>" + pulse + "</span><span class='ws-person-time mono'>" + wsModel.duration(m.stats.workedMinutes) + "<small>worked this month</small></span>" + wsArrow + "</button>" +
+    return "<article class='ws-person-ledger" + (open ? " open" : "") + "'><button type='button' class='ws-person-toggle' data-action='toggle-member' data-id='" + wsEsc(m.id) + "' data-key='member:" + wsEsc(m.id) + "' aria-expanded='" + open + "' aria-controls='detail-" + wsEsc(m.id) + "'><span class='ws-person-initials' aria-hidden='true'>" + wsEsc(wsModel.initials(m.name)) + "</span><span class='ws-person-name'>" + wsEsc(m.name) + "<small>" + m.stats.recordedDays + " recorded days" + (tag ? " / " + tag : "") + (m.days.some((day) => day.longBreakCount) ? " / " + m.days.reduce((sum, day) => sum + (day.longBreakCount || 0), 0) + " long breaks flagged" : "") + "</small></span><span class='ws-person-pulse' aria-hidden='true'>" + pulse + "</span><span class='ws-person-time mono'>" + wsModel.duration(m.stats.workedMinutes) + "<small>Worked hours</small></span><span class='ws-person-overtime mono'>" + wsOvertimeLabel(m.days) + "<small>Overtime</small></span>" + wsArrow + "</button>" +
       "<div id='detail-" + wsEsc(m.id) + "'" + (open ? "" : " hidden") + ">" + (open ? wsMemberDetail(m, false) : "") + "</div></article>";
   }).join("") : "<p class='ws-empty'>" + (wsMembers().length ? "No members match your search." : "No members yet. Invite someone to get started.") + "</p>";
   const total = visible.reduce((sum, m) => sum + m.stats.workedMinutes, 0);
-  $("wsRosterFoot").innerHTML = visible.length ? "<span>" + (ws.query.trim() ? "Matching members" : "Team total") + "</span><strong class='mono'>" + wsModel.duration(total) + "</strong>" : "";
+  $("wsRosterFoot").innerHTML = visible.length ? "<span>" + (ws.query.trim() ? "Matching members" : "Team total") + "</span><span class='ws-total-hours'><span><strong class='mono'>" + wsModel.duration(total) + "</strong><small>Worked hours</small></span><span><strong class='mono'>" + wsOvertimeLabel(visible.flatMap((m) => m.days)) + "</strong><small>Overtime</small></span></span>" : "";
   const all = wsMembers().length > 0 && wsMembers().every((m) => ws.expanded.has(m.id));
   $("wsViewAll").textContent = all ? "Collapse all" : "View all timesheets"; $("wsViewAll").setAttribute("aria-pressed", String(all)); wsRenderBottom();
 }
@@ -329,15 +329,28 @@ function wsLedgerHtml(days, userId, sessions) {
       const own = sessions ? sessions.filter((session) => session.date === day.date) : [];
       const marks = sessions ? own.map((session) => "<i class='ws-session-mark' style='left:" + session.startMin / 14.4 + "%;width:" + (session.endMin - session.startMin) / 14.4 + "%'></i>").join("") : "<i class='ws-session-mark' style='left:0;width:" + day.minutes / max * 100 + "%'></i>";
       const weekday = new Intl.DateTimeFormat("en", { weekday: "short", timeZone: "UTC" }).format(new Date(day.date + "T00:00:00Z"));
-      const text = wsModel.dayLabel(day.date, true) + ", " + wsModel.duration(day.minutes) + " worked, " + wsModel.shortDuration(day.breakMinutes) + " breaks, " + day.start + " to " + day.end;
-      return "<button type='button' class='ws-ledger-day' data-action='open-day' data-user='" + wsEsc(userId) + "' data-date='" + day.date + "' data-key='day:" + wsEsc(userId) + ":" + day.date + "' aria-label='" + wsEsc(text) + "'><span class='ws-date-stamp'><small>" + weekday + "</small><b>" + Number(day.date.slice(8)) + "</b></span><span class='ws-day-rhythm'><span class='ws-day-span'>" + day.start + " <span aria-hidden='true'>&rarr;</span> " + day.end + "</span><span class='ws-session-track' aria-hidden='true'>" + marks + "</span><small>" + (sessions ? own.length + " session" + (own.length === 1 ? "" : "s") + " / " : "") + wsModel.shortDuration(day.breakMinutes) + " breaks</small></span><span class='ws-day-amount mono'>" + wsModel.duration(day.minutes) + "<small>View day <span aria-hidden='true'>&#8599;</span></small></span></button>";
+      const text = wsModel.dayLabel(day.date, true) + ", " + wsModel.duration(day.minutes) + " worked, " + wsModel.shortDuration(day.breakMinutes) + " breaks" + (userId ? ", " + wsOvertimeLabel([day]) + " overtime" : "") + ", " + day.start + " to " + day.end;
+      return "<button type='button' class='ws-ledger-day" + (userId ? " has-overtime" : "") + "' data-action='open-day' data-user='" + wsEsc(userId) + "' data-date='" + day.date + "' data-key='day:" + wsEsc(userId) + ":" + day.date + "' aria-label='" + wsEsc(text) + "'><span class='ws-date-stamp'><small>" + weekday + "</small><b>" + Number(day.date.slice(8)) + "</b></span><span class='ws-day-rhythm'><span class='ws-day-span'>" + day.start + " <span aria-hidden='true'>&rarr;</span> " + day.end + "</span><span class='ws-session-track' aria-hidden='true'>" + marks + "</span><small>" + (sessions ? own.length + " session" + (own.length === 1 ? "" : "s") + " / " : "") + wsModel.shortDuration(day.breakMinutes) + " breaks" + (wsTimeAccounting([day]) ? " / " + wsEsc(wsTimeAccounting([day])) : "") + "</small></span><span class='ws-day-amount mono'>" + wsModel.duration(day.minutes) + "<small>" + (userId ? "Worked hours" : "View day &#8599;") + "</small></span>" + (userId ? "<span class='ws-day-overtime mono'>" + wsOvertimeLabel([day]) + "<small>Overtime</small></span>" : "") + "</button>";
     }).join("") + "</div></details>";
   }).join("") + "</div>";
+}
+function wsTimeAccounting(days) {
+  const lunch = days.reduce((sum, day) => sum + (day.paidLunchMinutes || 0), 0);
+  const overtime = days.reduce((sum, day) => sum + (day.overtimeMinutes || 0), 0);
+  const flags = days.reduce((sum, day) => sum + (day.longBreakCount || 0), 0);
+  const accounting = days.some((day) => day.paidLunchMinutes !== undefined);
+  return (accounting ? wsModel.shortDuration(lunch) + " paid lunch / " + wsModel.shortDuration(overtime) + " overtime" : "") +
+    (flags ? (accounting ? " / " : "") + flags + " long break" + (flags === 1 ? "" : "s") + " flagged" : "");
+}
+function wsOvertimeLabel(days) {
+  const enabled = days.some((day) => day.overtimeMinutes !== undefined) ||
+    ws.overview && ["daily", "weekly"].includes(ws.overview.overtimeMode);
+  return enabled ? wsModel.duration(days.reduce((sum, day) => sum + (day.overtimeMinutes || 0), 0)) : "Off";
 }
 function wsMemberDetail(m, inSheet) {
   const days = ws.page === "stats" ? wsWindowDays(m.days) : m.days;
   return "<section class='ws-member-ledger' aria-label='" + wsEsc(m.name) + " recorded days'>" +
-    wsLedgerHtml(days, m.id, null) + (ws.page === "stats" ? "" :
+    (wsTimeAccounting(days) ? "<p class='ws-note'>" + wsEsc(wsTimeAccounting(days)) + ". Select a day to review.</p>" : "") + wsLedgerHtml(days, m.id, null) + (ws.page === "stats" ? "" :
       "<div class='ws-detail-actions'><button type='button' class='text-button' data-action='member-settings' data-id='" + wsEsc(m.id) + "'>Member settings</button><button type='button' class='text-button' data-action='add-day' data-user='" + wsEsc(m.id) + "'>+ Add time</button>" + (days.length ? "<button type='button' class='text-button' data-action='preview' data-user='" + wsEsc(m.id) + "'>Preview CSV</button>" : "") + "</div>") + "</section>";
 }
 
@@ -575,7 +588,7 @@ function wsRefreshDay(force) {
     html += "<div class='ws-day-summary'><div>Worked time<strong>" + wsModel.duration(day.minutes) + "</strong></div><div>Break time<strong>" + wsModel.shortDuration(day.breakMinutes) + "</strong></div><div>Breaks<strong>" + day.breaks.length + "</strong></div></div>" +
       entries.map((e) => {
         if (e.kind === "break") {
-          return "<div class='ws-timeline gap'><span class='time'>" + e.gap.start + " – " + e.gap.end + "</span><div><span class='what'>Break</span><small class='source'>" + wsEsc(wsModel.causeLabel(e.gap.cause)) + "</small></div><span class='dur'>" + wsModel.shortDuration(e.gap.minutes) + "</span><span></span></div>";
+          return "<div class='ws-timeline gap'><span class='time'>" + e.gap.start + " – " + e.gap.end + "</span><div><span class='what'>" + (e.gap.lunch ? "Lunch (inferred)" : e.gap.flagged ? "Long break flagged" : "Break") + "</span><small class='source'>" + wsEsc(wsModel.causeLabel(e.gap.cause)) + "</small></div><span class='dur'>" + wsModel.shortDuration(e.gap.minutes) + "</span><span></span></div>";
         }
         const s = e.session;
         const notes = [wsSourceLabel(s, ownerName)];
@@ -587,6 +600,7 @@ function wsRefreshDay(force) {
       }).join("");
   }
   html += (editable ? "<div class='ws-actions-row'><button type='button' data-action='add-session' data-key='add-session' data-edit-control>+ Add missing session</button></div>" : "") +
+    (day && wsTimeAccounting([day]) ? "<p class='ws-note'>" + wsEsc(wsTimeAccounting([day])) + ". Paid lunch and overtime are included in worked time.</p>" : "") +
     "<div id='dayMsg' class='ws-feedback' role='status'></div><p class='ws-note'>" + BREAK_NOTE + "</p>";
   body.innerHTML = html;
   body.scrollTop = top;
@@ -824,7 +838,10 @@ async function wsOpenPreview(userId, opener) {
 // ---- settings ----
 function wsShow(id, visible) { $(id).classList.toggle("hidden", !visible); }
 let settingsScope = "personal";
+let timePolicyVersion = 0;
 function wsInvalidateSettings() {
+  ++timePolicyVersion;
+  $("timePolicyFields").disabled = true; $("saveTimePolicy").disabled = true;
   emailSettingsContext = null; ++emailLoadVersion; ++hoursLoadVersion; ++inactivityLoadVersion;
   $("saveEmail").disabled = true; $("saveWorkingHours").disabled = true; $("saveInactivity").disabled = true;
 }
@@ -841,13 +858,14 @@ function wsSelectSettings(scope) {
     $("settings" + name + "Panel").hidden = !selected;
   }
   for (const id of ["setMyHours", "setDesktop", "setPrivacy", "setTeamCreate", "setOperator"]) $("settingsPersonalPanel").appendChild($(id));
-  for (const id of ["setWorkingHours", "setInactivity", "setPlan"]) $("settingsTeamPanel").appendChild($(id));
+  for (const id of ["setWorkingHours", "setTimePolicy", "setInactivity", "setPlan"]) $("settingsTeamPanel").appendChild($(id));
   $(team ? "teamDeliverySlot" : "personalDeliverySlot").appendChild($("setDelivery"));
   $("emailTitle").textContent = "Timesheet delivery";
   $("emailMsg").textContent = "";
   wsShow("emailEdit", false); wsShow("emailReadonly", true);
   $("emailReadonly").textContent = "Loading delivery settings...";
   wsShow("setWorkingHours", canManage); wsShow("setInactivity", canManage); wsShow("setPlan", canManage);
+  wsShow("setTimePolicy", canManage);
   const ownsSingle = ws.mode === "personal" && orgPlanKey === "single" && !!orgId && isManagerRoleC(orgRole);
   wsShow("setTeamCreate", ws.mode === "personal" && (ws.me.operator || ownsSingle));
   wsShow("setOperator", !!ws.me.operator);
@@ -855,11 +873,66 @@ function wsSelectSettings(scope) {
     $("planSummary").textContent = (orgPlanKey === "enterprise" ? "Enterprise" : "Team") + " \u00b7 " + memberCount + (orgCap >= 1000000 ? "" : " of " + orgCap) + " member seats used";
     $("teamHoursSlot").appendChild($("workingHoursEditor"));
     $("hoursTargetField").classList.add("hidden"); $("hoursTarget").value = "";
-    loadWorkingHoursEditor(); loadInactivityEditor();
+    loadWorkingHoursEditor(); loadInactivityEditor(); wsLoadTimePolicy();
   } else loadWorkingHoursSummary();
   loadEmailSettings(team || ownsSingle ? { kind: "team", path: "/api/team/settings?organizationId=" + encodeURIComponent(orgId) } : { kind: "personal", path: "/api/settings" });
 }
 $("settingsPersonalTab").onclick = () => wsSelectSettings("personal");
+function wsSyncOvertime() {
+  const mode = $("overtimeMode").value;
+  $("overtimeThresholdField").hidden = mode === "disabled";
+  $("overtimeThreshold").disabled = mode === "disabled";
+  $("overtimeThreshold").max = mode === "weekly" ? "168" : "24";
+  document.querySelector("label[for='overtimeThreshold']").textContent = "Overtime starts after worked hours per " + (mode === "weekly" ? "week" : "day");
+}
+$("overtimeMode").onchange = () => {
+  $("overtimeThreshold").value = $("overtimeMode").value === "weekly" ? "40" : "8";
+  wsSyncOvertime();
+};
+async function wsLoadTimePolicy() {
+  const version = ++timePolicyVersion;
+  $("timePolicyFields").disabled = true; $("saveTimePolicy").disabled = true;
+  wsFeedback("timePolicyMsg", "Loading lunch and overtime settings...", "loading");
+  try {
+    const response = await api("/api/team/time-policy?organizationId=" + encodeURIComponent(orgId));
+    const data = await response.json();
+    if (version !== timePolicyVersion) return;
+    if (!response.ok) throw new Error(data.error || "Could not load settings. Reopen Team settings to retry.");
+    $("paidLunchMinutes").value = data.policy.paidLunchMinutes;
+    $("lunchMinMinutes").value = data.policy.lunchMinMinutes;
+    $("lunchMaxMinutes").value = data.policy.lunchMaxMinutes;
+    $("longBreakMinutes").value = data.policy.longBreakMinutes;
+    $("overtimeMode").value = data.policy.overtime.mode;
+    $("overtimeThreshold").value = data.policy.overtime.mode === "disabled" ? "8" : String(data.policy.overtime.thresholdMinutes / 60);
+    wsSyncOvertime();
+    $("timePolicyFields").disabled = false; $("saveTimePolicy").disabled = false;
+    wsFeedback("timePolicyMsg", "");
+  } catch (error) { if (version === timePolicyVersion) wsFeedback("timePolicyMsg", error.message || "Could not load settings.", "err"); }
+}
+$("timePolicyForm").onsubmit = async (event) => {
+  event.preventDefault();
+  if ($("saveTimePolicy").disabled || settingsScope !== "team" || !wsIsTeam() || !isManagerRoleC(orgRole)) return;
+  const version = timePolicyVersion;
+  const organization = orgId;
+  const mode = $("overtimeMode").value;
+  const policy = { paidLunchMinutes: Number($("paidLunchMinutes").value), lunchMinMinutes: Number($("lunchMinMinutes").value), lunchMaxMinutes: Number($("lunchMaxMinutes").value), longBreakMinutes: Number($("longBreakMinutes").value), overtime: mode === "disabled" ? { mode } : { mode, thresholdMinutes: Math.round(Number($("overtimeThreshold").value) * 60) } };
+  $("timePolicyFields").disabled = true; $("saveTimePolicy").disabled = true;
+  wsFeedback("timePolicyMsg", "Saving...", "loading");
+  try {
+    const response = await api("/api/team/time-policy?organizationId=" + encodeURIComponent(organization), { method: "POST", body: JSON.stringify(policy) });
+    const data = await response.json();
+    if (version !== timePolicyVersion) return;
+    if (!response.ok) throw new Error(data.error || "Could not save settings.");
+    wsFeedback("timePolicyMsg", "Saved. Team timesheets now use these rules.", "ok");
+    ++ws.annualVersion; ws.annual = null; ws.annualKey = ""; ws.annualLoading = false;
+    ws.memberData = null; ws.memberKey = "";
+    await wsLoadOverview(true);
+    if (ws.page === "stats") wsLoadYear(true);
+  } catch (error) { if (version === timePolicyVersion) wsFeedback("timePolicyMsg", error.message || "Could not save settings.", "err"); }
+  finally {
+    if (version === timePolicyVersion) { $("timePolicyFields").disabled = false; $("saveTimePolicy").disabled = false; }
+  }
+};
 $("settingsTeamTab").onclick = () => wsSelectSettings("team");
 $("dlgSettings").querySelector("[role=tablist]").addEventListener("keydown", (event) => {
   if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;

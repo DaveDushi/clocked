@@ -5,6 +5,7 @@ import { buildTimesheet, formatHours, isWorkDay, type HoursReport } from "./repo
 import { reportDateBounds } from "./time.js";
 import { listDeliveries } from "./delivery.js";
 import { isScheduleDue, periodForSchedule } from "./schedule.js";
+import { getPrimaryMembership } from "./memberships.js";
 
 /**
  * Referral footer on outgoing timesheets. These land in clients'/managers'
@@ -51,6 +52,8 @@ function renderReportEmail(
   const total = formatHours(report.totalMinutes);
   const worked = report.activeDays;
   const vacation = report.days.filter((d) => d.minutes === 0 && isWorkDay(d.date)).length;
+  const accounting = report.paidLunchMinutes === undefined ? "" :
+    `Includes ${formatHours(report.paidLunchMinutes)} paid lunch. Regular hours: ${formatHours(report.totalMinutes - (report.overtimeMinutes ?? 0))}. Overtime: ${formatHours(report.overtimeMinutes ?? 0)}.`;
 
   const tile = (value: string, label: string) => `
     <td style="padding:0 8px;">
@@ -91,6 +94,7 @@ function renderReportEmail(
         ${tile(String(vacation), vacation === 1 ? "Vacation day" : "Vacation days")}
       </tr></table>
     </td></tr>
+    ${accounting ? `<tr><td style="padding:12px 28px;font-size:13px;color:#6b7280;">${esc(accounting)}</td></tr>` : ""}
     ${projectBlock}
     <tr><td style="padding:20px 28px 8px;color:#9ca3af;font-size:12px;">
       The full day-by-day breakdown is attached as <strong>clocked-${esc(period)}.csv</strong>.
@@ -117,6 +121,7 @@ function renderReportEmail(
     `Timesheet — ${title}`,
     ``,
     `Total hours: ${total}`,
+    ...(accounting ? [accounting] : []),
     `Days worked: ${worked}`,
     `Vacation days: ${vacation}`,
     ...textProjects,
@@ -170,7 +175,8 @@ export async function buildAndSendReport(
     ? await getTeamSessionScope(env, userId, opts.organizationId)
     : await getEffectiveSessionScope(env, userId);
   if (!scope) return { ok: false, period, rows: 0, error: "user is not in your organization" };
-  const { csv, report, projects } = await buildTimesheet({ env, period, userId, timezone, scope });
+  const organizationId = opts.organizationId ?? (scope.kind === "team" ? (await getPrimaryMembership(env, userId))?.organizationId : undefined);
+  const { csv, report, projects } = await buildTimesheet({ env, period, userId, timezone, scope, organizationId });
   const rows = csv ? csv.trimEnd().split("\n").length : 0;
   const body =
     rows > 0

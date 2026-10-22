@@ -122,6 +122,36 @@ export const WORKSPACE_MARKUP = /* html */ `
         </div>
       </details>
 
+      <details id="setTimePolicy" class="hidden">
+        <summary><span>Paid lunch and overtime</span></summary>
+        <form class="body" id="timePolicyForm">
+          <fieldset id="timePolicyFields" disabled>
+            <div class="ws-settings-field"><label for="paidLunchMinutes">Paid lunch allowance, minutes per day</label>
+              <input id="paidLunchMinutes" type="number" min="0" max="180" step="1" value="0" required aria-describedby="paidLunchHelp" />
+              <p id="paidLunchHelp" class="hint">One continuous lunch break counts as worked time up to this allowance. Use 0 for unpaid lunch. Small breaks are never combined.</p>
+            </div>
+            <div class="row">
+              <div><label for="lunchMinMinutes">Lunch minimum, minutes</label><input id="lunchMinMinutes" type="number" min="2" max="180" step="1" value="20" required /></div>
+              <div><label for="lunchMaxMinutes">Lunch maximum, minutes</label><input id="lunchMaxMinutes" type="number" min="2" max="240" step="1" value="90" required /></div>
+            </div>
+            <p class="hint">The longest break within this range is treated as lunch when paid lunch is enabled. Lunch is inferred from the recorded gap, not confirmed by the worker.</p>
+            <div class="ws-settings-field"><label for="longBreakMinutes">Flag other breaks longer than, minutes</label>
+              <input id="longBreakMinutes" type="number" min="0" max="1440" step="1" value="0" required />
+              <p class="hint">Flags appear in team timesheets for awareness. Lunch is excluded. Use 0 to turn flags off.</p>
+            </div>
+            <div class="ws-settings-field"><label for="overtimeMode">Overtime rule</label>
+              <select id="overtimeMode"><option value="disabled">Do not track overtime</option><option value="daily">Daily overtime</option><option value="weekly">Weekly overtime</option></select>
+            </div>
+            <div class="ws-settings-field" id="overtimeThresholdField" hidden><label for="overtimeThreshold">Overtime starts after worked hours per day</label>
+              <input id="overtimeThreshold" type="number" min="0.25" max="24" step="0.25" value="8" required disabled />
+            </div>
+            <p class="hint">Worked hours include paid lunch. Overtime is part of total worked hours. Weeks run Monday to Sunday. These rules apply to all team timesheets, including past periods.</p>
+          </fieldset>
+          <button id="saveTimePolicy" class="primary" type="submit" disabled>Save lunch and overtime</button>
+          <div id="timePolicyMsg" class="msg" role="status"></div>
+        </form>
+      </details>
+
       <details id="setInactivity" class="hidden">
         <summary><span>Inactivity limit<small id="inactivitySummary">Loading team policy</small></span></summary>
         <div class="body">

@@ -103,6 +103,15 @@ export const WORKSPACE_STYLE = /* css */ `
   .ws-person-pulse { display:flex; gap:3px; align-items:center; margin:0 22px; }
   .ws-person-pulse i { display:block; width:5px; height:18px; border-radius:2px; }
   .ws-person-time { text-align:right; font-size:17px; }
+  .ws-person-time { flex:0 0 92px; }
+  .ws-person-overtime { text-align:right; font-size:17px; flex:0 0 92px; }
+  .ws-person-overtime small { display:block; font:11px "Space Grotesk",sans-serif; margin-top:5px; }
+  .ws button.ws-ledger-day.has-overtime { grid-template-columns:44px minmax(0,1fr) 92px 92px; white-space:normal; }
+  .has-overtime .ws-day-rhythm { grid-template-columns:minmax(0,1fr); overflow-wrap:anywhere; }
+  .ws-day-overtime { text-align:right; font-size:16px; }
+  .ws-day-overtime small { display:block; font:11px "Space Grotesk",sans-serif; margin-top:8px; }
+  .ws-total-hours { display:flex; gap:24px; text-align:right; }
+  .ws-total-hours small { display:block; font-size:11px; color:var(--wsmuted); margin-top:5px; }
   .ws-member-ledger { padding:0 20px 20px; }
   .ws-member-ledger .ws-week-days { background:var(--bg); }
   .ws-ledger-team-total { display:flex; justify-content:space-between; padding:22px 20px; font-size:13px; }
@@ -120,6 +129,9 @@ export const WORKSPACE_STYLE = /* css */ `
     .ws button.ws-person-toggle { padding:16px 12px; gap:12px; white-space:normal; }
     .ws-person-initials { display:none; }
     .ws-person-time { font-size:14px; white-space:nowrap; }
+    .ws-person-time, .ws-person-overtime { flex-basis:68px; font-size:14px; }
+    .ws button.ws-ledger-day.has-overtime { grid-template-columns:32px minmax(0,1fr) 56px 56px; gap:8px; }
+    .ws-day-overtime { font-size:13px; }
     .ws-member-ledger { padding:0 12px 16px; }
   }
 

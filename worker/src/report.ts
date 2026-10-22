@@ -1,5 +1,6 @@
 import { sessionInScope, type SessionScope } from "./team-scope.js";
 import type { Env } from "./types";
+import { DEFAULT_TIME_POLICY, getTimePolicy, type TimePolicy } from "./time-policy.js";
 import { projectTotalsForPeriod } from "./activity.js";
 import { expandCalendarDays } from "./calendar-days.js";
 import {
@@ -50,6 +51,8 @@ export interface DayHours {
   date: string; // "YYYY-MM-DD" (local)
   label: string; // e.g. "Monday, June 29, 2026"
   minutes: number;
+  paidLunchMinutes?: number;
+  overtimeMinutes?: number;
 }
 
 export interface DayBreak {
@@ -57,6 +60,8 @@ export interface DayBreak {
   end: string;
   minutes: number;
   cause: BreakCause;
+  lunch?: boolean;
+  flagged?: boolean;
 }
 
 /** A local day with at least one session. Breaks are gaps between the day's
@@ -68,6 +73,10 @@ export interface RecordedDay {
   end: string;
   breakMinutes: number;
   breaks: DayBreak[];
+  recordedMinutes?: number;
+  paidLunchMinutes?: number;
+  overtimeMinutes?: number;
+  longBreakCount?: number;
 }
 
 export interface HoursReport {
@@ -76,6 +85,8 @@ export interface HoursReport {
   days: DayHours[];
   activeDays: number;
   totalMinutes: number;
+  paidLunchMinutes?: number;
+  overtimeMinutes?: number;
 }
 
 /** Clamp sessions to the report period, split at local midnight, and group by day. */
@@ -331,6 +342,7 @@ export function summarizeMonth(
   period: string,
   timezone: string,
   now: Date = new Date(),
+  policy: TimePolicy = DEFAULT_TIME_POLICY,
 ): MonthSummary {
   // Collapse each local day to the union of its sessions. This preserves real
   // gaps while ensuring overlapping sessions from multiple devices count once.
@@ -357,12 +369,21 @@ export function summarizeMonth(
         });
       }
     }
+    const recordedMinutes = unionMinutes(merged);
+    const lunch = policy.paidLunchMinutes > 0 ? breaks
+      .filter((gap) => gap.minutes >= policy.lunchMinMinutes && gap.minutes <= policy.lunchMaxMinutes)
+      .reduce<DayBreak | undefined>((longest, gap) => !longest || gap.minutes > longest.minutes ? gap : longest, undefined) : undefined;
+    if (lunch) lunch.lunch = true;
+    for (const gap of breaks) {
+      if (policy.longBreakMinutes > 0 && gap !== lunch && gap.minutes > policy.longBreakMinutes) gap.flagged = true;
+    }
+    const paidLunchMinutes = Math.min(policy.paidLunchMinutes, lunch?.minutes ?? 0);
     const span: DaySpan = {
       in: new Date(merged[0].start),
       inTimezone: merged[0].startTimezone,
       out: new Date(merged[merged.length - 1].end),
       outTimezone: merged[merged.length - 1].endTimezone,
-      minutes: unionMinutes(merged),
+      minutes: recordedMinutes + paidLunchMinutes,
       breaks: breaks.map((x) => `${x.start}-${x.end}`),
     };
     spanByDate.set(date, span);
@@ -374,16 +395,39 @@ export function summarizeMonth(
       end: formatHM(span.out, span.outTimezone),
       breakMinutes: Math.round(breakMs / 60_000),
       breaks,
+      ...(policy.longBreakMinutes > 0 ? { longBreakCount: breaks.filter((gap) => gap.flagged).length } : {}),
+      ...(policy.paidLunchMinutes > 0 || policy.overtime.mode !== "disabled"
+        ? { recordedMinutes, paidLunchMinutes, overtimeMinutes: 0 } : {}),
     });
   }
   recordedDays.sort((a, b) => a.date.localeCompare(b.date));
 
+  if (policy.overtime.mode !== "disabled") {
+    const totals = new Map<string, number>();
+    if (policy.overtime.mode === "weekly") {
+      const first = reportDateBounds(period).start;
+      const monday = weekStart(first);
+      if (monday < first) {
+        const context = summarizeMonth(rows, monday, timezone, now, { ...policy, overtime: { mode: "disabled" } });
+        totals.set(monday, context.recordedDays.filter((day) => day.date < first).reduce((sum, day) => sum + day.minutes, 0));
+      }
+    }
+    for (const day of recordedDays) {
+      const key = policy.overtime.mode === "daily" ? day.date : weekStart(day.date);
+      const before = totals.get(key) ?? 0;
+      const threshold = policy.overtime.thresholdMinutes;
+      day.overtimeMinutes = Math.max(0, before + day.minutes - threshold) - Math.max(0, before - threshold);
+      totals.set(key, before + day.minutes);
+    }
+  }
+
   // Expand to calendar days (past months in full, current month through today)
   // so every gap between logged days is visible for vacation marking.
-  const seed = [...spanByDate].map(([date, span]) => ({
-    date,
-    label: labelByDate.get(date) ?? "",
-    minutes: span.minutes,
+  const seed = recordedDays.map((day) => ({
+    date: day.date,
+    label: labelByDate.get(day.date) ?? "",
+    minutes: day.minutes,
+    ...(day.paidLunchMinutes !== undefined ? { paidLunchMinutes: day.paidLunchMinutes, overtimeMinutes: day.overtimeMinutes } : {}),
   }));
   const expanded = period.length === 10 ? expandWeek(seed, period) : expandCalendarDays(
     seed.sort((a, b) => a.date.localeCompare(b.date)), period, localYMD(now, timezone),
@@ -395,8 +439,18 @@ export function summarizeMonth(
     days: expanded.days,
     activeDays: expanded.activeDays,
     totalMinutes: seed.reduce((sum, day) => sum + day.minutes, 0),
+    ...(policy.paidLunchMinutes > 0 || policy.overtime.mode !== "disabled" ? {
+      paidLunchMinutes: recordedDays.reduce((sum, day) => sum + (day.paidLunchMinutes ?? 0), 0),
+      overtimeMinutes: recordedDays.reduce((sum, day) => sum + (day.overtimeMinutes ?? 0), 0),
+    } : {}),
   };
   return { report, sessions, recordedDays, spanByDate };
+}
+
+function weekStart(date: string): string {
+  const day = new Date(date + "T00:00:00Z");
+  day.setUTCDate(day.getUTCDate() - (day.getUTCDay() + 6) % 7);
+  return day.toISOString().slice(0, 10);
 }
 
 /** Load one account's month once; all presentations share the same day accounting. */
@@ -408,6 +462,7 @@ export async function buildTimesheet({
   includeProjects = true,
   now = new Date(),
   scope,
+  organizationId,
 }: {
   env: Env;
   period: string;
@@ -416,8 +471,11 @@ export async function buildTimesheet({
   includeProjects?: boolean;
   now?: Date;
   scope: SessionScope;
+  organizationId?: string;
 }): Promise<Timesheet> {
+  const policy = organizationId ? await getTimePolicy(env, organizationId) : DEFAULT_TIME_POLICY;
   const { start, end } = periodQueryBounds(period);
+  if (policy.overtime.mode === "weekly") start.setUTCDate(start.getUTCDate() - 6);
 
   const res = await env.DB.prepare(
     `SELECT ${SESSION_COLUMNS} FROM sessions
@@ -428,7 +486,7 @@ export async function buildTimesheet({
     .all<SessionRow>();
 
   const { report, sessions, recordedDays, spanByDate } =
-    summarizeMonth((res.results ?? []).filter((row) => sessionInScope(row.start_utc, scope)), period, timezone, now);
+    summarizeMonth((res.results ?? []).filter((row) => sessionInScope(row.start_utc, scope)), period, timezone, now, policy);
   if (scope.kind === "team") {
     const joined = localYMD(new Date(scope.since), timezone);
     const date = `${joined.y}-${String(joined.m).padStart(2, "0")}-${String(joined.d).padStart(2, "0")}`;
@@ -436,32 +494,39 @@ export async function buildTimesheet({
   }
   // Daily activity aggregates cannot separate personal and team work on the join day.
   const projects = includeProjects && scope.kind === "personal" ? await projectTotalsForPeriod(env, userId, period) : [];
-  return { report, sessions, recordedDays, projects, csv: renderCsv(report.days, spanByDate, projects) };
+  return { report, sessions, recordedDays, projects, csv: renderCsv(report.days, spanByDate, projects, policy) };
 }
 
 function renderCsv(
   calendarDays: DayHours[],
   spanByDate: Map<string, DaySpan>,
   projects: Timesheet["projects"],
+  policy: TimePolicy,
 ): string {
   if (spanByDate.size === 0) return "";
 
-  const lines = ["Date,Clock In,Clock Out,Breaks,Hours Worked"];
+  const breakdown = policy.paidLunchMinutes > 0 || policy.overtime.mode !== "disabled";
+  const lines = ["Date,Clock In,Clock Out,Breaks,Hours Worked" + (breakdown ? ",Paid Lunch,Regular Hours,Overtime" : "")];
   let totalMinutes = 0;
+  let totalLunch = 0;
+  let totalOvertime = 0;
   for (const day of calendarDays) {
     const span = spanByDate.get(day.date);
     if (span) {
       lines.push(
-        `${csvField(day.label)},${formatHM(span.in, span.inTimezone)},${formatHM(span.out, span.outTimezone)},${csvField(span.breaks.join("; "))},${formatHours(span.minutes)}`,
+        `${csvField(day.label)},${formatHM(span.in, span.inTimezone)},${formatHM(span.out, span.outTimezone)},${csvField(span.breaks.join("; "))},${formatHours(span.minutes)}` +
+          (breakdown ? `,${formatHours(day.paidLunchMinutes ?? 0)},${formatHours(day.minutes - (day.overtimeMinutes ?? 0))},${formatHours(day.overtimeMinutes ?? 0)}` : ""),
       );
       totalMinutes += span.minutes;
+      totalLunch += day.paidLunchMinutes ?? 0;
+      totalOvertime += day.overtimeMinutes ?? 0;
     } else if (isWorkDay(day.date)) {
-      lines.push(`${csvField(day.label)},Vacation,,,`);
+      lines.push(`${csvField(day.label)},Vacation,,,` + (breakdown ? ",,," : ""));
     }
   }
 
-  lines.push(",,,,");
-  lines.push(`,,,Total,${formatHours(totalMinutes)}`);
+  lines.push(breakdown ? ",,,,,,," : ",,,,");
+  lines.push(`,,,Total,${formatHours(totalMinutes)}` + (breakdown ? `,${formatHours(totalLunch)},${formatHours(totalMinutes - totalOvertime)},${formatHours(totalOvertime)}` : ""));
 
   // Optional project summary from synced app aggregates (no titles/URLs).
   if (projects.length > 0) {
