@@ -21,6 +21,30 @@ export async function hasPendingInvitation(env: Env, email: string): Promise<boo
 }
 
 const emailAddress = z.email().transform((email) => email.toLowerCase());
+
+// Better Auth requires the sender to be a member when reading an invitation.
+// The operator provisions empty teams without joining them.
+export async function getOperatorTeamInvitation(env: Env, id: string, email: string) {
+  const invitation = await env.DB.prepare(`
+    SELECT i.id, i.email, i.role, i.organizationId, i.inviterId, i.status,
+           i.expiresAt, i.createdAt, o.name AS organizationName,
+           o.slug AS organizationSlug, u.email AS inviterEmail
+    FROM invitation i
+    JOIN organization o ON o.id = i.organizationId
+    JOIN user u ON u.id = i.inviterId
+    JOIN user_approval a ON a.userId = u.id AND a.approvedAt IS NOT NULL
+    WHERE i.id = ? AND lower(i.email) = ? AND i.role = 'owner'
+      AND i.status = 'pending' AND julianday(i.expiresAt) > julianday('now')
+      AND lower(u.email) = ? AND u.emailVerified = 1
+      AND NOT EXISTS (SELECT 1 FROM member m WHERE m.organizationId = i.organizationId)
+  `).bind(id, email.toLowerCase(), ADMIN_INBOX.toLowerCase()).first<{
+    id: string; email: string; role: string; organizationId: string; inviterId: string;
+    status: string; expiresAt: string; createdAt: string;
+    organizationName: string; organizationSlug: string; inviterEmail: string;
+  }>();
+  return invitation;
+}
+
 const operatorInvite = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("individual"), email: emailAddress }),
   z.object({ kind: z.literal("manager"), email: emailAddress, teamName: z.string().trim().min(1).max(80) }),

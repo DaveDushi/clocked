@@ -72,6 +72,8 @@ test("operator invites an independent owner who verifies, accepts, then invites 
   assert.equal(signedUp.status, 200, await signedUp.clone().text());
   const { user } = await signedUp.json();
   let cookie = cookieFrom(signedUp);
+  const detailsRequest = () => auth.handler(new Request(env.BETTER_AUTH_URL + "/api/auth/organization/get-invitation?id=" + id, { headers: { cookie } }));
+  assert.equal((await detailsRequest()).status, 403);
   assert.equal((await call("organization/accept-invitation", { invitationId: id }, cookie)).status, 403);
   assert.equal((await call("organization/create", { name: "Bypass", slug: "bypass" }, cookie)).status, 403);
   const verificationEmail = messages.find((message) => message.subject === "Verify your clocked email");
@@ -80,6 +82,21 @@ test("operator invites an independent owner who verifies, accepts, then invites 
   const verified = await auth.handler(new Request(verificationUrl, { headers: { cookie } }));
   assert.equal(verified.status, 302);
   cookie = cookieFrom(verified) || cookie;
+  for (const [invalidate, restore] of [
+    ["UPDATE invitation SET email = 'someone-else@example.test'", "UPDATE invitation SET email = 'manager@example.test'"],
+    ["UPDATE invitation SET expiresAt = '2000-01-01'", "UPDATE invitation SET expiresAt = '2099-01-01'"],
+    ["UPDATE invitation SET status = 'canceled'", "UPDATE invitation SET status = 'pending'"],
+    ["UPDATE invitation SET role = 'member'", "UPDATE invitation SET role = 'owner'"],
+    ["UPDATE user SET email = 'former-operator@example.test' WHERE id = 'operator'", "UPDATE user SET email = '" + ADMIN_INBOX + "' WHERE id = 'operator'"],
+    ["UPDATE user_approval SET approvedAt = NULL WHERE userId = 'operator'", "UPDATE user_approval SET approvedAt = datetime('now') WHERE userId = 'operator'"],
+  ]) {
+    sqlite.exec(invalidate);
+    assert.notEqual((await detailsRequest()).status, 200, invalidate);
+    sqlite.exec(restore);
+  }
+  const details = await detailsRequest();
+  assert.equal(details.status, 200, await details.clone().text());
+  assert.equal((await details.json()).organizationName, "Acme");
   const accepted = await call("organization/accept-invitation", { invitationId: id }, cookie);
   assert.equal(accepted.status, 200, await accepted.clone().text());
   assert.equal(await isApproved(env, user.id), true);
@@ -101,6 +118,14 @@ test("operator invites an independent owner who verifies, accepts, then invites 
   const workerVerifyUrl = workerMail.text.split("\n").find((line) => line.startsWith("http"));
   const workerVerified = await auth.handler(new Request(workerVerifyUrl, { headers: { cookie: workerCookie } }));
   const workerSession = cookieFrom(workerVerified) || workerCookie;
+  const workerDetails = () => auth.handler(new Request(env.BETTER_AUTH_URL + "/api/auth/organization/get-invitation?id=" + workerInvitation.id, { headers: { cookie: workerSession } }));
+  assert.equal((await workerDetails()).status, 200);
+  sqlite.prepare("DELETE FROM member WHERE userId = ?").run(user.id);
+  const removedSender = await workerDetails();
+  assert.equal(removedSender.status, 400);
+  assert.equal((await removedSender.json()).code, "INVITER_IS_NO_LONGER_A_MEMBER_OF_THE_ORGANIZATION");
+  sqlite.prepare("INSERT INTO member (id, organizationId, userId, role, createdAt) VALUES (?, ?, ?, 'owner', ?)")
+    .run(crypto.randomUUID(), organizationId, user.id, new Date().toISOString());
   assert.equal((await call("organization/accept-invitation", { invitationId: workerInvitation.id }, workerSession)).status, 200);
   assert.equal(await isApproved(env, worker.id), true);
   assert.equal(sqlite.prepare("SELECT role FROM member WHERE userId = ?").get(worker.id).role, "member");

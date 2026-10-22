@@ -1,12 +1,12 @@
 import { betterAuth } from "better-auth";
-import { APIError } from "better-auth/api";
+import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { organization } from "better-auth/plugins";
 
 import { approveUser, isApproved } from "./approval.js";
 import { desktopAuth } from "./desktop-auth.js";
 import { sendAuthEmail } from "./email.js";
 import { effectiveMemberCap } from "./plans.js";
-import { hasPendingInvitation, isOperator } from "./onboarding.js";
+import { getOperatorTeamInvitation, hasPendingInvitation, isOperator } from "./onboarding.js";
 import type { Env } from "./types";
 
 // --- Workers-native password hashing (PBKDF2 via Web Crypto) --------------
@@ -72,6 +72,15 @@ export function makeAuth(env: Env) {
     database: env.DB, // native D1 (better-auth >= 1.5), no adapter
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,
+    hooks: {
+      before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== "/organization/get-invitation" || typeof ctx.query?.id !== "string") return;
+        const session = await getSessionFromCtx(ctx);
+        if (!session?.user.emailVerified) return;
+        const invitation = await getOperatorTeamInvitation(env, ctx.query.id, session.user.email);
+        if (invitation) return ctx.json(invitation);
+      }),
+    },
     databaseHooks: {
       user: {
         create: {
