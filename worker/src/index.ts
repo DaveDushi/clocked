@@ -3,6 +3,7 @@ import { effectiveInactivity, handleManagerInactivity } from "./inactivity";
 import { checkAuth } from "./auth";
 import { makeAuth } from "./auth-server";
 import { dashboardResponse } from "./dashboard";
+import { privacyPageResponse, termsPageResponse } from "./legal-pages";
 import {
   downloadExtensionResponse,
   downloadMacResponse,
@@ -106,6 +107,11 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
 
   // Landing page + dashboard (single self-contained app) and health check.
   if (req.method === "GET" && url.pathname === "/") return dashboardResponse();
+  if ((req.method === "GET" || req.method === "HEAD") &&
+      (url.pathname === "/privacy" || url.pathname === "/terms")) {
+    const response = url.pathname === "/privacy" ? privacyPageResponse() : termsPageResponse();
+    return req.method === "HEAD" ? new Response(null, { headers: response.headers }) : response;
+  }
   if (isDownloadMethod(req.method) && url.pathname === "/download")
     return downloadResponse(req.headers.get("user-agent"));
   if (isDownloadMethod(req.method) && url.pathname === "/download/mac") return downloadMacResponse();

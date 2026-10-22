@@ -29,7 +29,7 @@ export function robotsTxtResponse(): Response {
 }
 
 export function sitemapXmlResponse(): Response {
-  const urls = ["/", "/download", "/download/extension", "/privacy/extension", "/press", "/news", "/llms.txt"];
+  const urls = ["/", "/download", "/download/extension", "/privacy", "/terms", "/privacy/extension", "/press", "/news", "/llms.txt"];
   const today = new Date().toISOString().slice(0, 10);
   const entries = urls
     .map(
@@ -232,6 +232,8 @@ export function extensionPrivacyPageResponse(): Response {
   <div class="nav">
     <a href="/">Home</a>
     <a href="/download/extension">Download extension</a>
+    <a href="/privacy">Product privacy policy</a>
+    <a href="/terms">Terms of service</a>
     <a href="https://github.com/DaveDushi/clocked">GitHub</a>
   </div>
   <h1>Privacy policy — browser extension</h1>

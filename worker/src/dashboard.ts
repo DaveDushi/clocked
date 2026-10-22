@@ -610,6 +610,8 @@ ${WORKSPACE_STYLE}
     </section>
 
     <footer class="footer-note">
+      <a href="/privacy">Privacy policy</a>
+      <a href="/terms">Terms of service</a>
       <a href="https://github.com/DaveDushi/clocked" target="_blank" rel="noopener">Source &amp; setup</a>
       <a href="/download/extension">Chrome / Edge extension</a>
       <a href="/press">Press kit</a>
