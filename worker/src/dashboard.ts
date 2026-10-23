@@ -622,7 +622,7 @@ ${WORKSPACE_STYLE}
       <div class="modal-backdrop"></div>
       <div id="auth" class="card modal-card">
         <button id="authClose" class="ghost modal-close" aria-label="Close">&times;</button>
-      <div class="tabs">
+      <div id="authTabs" class="tabs">
         <button id="tabSignup" class="active">Create account</button>
         <button id="tabSignin">Sign in</button>
       </div>
@@ -632,16 +632,22 @@ ${WORKSPACE_STYLE}
         <label for="name">Name <span class="muted" style="text-transform:none;letter-spacing:0">(optional)</span></label>
         <input id="name" type="text" autocomplete="name" />
       </div>
-      <div class="field">
+      <div id="recoveryHeading" class="hidden">
+        <h3 id="recoveryTitle"></h3>
+        <p id="recoveryHint" class="hint"></p>
+      </div>
+      <div id="emailField" class="field">
         <label for="email">Email</label>
         <input id="email" type="email" autocomplete="username" />
       </div>
-      <div class="field">
+      <div id="passwordField" class="field">
         <label for="password">Password</label>
         <input id="password" type="password" autocomplete="new-password" />
       </div>
       <button id="authBtn" style="width:100%">Create account</button>
-      <div class="or"><span>or</span></div>
+      <button id="forgotPassword" class="ghost hidden" type="button" style="width:100%;margin-top:10px">Forgot your password?</button>
+      <button id="backToSignin" class="ghost hidden" type="button" style="width:100%;margin-top:10px">Back to sign in</button>
+      <div id="authOr" class="or"><span>or</span></div>
       <button id="googleBtn" class="ghost" style="width:100%;gap:10px"><svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571l6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg>Continue with Google</button>
       <div id="authMsg" class="msg" role="status"></div>
       </div>
@@ -766,24 +772,46 @@ function show(loggedIn) {
 // ---- auth mode (sign up / sign in) ----
 function invitationCallbackURL() { return location.pathname + location.search; }
 let mode = "signup";
+let resetToken = "";
 function setMode(m) {
   mode = m;
   const up = m === "signup";
+  const recovery = m === "forgot" || m === "reset";
+  $("authTabs").classList.toggle("hidden", recovery);
+  $("recoveryHeading").classList.toggle("hidden", !recovery);
+  $("recoveryTitle").textContent = m === "reset" ? "Choose a new password" : "Reset your password";
+  $("recoveryHint").textContent = m === "reset" ? "Use at least 12 characters." : "Enter your account email and we'll send you a reset link.";
+  $("emailField").classList.toggle("hidden", m === "reset");
+  $("passwordField").classList.toggle("hidden", m === "forgot");
+  $("forgotPassword").classList.toggle("hidden", m !== "signin");
+  $("backToSignin").classList.toggle("hidden", !recovery);
+  $("authOr").classList.toggle("hidden", recovery);
+  $("googleBtn").classList.toggle("hidden", recovery);
   $("tabSignup").classList.toggle("active", up);
-  $("tabSignin").classList.toggle("active", !up);
+  $("tabSignin").classList.toggle("active", m === "signin");
   $("nameField").classList.toggle("hidden", !up);
-  $("password").setAttribute("autocomplete", up ? "new-password" : "current-password");
-  $("authBtn").textContent = up ? "Create account" : "Sign in";
+  $("password").setAttribute("autocomplete", up || m === "reset" ? "new-password" : "current-password");
+  $("password").value = "";
+  $("authBtn").textContent = up ? "Create account" : m === "forgot" ? "Send reset link" : m === "reset" ? "Reset password" : "Sign in";
   $("authMsg").textContent = ""; $("authMsg").className = "msg";
 }
 $("tabSignup").onclick = () => setMode("signup");
 $("tabSignin").onclick = () => setMode("signin");
+$("forgotPassword").onclick = () => openAuth("forgot");
+$("backToSignin").onclick = () => { clearResetLink(); openAuth("signin"); };
+
+function clearResetLink() {
+  resetToken = "";
+  const url = new URL(location.href);
+  ["reset", "token", "error"].forEach((key) => url.searchParams.delete(key));
+  history.replaceState(null, "", url.pathname + url.search);
+}
 
 // ---- auth modal (opened from the top-right nav + landing CTAs) ----
 function openAuth(m) {
   setMode(m);
   $("authModal").classList.remove("hidden");
-  const first = m === "signup" ? "name" : "email";
+  const first = m === "signup" ? "name" : m === "reset" ? "password" : "email";
   setTimeout(() => $(first).focus(), 30);
 }
 function closeAuth() { $("authModal").classList.add("hidden"); }
@@ -848,6 +876,8 @@ document.addEventListener("keydown", (e) => {
 });
 
 async function submitAuth() {
+  if ($("authBtn").disabled) return;
+  if (mode === "forgot" || mode === "reset") return submitPasswordRecovery();
   const email = $("email").value.trim();
   const password = $("password").value;
   $("authMsg").textContent = ""; $("authMsg").className = "msg";
@@ -878,6 +908,47 @@ async function submitAuth() {
 }
 $("authBtn").onclick = submitAuth;
 $("password").addEventListener("keydown", (e) => { if (e.key === "Enter") submitAuth(); });
+$("email").addEventListener("keydown", (e) => { if (e.key === "Enter" && mode === "forgot") submitAuth(); });
+
+async function submitPasswordRecovery() {
+  const resetting = mode === "reset";
+  const email = $("email").value.trim();
+  const newPassword = $("password").value;
+  $("authMsg").className = "msg err";
+  if (!resetting && (!email || !$("email").checkValidity())) {
+    $("authMsg").textContent = "Enter a valid email address."; return;
+  }
+  if (resetting && (newPassword.length < 12 || newPassword.length > 128)) {
+    $("authMsg").textContent = "Password must be between 12 and 128 characters."; return;
+  }
+  const redirectTo = new URL(location.href);
+  redirectTo.searchParams.delete("token");
+  redirectTo.searchParams.delete("error");
+  redirectTo.searchParams.set("reset", "1");
+  $("authBtn").disabled = true;
+  $("authMsg").textContent = resetting ? "Resetting password..." : "Sending reset link...";
+  $("authMsg").className = "msg";
+  try {
+    const r = await api(resetting ? "/api/auth/reset-password" : "/api/auth/request-password-reset", {
+      method: "POST", body: JSON.stringify(resetting ? { token: resetToken, newPassword } : { email, redirectTo: redirectTo.href }),
+    });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      if (resetting && data.code === "INVALID_TOKEN") {
+        clearResetLink(); openAuth("forgot");
+        $("authMsg").textContent = "This reset link is invalid or has expired. Request a new one.";
+      } else $("authMsg").textContent = "Could not " + (resetting ? "reset your password" : "send a reset link") + ". Please try again.";
+      $("authMsg").className = "msg err";
+      return;
+    }
+    if (resetting) { clearResetLink(); openAuth("signin"); }
+    $("authMsg").textContent = resetting ? "Password reset. Sign in with your new password." : "If an account exists for this email, you'll receive a reset link. Check your inbox and spam folder.";
+    $("authMsg").className = "msg ok";
+  } catch {
+    $("authMsg").textContent = "Could not reach Clocked. Check your connection and try again.";
+    $("authMsg").className = "msg err";
+  } finally { $("authBtn").disabled = false; }
+}
 
 // Google OAuth: ask better-auth for the provider URL, then hand off the browser.
 $("googleBtn").onclick = async () => {
@@ -893,6 +964,18 @@ $("googleBtn").onclick = async () => {
 
 // ---- session bootstrap ----
 async function init() {
+  const recoveryParams = new URLSearchParams(location.search);
+  if (recoveryParams.get("reset") === "1") {
+    show(false);
+    resetToken = recoveryParams.get("token") || "";
+    openAuth(resetToken && !recoveryParams.has("error") ? "reset" : "forgot");
+    if (!resetToken || recoveryParams.has("error")) {
+      clearResetLink();
+      $("authMsg").textContent = "This reset link is invalid or has expired. Request a new one.";
+      $("authMsg").className = "msg err";
+    }
+    return;
+  }
   const r = await api("/api/auth/get-session");
   const data = r.ok ? await r.json() : null;
   if (data && data.user) { show(true); await afterLogin(false); }

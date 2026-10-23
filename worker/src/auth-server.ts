@@ -130,6 +130,7 @@ export function makeAuth(env: Env) {
       // Data APIs require a verified, approved account (see requireActiveUser).
       requireEmailVerification: false,
       minPasswordLength: 12,
+      revokeSessionsOnPasswordReset: true,
       password: { hash: hashPassword, verify: verifyPassword },
       async sendResetPassword({ user, url }) {
         await sendAuthEmail(env, {
