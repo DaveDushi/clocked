@@ -21,7 +21,8 @@ const BREAK_NOTE = "Breaks are gaps of 2 minutes or more between recorded sessio
 function wsToday() { const now = new Date(); return { y: now.getFullYear(), m: now.getMonth() + 1, d: now.getDate() }; }
 function wsCurrentPeriod() { const t = wsToday(); return wsModel.period(t.y, t.m); }
 function wsIsTeam() { return ws.mode === "team"; }
-function wsCanEdit() { return ws.mode !== "worker"; }
+function wsCanEdit() { return ws.mode !== "worker" || ws.me.editPermission === "full"; }
+function wsCanAdd() { return wsCanEdit() || ws.me.editPermission === "add_only"; }
 function wsMembers() { return ws.page === "stats" && ws.annual && wsIsTeam() ? ws.annual.members : ws.overview ? ws.overview.members : []; }
 function wsMember(id) { return wsMembers().find((m) => m.id === id) || null; }
 function wsRoleTag(role) {
@@ -599,7 +600,7 @@ function wsRefreshDay(force) {
           (editable ? "<button type='button' class='text-button' data-action='edit-session' data-id='" + wsEsc(s.id) + "' data-key='edit:" + wsEsc(s.id) + "' data-edit-control aria-label='Edit session " + s.start + " to " + s.end + "'>Edit</button>" : "<span></span>") + "</div>";
       }).join("");
   }
-  html += (editable ? "<div class='ws-actions-row'><button type='button' data-action='add-session' data-key='add-session' data-edit-control>+ Add missing session</button></div>" : "") +
+  html += (wsCanAdd() ? "<div class='ws-actions-row'><button type='button' data-action='add-session' data-key='add-session' data-edit-control>+ Add missing session</button></div>" : "") +
     (day && wsTimeAccounting([day]) ? "<p class='ws-note'>" + wsEsc(wsTimeAccounting([day])) + ". Paid lunch and overtime are included in worked time.</p>" : "") +
     "<div id='dayMsg' class='ws-feedback' role='status'></div><p class='ws-note'>" + BREAK_NOTE + "</p>";
   body.innerHTML = html;
@@ -619,6 +620,7 @@ async function wsOpenAddDay(userId, opener) {
   wsOpenEdit("", opener);
 }
 function wsOpenEdit(sessionId, opener) {
+  if (sessionId ? !wsCanEdit() : !wsCanAdd()) return;
   const data = wsDayData();
   const segment = sessionId && data ? (data.sessions || []).find((s) => s.id === sessionId) : null;
   if (sessionId && !segment) return;
@@ -664,6 +666,7 @@ async function wsSubmitEdit(event) {
   if (overnight && end >= start) { wsFeedback("editMsg", "A session can be at most 24 hours long."); return; }
   const body = { date, start, end, overnight };
   const editing = ws.edit && ws.edit.id;
+  if (editing ? !wsCanEdit() : !wsCanAdd()) return;
   if (editing) body.id = ws.edit.id;
   wsFeedback("editMsg", "Saving…", "ok");
   const saved = await wsActiveView().edit(editing ? "PATCH" : "POST", body);
@@ -671,7 +674,7 @@ async function wsSubmitEdit(event) {
 }
 async function wsRemoveSession(button) {
   const version = ws.version;
-  if (!ws.edit || !ws.edit.id) return;
+  if (!wsCanEdit() || !ws.edit || !ws.edit.id) return;
   if (!ws.edit.armed) {
     ws.edit.armed = true; button.textContent = "Confirm removal";
     wsFeedback("editMsg", "This removes the session from the timesheet. Select Confirm removal to continue.", "err");
@@ -863,8 +866,11 @@ async function wsOpenPreview(userId, opener) {
 function wsShow(id, visible) { $(id).classList.toggle("hidden", !visible); }
 let settingsScope = "personal";
 let timePolicyVersion = 0;
+let workerPermissionsVersion = 0;
 function wsInvalidateSettings() {
   ++timePolicyVersion;
+  ++workerPermissionsVersion;
+  $("workerPermissionsFields").disabled = true; $("saveWorkerPermissions").disabled = true;
   $("timePolicyFields").disabled = true; $("saveTimePolicy").disabled = true;
   emailSettingsContext = null; ++emailLoadVersion; ++hoursLoadVersion; ++inactivityLoadVersion;
   $("saveEmail").disabled = true; $("saveWorkingHours").disabled = true; $("saveInactivity").disabled = true;
@@ -882,14 +888,14 @@ function wsSelectSettings(scope) {
     $("settings" + name + "Panel").hidden = !selected;
   }
   for (const id of ["setMyHours", "setDesktop", "setPrivacy", "setTeamCreate", "setOperator"]) $("settingsPersonalPanel").appendChild($(id));
-  for (const id of ["setWorkingHours", "setTimePolicy", "setInactivity", "setPlan"]) $("settingsTeamPanel").appendChild($(id));
+  for (const id of ["setWorkingHours", "setWorkerPermissions", "setTimePolicy", "setInactivity", "setPlan"]) $("settingsTeamPanel").appendChild($(id));
   $(team ? "teamDeliverySlot" : "personalDeliverySlot").appendChild($("setDelivery"));
   $("emailTitle").textContent = "Timesheet delivery";
   $("emailMsg").textContent = "";
   wsShow("emailEdit", false); wsShow("emailReadonly", true);
   $("emailReadonly").textContent = "Loading delivery settings...";
   wsShow("setWorkingHours", canManage); wsShow("setInactivity", canManage); wsShow("setPlan", canManage);
-  wsShow("setTimePolicy", canManage);
+  wsShow("setTimePolicy", canManage); wsShow("setWorkerPermissions", canManage);
   const ownsSingle = ws.mode === "personal" && orgPlanKey === "single" && !!orgId && isManagerRoleC(orgRole);
   wsShow("setTeamCreate", ws.mode === "personal" && (ws.me.operator || ownsSingle));
   wsShow("setOperator", !!ws.me.operator);
@@ -897,7 +903,7 @@ function wsSelectSettings(scope) {
     $("planSummary").textContent = (orgPlanKey === "enterprise" ? "Enterprise" : "Team") + " \u00b7 " + memberCount + (orgCap >= 1000000 ? "" : " of " + orgCap) + " member seats used";
     $("teamHoursSlot").appendChild($("workingHoursEditor"));
     $("hoursTargetField").classList.add("hidden"); $("hoursTarget").value = "";
-    loadWorkingHoursEditor(); loadInactivityEditor(); wsLoadTimePolicy();
+    loadWorkingHoursEditor(); loadInactivityEditor(); wsLoadTimePolicy(); wsLoadWorkerPermissions();
   } else loadWorkingHoursSummary();
   loadEmailSettings(team || ownsSingle ? { kind: "team", path: "/api/team/settings?organizationId=" + encodeURIComponent(orgId) } : { kind: "personal", path: "/api/settings" });
 }
@@ -955,6 +961,40 @@ $("timePolicyForm").onsubmit = async (event) => {
   } catch (error) { if (version === timePolicyVersion) wsFeedback("timePolicyMsg", error.message || "Could not save settings.", "err"); }
   finally {
     if (version === timePolicyVersion) { $("timePolicyFields").disabled = false; $("saveTimePolicy").disabled = false; }
+  }
+};
+async function wsLoadWorkerPermissions() {
+  const version = ++workerPermissionsVersion;
+  $("workerPermissionsFields").disabled = true; $("saveWorkerPermissions").disabled = true;
+  wsFeedback("workerPermissionsMsg", "Loading worker permissions...", "loading");
+  try {
+    const response = await api("/api/team/worker-permissions?organizationId=" + encodeURIComponent(orgId));
+    const data = await response.json();
+    if (version !== workerPermissionsVersion) return;
+    if (!response.ok) throw new Error(data.error || "Could not load worker permissions.");
+    $("workerEditPermission").value = data.permission;
+    $("workerPermissionsFields").disabled = false; $("saveWorkerPermissions").disabled = false;
+    wsFeedback("workerPermissionsMsg", "");
+  } catch (error) { if (version === workerPermissionsVersion) wsFeedback("workerPermissionsMsg", error.message, "err"); }
+}
+$("workerPermissionsForm").onsubmit = async (event) => {
+  event.preventDefault();
+  if ($("saveWorkerPermissions").disabled || settingsScope !== "team" || !wsIsTeam() || !isManagerRoleC(orgRole)) return;
+  const version = workerPermissionsVersion;
+  const organization = orgId;
+  $("workerPermissionsFields").disabled = true; $("saveWorkerPermissions").disabled = true;
+  wsFeedback("workerPermissionsMsg", "Saving...", "loading");
+  try {
+    const response = await api("/api/team/worker-permissions?organizationId=" + encodeURIComponent(organization), {
+      method: "POST", body: JSON.stringify({ permission: $("workerEditPermission").value })
+    });
+    const data = await response.json();
+    if (version !== workerPermissionsVersion) return;
+    if (!response.ok) throw new Error(data.error || "Could not save worker permissions.");
+    wsFeedback("workerPermissionsMsg", "Saved. Workers will see the new controls when they reload.", "ok");
+  } catch (error) { if (version === workerPermissionsVersion) wsFeedback("workerPermissionsMsg", error.message, "err"); }
+  finally {
+    if (version === workerPermissionsVersion) { $("workerPermissionsFields").disabled = false; $("saveWorkerPermissions").disabled = false; }
   }
 };
 $("settingsTeamTab").onclick = () => wsSelectSettings("team");
@@ -1249,7 +1289,7 @@ async function startWorkspace(me, selectedTeam) {
       ws.mode = orgPlanKey === "single" ? "personal" : "team";
       emailMode = "manager"; canEditTimes = true;
     } else {
-      ws.mode = "worker"; emailMode = "member"; canEditTimes = false;
+      ws.mode = "worker"; emailMode = "member"; canEditTimes = me.editPermission === "full";
     }
   } else {
     ws.mode = "personal"; emailMode = "solo"; canEditTimes = true;

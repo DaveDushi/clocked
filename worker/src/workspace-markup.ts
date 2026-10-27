@@ -127,6 +127,24 @@ export const WORKSPACE_MARKUP = /* html */ `
         </div>
       </details>
 
+      <details id="setWorkerPermissions" class="hidden">
+        <summary><span>Worker timesheet permissions</span></summary>
+        <form class="body" id="workerPermissionsForm">
+          <fieldset id="workerPermissionsFields" disabled>
+            <div class="ws-settings-field"><label for="workerEditPermission">Workers can change their own sessions</label>
+              <select id="workerEditPermission" aria-describedby="workerPermissionsHelp">
+                <option value="full">Complete control: add, edit and delete</option>
+                <option value="add_only">Partial: add only</option>
+                <option value="none">None: no changes</option>
+              </select>
+              <p id="workerPermissionsHelp" class="hint">Applies to all workers in this team. Managers keep full access. Automatic time tracking continues with every option.</p>
+            </div>
+          </fieldset>
+          <button id="saveWorkerPermissions" class="primary" type="submit" disabled>Save worker permissions</button>
+          <div id="workerPermissionsMsg" class="msg" role="status"></div>
+        </form>
+      </details>
+
       <details id="setTimePolicy" class="hidden">
         <summary><span>Paid lunch and overtime</span></summary>
         <form class="body" id="timePolicyForm">

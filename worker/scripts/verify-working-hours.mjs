@@ -7,6 +7,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { verifyWorkerPermissions } from "./verify-worker-permissions.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const directory = mkdtempSync(join(tmpdir(), "clocked-working-hours-"));
@@ -121,6 +122,7 @@ try {
   assert.deepEqual(await (await delivery("manager", teamSettings)).json(), {
     ...deliverySettings, defaultRecipients: ["manager@example.test"],
   });
+  await verifyWorkerPermissions(base, cookies);
   const path = "/api/team/working-hours?organizationId=acme";
   const hours = { mode: "scheduled", start: "09:00", end: "17:00", days: [1, 2, 3, 4, 5] };
   assert.equal((await fetch(base + path)).status, 401);

@@ -34,6 +34,7 @@ import { buildTimesheet } from "./report";
 import { handleManagerTimePolicy } from "./time-policy.js";
 import { breakStats } from "./break-stats";
 import { handleManualSession } from "./manual-session";
+import { canMutateSessions, getSelfEditPermission, handleWorkerPermissions } from "./worker-permissions.js";
 import { buildTeamOverview, parseSelection, sendTeamTimesheets } from "./team-overview";
 import { getEffectiveDelivery, getTeamDelivery, handleDeliverySettings } from "./delivery";
 import {
@@ -252,14 +253,16 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const orgs = approved ? await membershipsFor(env, user.id) : [];
     const primary = selectPrimaryMembership(orgs);
     const manager = primary !== null && isManagerRole(primary.role);
-    // Team workers (non-managers) may not self-edit times — managers adjust for them.
-    const canEditTimes = primary === null || manager;
+    const editPermission = await getSelfEditPermission(env, user.id);
+    const canEditTimes = editPermission === "full";
     return json({
       user: { id: user.id, email: user.email, emailVerified: user.emailVerified, approved },
       operator: approved && isOperator(user),
       orgs,
       manager,
       canEditTimes,
+      canAddTimes: editPermission !== "none",
+      editPermission,
     });
   }
 
@@ -362,6 +365,12 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     return json({ ...result, ok: failed === 0, sent: result.results.length - failed, failed }, failed ? 502 : 200);
   }
 
+  if (url.pathname === "/api/team/worker-permissions") {
+    const user = await requireActiveUser(req, env);
+    if (user instanceof Response) return user;
+    return handleWorkerPermissions(req, env, user.id);
+  }
+
   if (url.pathname === "/api/team/time-policy") {
     const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
@@ -399,7 +408,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     const orgId = url.searchParams.get("organizationId") ?? "";
     const targetId = url.searchParams.get("userId") ?? "";
     if (!(await isManagerOf(env, user.id, orgId))) return json({ error: "forbidden" }, 403);
-    if (user.id === targetId && req.method !== "GET" && !(await canSelfServiceEditTimes(env, user.id))) {
+    if (user.id === targetId && req.method !== "GET" && !(await canSelfServiceEditTimes(env, user.id, req.method))) {
       return json({ error: "your team manager controls timesheet adjustments" }, 403);
     }
     const { schedule } = await getTeamDelivery(env, orgId);
@@ -439,9 +448,9 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
   if (url.pathname === "/api/manual-session") {
     const user = await requireActiveUser(req, env);
     if (user instanceof Response) return user;
-    // Team workers cannot add/delete their own manual entries (managers use /api/team/manual-session).
+    // Authorize each operation against the worker's current team setting.
     if (req.method === "POST" || req.method === "PATCH" || req.method === "DELETE") {
-      if (!(await canSelfServiceEditTimes(env, user.id))) {
+      if (!(await canSelfServiceEditTimes(env, user.id, req.method))) {
         return json(
           { error: "your team manager controls timesheet adjustments" },
           403,
@@ -655,13 +664,8 @@ async function membershipsFor(env: Env, userId: string) {
   });
 }
 
-/**
- * Solo accounts and org managers can add/edit their own manual times.
- * Pure team workers cannot — only managers adjust timesheets for the team.
- */
-async function canSelfServiceEditTimes(env: Env, userId: string): Promise<boolean> {
-  const membership = await getPrimaryMembership(env, userId);
-  return membership === null || isManagerRole(membership.role);
+async function canSelfServiceEditTimes(env: Env, userId: string, method: string): Promise<boolean> {
+  return canMutateSessions(await getSelfEditPermission(env, userId), method);
 }
 
 /** JSON dump of cloud sessions + activity for GDPR-style portability. */
