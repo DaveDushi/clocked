@@ -1,4 +1,5 @@
 /** Public marketing / SEO endpoints (robots, sitemap, press kit, llms.txt). */
+import { PUBLIC_FONT_HEAD } from "./font-head.js";
 
 const SITE = "https://clocked.easytomanage.com";
 
@@ -110,7 +111,7 @@ export function pressPageResponse(): Response {
 <meta property="og:url" content="${SITE}/press" />
 <meta name="twitter:card" content="summary_large_image" />
 <link rel="icon" type="image/png" href="/favicon.ico" />
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+${PUBLIC_FONT_HEAD}
 <style>
   :root { color-scheme: dark; --bg:#0a0b10; --panel:#151823; --border:#242938; --fg:#e9eaf0; --muted:#8b91a0; --amber:#f2a950; --mono:"IBM Plex Mono",ui-monospace,monospace; }
   * { box-sizing:border-box; }
@@ -205,7 +206,7 @@ export function extensionPrivacyPageResponse(): Response {
 <meta name="description" content="Privacy policy for the clocked Chrome extension: local-only hostname reporting to the desktop app." />
 <link rel="canonical" href="${SITE}/privacy/extension" />
 <link rel="icon" type="image/png" href="/favicon.ico" />
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+${PUBLIC_FONT_HEAD}
 <style>
   :root { color-scheme: dark; --bg:#0a0b10; --panel:#151823; --border:#242938; --fg:#e9eaf0; --muted:#8b91a0; --amber:#f2a950; --mono:"IBM Plex Mono",ui-monospace,monospace; }
   * { box-sizing:border-box; }

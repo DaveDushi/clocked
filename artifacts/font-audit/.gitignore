@@ -1,0 +1,6 @@
+/modules/
+/custom*
+/accepted-*
+/inventory-summary.json
+/hinted-summary.json
+/*-summary.json

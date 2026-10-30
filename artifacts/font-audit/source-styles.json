@@ -1,0 +1,1457 @@
+[
+  {
+    "file": "approval.ts",
+    "line": 67,
+    "text": "return `<!doctype html><html><body style=\"margin:0;background:#f0f1f3;padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;\">"
+  },
+  {
+    "file": "approval.ts",
+    "line": 70,
+    "text": "<div style=\"font-size:22px;font-weight:700;color:#111827\">${esc(title)}</div>"
+  },
+  {
+    "file": "approval.ts",
+    "line": 71,
+    "text": "<p style=\"font-size:14px;color:#4b5563;line-height:1.6\">${esc(body)}</p>"
+  },
+  {
+    "file": "approval.ts",
+    "line": 72,
+    "text": "<p style=\"margin:24px 0\"><a href=\"${esc(url)}\" style=\"display:inline-block;background:#f2a950;color:#221503;text-decoration:none;font-weight:600;padding:12px 18px;border-radius:10px\">${esc(cta)}</a></p>"
+  },
+  {
+    "file": "approval.ts",
+    "line": 85,
+    "text": "<body style=\"margin:0;background:#f0f1f3;padding:40px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;\">"
+  },
+  {
+    "file": "approval.ts",
+    "line": 87,
+    "text": "<h1 style=\"font-size:20px;margin:0 0 12px;color:#111827\">${esc(title)}</h1>${body}</div></body></html>`,"
+  },
+  {
+    "file": "approval.ts",
+    "line": 118,
+    "text": "<button style=\"background:#f2a950;color:#221503;border:0;font-weight:600;padding:12px 18px;border-radius:10px;font-size:15px;cursor:pointer\">Approve</button>"
+  },
+  {
+    "file": "auth-server.ts",
+    "line": 273,
+    "text": "return `<!doctype html><html><body style=\"margin:0;background:#f0f1f3;padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;\">"
+  },
+  {
+    "file": "auth-server.ts",
+    "line": 276,
+    "text": "<div style=\"font-size:22px;font-weight:700;color:#111827\">${esc(title)}</div>"
+  },
+  {
+    "file": "auth-server.ts",
+    "line": 277,
+    "text": "<p style=\"font-size:14px;color:#4b5563;line-height:1.6\">${esc(body)}</p>"
+  },
+  {
+    "file": "auth-server.ts",
+    "line": 278,
+    "text": "<p style=\"margin:24px 0\"><a href=\"${esc(url)}\" style=\"display:inline-block;background:#f2a950;color:#221503;text-decoration:none;font-weight:600;padding:12px 18px;border-radius:10px\">${esc(cta)}</a></p>"
+  },
+  {
+    "file": "auth-server.ts",
+    "line": 279,
+    "text": "<p style=\"font-size:12px;color:#9ca3af;word-break:break-all\">${esc(url)}</p>"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 47,
+    "text": "--mono:\"IBM Plex Mono\",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 53,
+    "text": "font:15px/1.5 \"Space Grotesk\",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 76,
+    "text": "flex:1; min-width:0; padding:10px 12px; border-radius:10px; font-weight:500;"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 77,
+    "text": "background:transparent; color:var(--muted); box-shadow:none; font-size:13.5px;"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 81,
+    "text": "background:linear-gradient(180deg, var(--amber), var(--amber2)); color:#221503; font-weight:700;"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 88,
+    "text": ".section-head h3 { margin:0; font-size:16px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 89,
+    "text": ".section-head .hint { margin:0; color:var(--muted); font-size:13px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 94,
+    "text": "cursor:pointer; list-style:none; padding:12px 0; font-size:13.5px; font-weight:600; color:var(--fg);"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 98,
+    "text": "details.soft > summary::after { content:\"+\"; color:var(--muted); font-family:var(--mono); font-weight:500; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 104,
+    "text": ".token-help { font-size:12.5px; color:var(--muted); margin:10px 0 0; line-height:1.5; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 109,
+    "text": ".wordmark { font-size:21px; font-weight:700; letter-spacing:.04em; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 112,
+    "text": "font-family:var(--mono); font-size:13px; color:var(--muted);"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 114,
+    "text": "background:rgba(255,255,255,.02); font-variant-numeric:tabular-nums;"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 116,
+    "text": "#now b { color:var(--amber); font-weight:500; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 156,
+    "text": ".card h3 { margin:0 0 4px; font-size:15px; letter-spacing:.02em; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 157,
+    "text": ".card .hint { color:var(--muted); font-size:13px; margin:0 0 14px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 166,
+    "text": ".tile label { display:block; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); margin-bottom:4px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 167,
+    "text": ".tile b { font-family:var(--mono); font-size:24px; font-weight:600; font-variant-numeric:tabular-nums; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 169,
+    "text": "@media (max-width:480px) { .tile b { font-size:19px; } }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 172,
+    "text": "label { display:block; font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); margin-bottom:7px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 175,
+    "text": "background:#0b0d13; color:var(--fg); font:inherit; transition:border-color .15s, box-shadow .15s;"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 183,
+    "text": "input[type=month], input[type=date], input[type=time] { font-family:var(--mono); font-size:14px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 190,
+    "text": ".recipient .del { width:42px; padding:10px 0; font-size:18px; line-height:1; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 193,
+    "text": ".mentries-head { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 200,
+    "text": ".mentry span { flex:1; min-width:0; font-family:var(--mono); font-size:13px; color:var(--fg); font-variant-numeric:tabular-nums; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 201,
+    "text": ".mentry .del { flex:none; width:34px; padding:6px 0; font-size:16px; line-height:1; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 203,
+    "text": ".check { display:flex; align-items:center; gap:9px; margin:0; text-transform:none; letter-spacing:0; font-size:14px; color:var(--fg); cursor:pointer; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 205,
+    "text": ".sendday { display:flex; align-items:center; gap:9px; padding-left:26px; color:var(--faint); font-size:14px; flex-wrap:wrap; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 209,
+    "text": "background:#0b0d13; color:var(--fg); font:inherit; font-family:var(--mono); cursor:pointer;"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 218,
+    "text": "padding:10px 18px; border:0; border-radius:10px; font:inherit; font-weight:700; cursor:pointer;"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 228,
+    "text": "font-weight:500; box-shadow:none;"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 231,
+    "text": "button.nav { width:42px; padding:10px 0; font-family:var(--mono); font-size:16px; line-height:1.2; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 233,
+    "text": ".downloadCta .hintline { flex-basis:100%; color:var(--muted); font-size:12px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 250,
+    "text": "th { font-size:11px; color:var(--faint); font-weight:600; text-transform:uppercase; letter-spacing:.12em; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 251,
+    "text": "td.num, th.num { text-align:right; font-family:var(--mono); font-size:14px; font-variant-numeric:tabular-nums; white-space:nowrap; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 253,
+    "text": "td.day .dow { display:inline-block; width:3.2em; color:var(--muted); font-size:13px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 255,
+    "text": "td.day b { font-family:var(--mono); font-weight:500; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 281,
+    "text": ".timeline-head b { font-size:13.5px; letter-spacing:.02em; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 282,
+    "text": ".timeline-head .sub { font-size:12.5px; color:var(--muted); font-weight:400; margin-left:8px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 309,
+    "text": "fill:var(--faint); font-family:var(--mono); font-size:9px; text-anchor:middle; dominant-baseline:central;"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 317,
+    "text": "fill:var(--amber); font-family:var(--mono); font-size:18px; font-weight:600;"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 321,
+    "text": "fill:var(--faint); font-family:var(--mono); font-size:8px; letter-spacing:.14em;"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 325,
+    "text": "display:flex; gap:12px; font-size:11px; color:var(--muted); font-family:var(--mono);"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 339,
+    "text": "padding:10px 14px; border-top:1px solid var(--border); font-size:13px;"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 343,
+    "text": "font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--fg); font-size:12.5px;"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 347,
+    "text": "font-family:var(--mono); font-size:11px; letter-spacing:.04em;"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 354,
+    "text": "font-family:var(--mono); font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums;"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 356,
+    "text": ".timeline-empty { padding:18px 14px; color:var(--muted); font-size:13.5px; text-align:center; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 357,
+    "text": ".timeline-hint { margin:10px 0 0; font-size:12.5px; color:var(--faint); }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 360,
+    "text": ".total b { font-family:var(--mono); font-size:26px; font-weight:600; color:var(--amber); text-shadow:0 0 12px rgba(242,169,80,.2); font-variant-numeric:tabular-nums; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 367,
+    "text": ".top.bare #navRequestAccess { background:transparent; color:var(--fg); border:1px solid var(--border); box-shadow:none; font-weight:500; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 372,
+    "text": ".hero .eyebrow { color:var(--muted); font-size:13px; margin:0 0 16px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 373,
+    "text": ".hero h1 { font-size:clamp(32px,5vw,46px); line-height:1.15; letter-spacing:-.035em; margin:0 0 18px; max-width:560px; font-weight:500; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 374,
+    "text": ".hero p { color:#a7adbb; font-size:16px; max-width:540px; margin:0; line-height:1.65; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 377,
+    "text": ".hero .trust { margin-top:16px; font-size:13px; color:var(--muted); }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 379,
+    "text": ".access-head h2, .faq h2 { font-size:20px; font-weight:500; margin:0 0 8px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 380,
+    "text": ".access-head > p { color:var(--muted); margin:0; max-width:560px; font-size:14px; line-height:1.6; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 382,
+    "text": ".access-option h3 { font-size:15px; font-weight:500; margin:0 0 6px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 383,
+    "text": ".access-option p { color:var(--muted); margin:0 0 12px; font-size:14px; line-height:1.6; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 384,
+    "text": "#landingView .access-option button { background:transparent; color:var(--fg); padding:4px 0; border-radius:3px; font-size:14px; font-weight:500; text-decoration:underline; text-underline-offset:5px; white-space:normal; text-align:left; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 387,
+    "text": ".faq summary { cursor:pointer; padding:16px 0; font-size:14px; color:var(--fg); }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 388,
+    "text": ".faq details p { margin:0 0 16px; color:var(--muted); font-size:14px; line-height:1.6; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 390,
+    "text": ".footer-note { display:flex; flex-wrap:wrap; gap:12px 22px; margin:28px 0 0; font-size:13px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 398,
+    "text": ".top.bare #topAuth button { padding:8px; font-size:12px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 400,
+    "text": ".top.bare .wordmark { font-size:18px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 413,
+    "text": ".tabs button { flex:1; background:transparent; color:var(--muted); box-shadow:none; font-weight:500; padding:9px 0; border-radius:9px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 414,
+    "text": ".tabs button.active { background:linear-gradient(180deg, var(--amber), var(--amber2)); color:#221503; font-weight:700; box-shadow:0 2px 10px rgba(242,169,80,.25); }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 416,
+    "text": ".or { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:12px; margin:14px 0; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 422,
+    "text": "flex:1; min-width:0; font-family:var(--mono); font-size:14px; color:var(--amber);"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 425,
+    "text": "font-variant-ligatures:none;"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 433,
+    "text": ".token-row-name { font-size:13.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 434,
+    "text": ".token-row-meta { margin-top:3px; color:var(--muted); font:12px var(--mono); }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 437,
+    "text": "border-radius:12px; padding:12px 14px; margin-bottom:16px; font-size:14px; color:var(--fg);"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 440,
+    "text": "code.inline { font-family:var(--mono); font-size:13px; color:var(--fg); background:#0b0d13; border:1px solid var(--border); border-radius:6px; padding:1px 6px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 441,
+    "text": ".steps { margin:12px 0 0; padding-left:18px; color:var(--muted); font-size:13px; line-height:1.6; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 444,
+    "text": ".setupbox .muted { font-size:13px; flex:1; min-width:220px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 450,
+    "text": "#topAuth button { padding:8px 14px; font-size:14px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 458,
+    "text": ".modal-close { position:absolute; top:12px; right:12px; width:32px; height:32px; padding:0; font-size:18px; line-height:1; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 465,
+    "text": ".msg { font-size:13px; margin-top:10px; min-height:18px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 472,
+    "text": ".pv-head b { font-size:13px; letter-spacing:.02em; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 473,
+    "text": ".pv-head button { padding:5px 12px; font-size:13px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 475,
+    "text": "table.pv { border-collapse:collapse; width:100%; font-family:var(--mono); font-size:12px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 477,
+    "text": "table.pv th { position:sticky; top:0; background:var(--panel); color:var(--faint); font-weight:600; text-transform:none; letter-spacing:0; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 479,
+    "text": "table.pv tr.pv-total td { font-weight:700; color:var(--amber); border-bottom:0; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 481,
+    "text": ".pv-empty { padding:16px; color:var(--muted); font-size:14px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 488,
+    "text": ".rosterrow .rname { font-weight:500; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 489,
+    "text": ".rosterrow .remail { font-size:12px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 491,
+    "text": ".rosterrow button { padding:6px 10px; font-size:13px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 492,
+    "text": ".badge { font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:3px 8px; border-radius:999px; border:1px solid var(--border); color:var(--muted); }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 496,
+    "text": ".invitelink input { flex:1; font-family:var(--mono); font-size:12px; }"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 519,
+    "text": "background:#151823; color:var(--fg); font:inherit; line-height:1.5;"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 528,
+    "text": "background:transparent; color:var(--fg); font:inherit; cursor:pointer;"
+  },
+  {
+    "file": "dashboard.ts",
+    "line": 1640,
+    "text": "$(\"emailReadonly\").innerHTML = \"<p class='muted' style='font-size:13.5px;margin:0;line-height:1.6'>Your timesheet is \" + when + \" to <b style='color:var(--fg)'>\" + who + \"</b> — set by your team manager.</p>\";"
+  },
+  {
+    "file": "email.ts",
+    "line": 47,
+    "text": "<div style=\"font-size:22px;font-weight:700;color:#111827;line-height:1;\">${value}</div>"
+  },
+  {
+    "file": "email.ts",
+    "line": 48,
+    "text": "<div style=\"font-size:12px;color:#6b7280;margin-top:6px;text-transform:uppercase;letter-spacing:.04em;\">${label}</div>"
+  },
+  {
+    "file": "email.ts",
+    "line": 62,
+    "text": "? `<tr><td style=\"padding:8px 28px 4px;font-size:13px;font-weight:600;color:#111827;\">By project</td></tr>"
+  },
+  {
+    "file": "email.ts",
+    "line": 70,
+    "text": "<body style=\"margin:0;background:#f0f1f3;padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;\">"
+  },
+  {
+    "file": "email.ts",
+    "line": 73,
+    "text": "<div style=\"font-size:13px;color:#6b7280;letter-spacing:.04em;text-transform:uppercase;\">Timesheet</div>"
+  },
+  {
+    "file": "email.ts",
+    "line": 74,
+    "text": "<div style=\"font-size:24px;font-weight:700;color:#111827;margin-top:2px;\">${esc(title)}</div>"
+  },
+  {
+    "file": "email.ts",
+    "line": 83,
+    "text": "${accounting ? `<tr><td style=\"padding:12px 28px;font-size:13px;color:#6b7280;\">${esc(accounting)}</td></tr>` : \"\"}"
+  },
+  {
+    "file": "email.ts",
+    "line": 85,
+    "text": "<tr><td style=\"padding:20px 28px 8px;color:#9ca3af;font-size:12px;\">"
+  },
+  {
+    "file": "email.ts",
+    "line": 89,
+    "text": "<div style=\"border-top:1px solid #f0f1f3;padding-top:14px;font-size:11px;color:#b6bcc6;line-height:1.5;\">"
+  },
+  {
+    "file": "email.ts",
+    "line": 90,
+    "text": "Sent automatically by <a href=\"${MARKETING_URL}\" style=\"color:#9ca3af;text-decoration:none;font-weight:600;\">clocked</a> — automatic time tracking for Windows. No timers, no screenshots."
+  },
+  {
+    "file": "email.ts",
+    "line": 257,
+    "text": "const html = `<html><body style=\"font-family:Arial,sans-serif;color:#111827\"><h1>${esc(title)}</h1><p>${explanation}</p>` +"
+  },
+  {
+    "file": "email.ts",
+    "line": 321,
+    "text": "<body style=\"margin:0;background:#f0f1f3;padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;\">"
+  },
+  {
+    "file": "email.ts",
+    "line": 324,
+    "text": "<div style=\"font-size:13px;color:#6b7280;letter-spacing:.04em;text-transform:uppercase;\">New access request</div>"
+  },
+  {
+    "file": "email.ts",
+    "line": 325,
+    "text": "<div style=\"font-size:22px;font-weight:700;color:#111827;margin-top:2px;\">${esc(lead.name)}</div>"
+  },
+  {
+    "file": "email.ts",
+    "line": 328,
+    "text": "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"font-size:14px;color:#111827;\">"
+  },
+  {
+    "file": "email.ts",
+    "line": 338,
+    "text": "<div style=\"font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;\">Message</div>"
+  },
+  {
+    "file": "email.ts",
+    "line": 339,
+    "text": "<div style=\"font-size:14px;color:#111827;line-height:1.6;white-space:pre-wrap;\">${esc(lead.message || \"—\")}</div>"
+  },
+  {
+    "file": "legal-pages.ts",
+    "line": 17,
+    "text": ":root { color-scheme:dark; background:#0a0b10; color:#e9eaf0; font-family:system-ui,-apple-system,\"Segoe UI\",sans-serif; }"
+  },
+  {
+    "file": "legal-pages.ts",
+    "line": 19,
+    "text": "body { margin:0; font-size:17px; line-height:1.65; }"
+  },
+  {
+    "file": "legal-pages.ts",
+    "line": 26,
+    "text": "h1 { margin:0; font-size:clamp(30px,6vw,44px); line-height:1.15; letter-spacing:-.03em; }"
+  },
+  {
+    "file": "legal-pages.ts",
+    "line": 27,
+    "text": "h2 { margin:36px 0 10px; font-size:22px; line-height:1.3; }"
+  },
+  {
+    "file": "legal-pages.ts",
+    "line": 31,
+    "text": ".updated { color:#b9becb; font-size:15px; margin:16px 0 28px; }"
+  },
+  {
+    "file": "legal-pages.ts",
+    "line": 32,
+    "text": "footer { margin-top:48px; font-size:15px; }"
+  },
+  {
+    "file": "marketing-agent.ts",
+    "line": 427,
+    "text": ":root { color-scheme:dark; --bg:#0a0b10; --panel:#151823; --border:#242938; --fg:#e9eaf0; --muted:#8b91a0; --amber:#f2a950; --mono:\"IBM Plex Mono\",monospace; }"
+  },
+  {
+    "file": "marketing-agent.ts",
+    "line": 428,
+    "text": "body { margin:0; font:16px/1.55 \"Space Grotesk\",system-ui,sans-serif; color:var(--fg); background:var(--bg); }"
+  },
+  {
+    "file": "marketing-agent.ts",
+    "line": 432,
+    "text": "h1 { margin:0 0 8px; font-size:28px; }"
+  },
+  {
+    "file": "marketing-agent.ts",
+    "line": 434,
+    "text": ".nav { margin-bottom:20px; font-size:14px; }"
+  },
+  {
+    "file": "marketing-agent.ts",
+    "line": 437,
+    "text": ".card h2 { margin:0 0 8px; font-size:17px; }"
+  },
+  {
+    "file": "marketing-agent.ts",
+    "line": 438,
+    "text": ".card p { margin:0; color:var(--muted); font-size:14.5px; }"
+  },
+  {
+    "file": "marketing-agent.ts",
+    "line": 439,
+    "text": ".meta { font-family:var(--mono); font-size:11px; color:var(--amber); letter-spacing:.06em; text-transform:uppercase; margin-bottom:6px; }"
+  },
+  {
+    "file": "marketing-agent.ts",
+    "line": 440,
+    "text": ".empty { color:var(--muted); font-size:14px; }"
+  },
+  {
+    "file": "marketing-pages.ts",
+    "line": 115,
+    "text": ":root { color-scheme: dark; --bg:#0a0b10; --panel:#151823; --border:#242938; --fg:#e9eaf0; --muted:#8b91a0; --amber:#f2a950; --mono:\"IBM Plex Mono\",ui-monospace,monospace; }"
+  },
+  {
+    "file": "marketing-pages.ts",
+    "line": 117,
+    "text": "body { margin:0; font:16px/1.55 \"Space Grotesk\",system-ui,sans-serif; color:var(--fg); background:var(--bg); }"
+  },
+  {
+    "file": "marketing-pages.ts",
+    "line": 121,
+    "text": "h1 { font-size:28px; margin:0 0 8px; letter-spacing:.02em; }"
+  },
+  {
+    "file": "marketing-pages.ts",
+    "line": 122,
+    "text": "h2 { font-size:18px; margin:28px 0 10px; color:var(--amber); letter-spacing:.04em; text-transform:uppercase; font-size:13px; font-family:var(--mono); }"
+  },
+  {
+    "file": "marketing-pages.ts",
+    "line": 127,
+    "text": "code { font-family:var(--mono); font-size:13px; color:var(--fg); background:#0b0d13; padding:2px 6px; border-radius:6px; border:1px solid var(--border); }"
+  },
+  {
+    "file": "marketing-pages.ts",
+    "line": 129,
+    "text": ".nav { margin-bottom:24px; font-size:14px; }"
+  },
+  {
+    "file": "marketing-pages.ts",
+    "line": 210,
+    "text": ":root { color-scheme: dark; --bg:#0a0b10; --panel:#151823; --border:#242938; --fg:#e9eaf0; --muted:#8b91a0; --amber:#f2a950; --mono:\"IBM Plex Mono\",ui-monospace,monospace; }"
+  },
+  {
+    "file": "marketing-pages.ts",
+    "line": 212,
+    "text": "body { margin:0; font:16px/1.55 \"Space Grotesk\",system-ui,sans-serif; color:var(--fg); background:var(--bg); }"
+  },
+  {
+    "file": "marketing-pages.ts",
+    "line": 216,
+    "text": "h1 { font-size:28px; margin:0 0 8px; }"
+  },
+  {
+    "file": "marketing-pages.ts",
+    "line": 217,
+    "text": "h2 { font-size:13px; margin:28px 0 10px; color:var(--amber); letter-spacing:.04em; text-transform:uppercase; font-family:var(--mono); }"
+  },
+  {
+    "file": "marketing-pages.ts",
+    "line": 222,
+    "text": "code { font-family:var(--mono); font-size:13px; color:var(--fg); background:#0b0d13; padding:2px 6px; border-radius:6px; border:1px solid var(--border); }"
+  },
+  {
+    "file": "marketing-pages.ts",
+    "line": 224,
+    "text": ".nav { margin-bottom:24px; font-size:14px; }"
+  },
+  {
+    "file": "marketing-pages.ts",
+    "line": 227,
+    "text": ".updated { font-size:13px; color:var(--muted); font-family:var(--mono); }"
+  },
+  {
+    "file": "security.ts",
+    "line": 58,
+    "text": "\"font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; \" +"
+  },
+  {
+    "file": "workspace-script.ts",
+    "line": 447,
+    "text": "\"<tr class='ws-ref'><th scope='row' style='font-weight:400;text-align:left;padding:12px 0;font-size:12px'>Team median <small>(\" + median.members + \" with recorded days)</small></th><td class='num'>—</td><td class='num'>—</td><td class='num'>\" + (median.breaksPerDay == null ? \"—\" : wsModel.rate(median.breaksPerDay)) + \"</td><td class='num'>\" + (median.avgBreakMinutes == null ? \"—\" : wsModel.shortDuration(median.avgBreakMinutes)) + \"</td></tr>\" +"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 15,
+    "text": "background:var(--bg); font-size:14px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 19,
+    "text": ".ws h1 { font-size:24px; font-weight:500; letter-spacing:-.8px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 20,
+    "text": ".ws h2 { font-size:19px; font-weight:500; letter-spacing:-.4px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 21,
+    "text": ".ws h3 { font-size:14px; font-weight:500; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 22,
+    "text": ".ws small { font-size:12px; color:var(--wsmuted); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 23,
+    "text": ".ws .mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 24,
+    "text": ".ws label { display:block; text-transform:none; letter-spacing:0; font-size:12px; color:var(--wsmuted); margin:0; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 26,
+    "text": "color:var(--fg); border-radius:8px; padding:9px 12px; font:inherit; font-weight:500; font-size:13px; box-shadow:none; transform:none; cursor:pointer; white-space:nowrap; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 29,
+    "text": ".ws button.primary, .ws a.btn.primary { background:var(--fg); color:var(--bg); border-color:transparent; font-weight:600; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 32,
+    "text": ".ws .text-button { border:0; padding:4px 0; color:var(--wsmuted); font-size:12px; background:none; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 34,
+    "text": ".ws input, .ws select, .ws textarea { border:1px solid var(--border); border-radius:8px; background:var(--panel); color:var(--fg); padding:9px 11px; font:inherit; font-size:13px; min-width:0; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 47,
+    "text": ".ws-brand .wordmark { font-size:20px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 48,
+    "text": ".ws-name { color:var(--wsmuted); font-size:12px; padding-left:18px; margin-left:8px; border-left:1px solid var(--border); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 55,
+    "text": ".ws-avatar { width:32px; height:32px; padding:0 !important; border-radius:50% !important; font:11px var(--mono) !important; color:var(--amber) !important; background:rgba(242,169,80,.04) !important; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 57,
+    "text": ".ws-nav button { border:0; border-radius:0; padding:15px 0; background:none; color:var(--wsmuted); font-size:13px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 63,
+    "text": ".ws-title .count { font-size:13px; color:var(--wsmuted); margin-left:10px; font-weight:400; letter-spacing:0; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 64,
+    "text": ".ws-title p { margin-top:5px; font-size:12px; color:var(--wsmuted); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 67,
+    "text": ".ws-month { width:auto; max-width:100%; font:12px var(--mono) !important; padding:9px 10px !important; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 68,
+    "text": ".ws-search { width:200px; font-size:12px !important; background:none !important; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 72,
+    "text": ".ws-month-summary strong { display:block; font-size:32px; font-weight:400; margin-top:6px; letter-spacing:-1px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 73,
+    "text": ".ws-month-summary p { text-align:right; font-size:13px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 76,
+    "text": ".ws-week summary { list-style:none; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 0; cursor:pointer; font-size:13px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 78,
+    "text": ".ws-week summary small { display:inline; font-size:11px; margin-left:14px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 86,
+    "text": ".ws-date-stamp small { font-size:11px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 87,
+    "text": ".ws-date-stamp b { font-size:24px; line-height:1.2; font-weight:400; font-variant-numeric:tabular-nums; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 89,
+    "text": ".ws-day-span { font:12px var(--mono); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 93,
+    "text": ".ws-day-rhythm small { font-size:11px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 94,
+    "text": ".ws-day-amount { text-align:right; font-size:16px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 95,
+    "text": ".ws-day-amount small { display:block; font:11px \"Space Grotesk\",sans-serif; margin-top:8px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 100,
+    "text": ".ws-person-initials { width:36px; height:36px; border:1px solid #414141; border-radius:50%; display:grid; place-items:center; font:11px var(--mono); color:var(--wsmuted); flex:none; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 101,
+    "text": ".ws-person-name { flex:1; font-size:14px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 102,
+    "text": ".ws-person-name small, .ws-person-time small { display:block; font:11px \"Space Grotesk\",sans-serif; margin-top:5px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 105,
+    "text": ".ws-person-time { text-align:right; font-size:17px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 107,
+    "text": ".ws-person-overtime { text-align:right; font-size:17px; flex:0 0 92px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 108,
+    "text": ".ws-person-overtime small { display:block; font:11px \"Space Grotesk\",sans-serif; margin-top:5px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 111,
+    "text": ".ws-day-overtime { text-align:right; font-size:16px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 112,
+    "text": ".ws-day-overtime small { display:block; font:11px \"Space Grotesk\",sans-serif; margin-top:8px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 114,
+    "text": ".ws-total-hours small { display:block; font-size:11px; color:var(--wsmuted); margin-top:5px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 117,
+    "text": ".ws-ledger-team-total { display:flex; justify-content:space-between; padding:22px 20px; font-size:13px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 118,
+    "text": ".ws-ledger-team-total strong { font-size:18px; font-weight:400; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 122,
+    "text": ".ws-month-summary strong { font-size:26px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 123,
+    "text": ".ws-month-summary p { max-width:140px; font-size:12px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 126,
+    "text": ".ws-day-amount { font-size:13px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 127,
+    "text": ".ws-day-span { font-size:11px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 131,
+    "text": ".ws-person-time { font-size:14px; white-space:nowrap; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 132,
+    "text": ".ws-person-time, .ws-person-overtime { flex-basis:68px; font-size:14px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 134,
+    "text": ".ws-day-overtime { font-size:13px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 139,
+    "text": ".ws th { position:static; background:none; padding:12px 0; color:var(--wsmuted); font-size:11px; font-weight:400; text-transform:none; letter-spacing:0; border-bottom:1px solid var(--border); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 140,
+    "text": ".ws td { border-bottom:1px solid rgba(36,41,56,.7); padding:0; font-size:13px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 142,
+    "text": ".ws th.num, .ws td.num { text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 143,
+    "text": ".ws td.num { font-size:13px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 145,
+    "text": ".ws-roster th.days, .ws-roster td.days { width:70px; text-align:right; color:var(--wsmuted); font:11px var(--mono); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 147,
+    "text": ".ws-member { display:flex !important; justify-content:flex-start !important; width:100%; min-height:54px; padding:13px 0 !important; border:0 !important; border-radius:0 !important; background:none !important; font-size:13px !important; gap:11px !important; text-align:left; white-space:normal !important; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 149,
+    "text": ".ws-role { font-size:10px; color:var(--wsmuted); font-family:var(--mono); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 153,
+    "text": ".ws-total td { padding:15px 0; border-bottom:0; color:var(--wsmuted); font-size:12px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 154,
+    "text": ".ws-total td.num { font-size:14px; color:var(--fg); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 155,
+    "text": ".ws-bottom { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:18px; font-size:11px; color:var(--wsmuted); flex-wrap:wrap; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 156,
+    "text": ".ws-bottom .text-button { font-size:11px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 157,
+    "text": ".ws-empty { padding:34px 0; color:var(--wsmuted); font-size:13px; text-align:center; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 158,
+    "text": ".ws-state { padding:48px 0; color:var(--wsmuted); font-size:13px; text-align:center; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 163,
+    "text": ".ws-detail-head strong { font-weight:500; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 164,
+    "text": ".ws-detail-head small { font-size:11px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 166,
+    "text": ".ws-daily-head { font-size:10px; color:var(--wsmuted); padding:0 0 10px; border-bottom:1px solid var(--border); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 168,
+    "text": ".ws-daily { width:100%; text-align:left; border:0 !important; border-bottom:1px solid var(--border) !important; border-radius:0 !important; padding:10px 0 !important; background:none !important; font-size:12px !important; white-space:normal !important; justify-content:initial !important; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 170,
+    "text": ".ws-daily .span, .ws-span { font:11px var(--mono); color:var(--wsmuted); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 171,
+    "text": ".ws-daily .brk { text-align:right; font:11px var(--mono); color:var(--wsmuted); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 172,
+    "text": ".ws-daily .hrs { text-align:right; font:12px var(--mono); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 173,
+    "text": ".ws-subtotal { display:flex; justify-content:space-between; gap:12px; padding:14px 0 0; font-size:11px; color:var(--wsmuted); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 176,
+    "text": ".ws-detail-actions .text-button { font-size:11px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 180,
+    "text": ".ws-day-link { border:0 !important; border-radius:0 !important; padding:13px 0 !important; background:none !important; font-size:12px !important; justify-content:flex-start !important; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 183,
+    "text": ".ws-note { font-size:11px; color:var(--wsmuted); margin-top:18px; line-height:1.7; max-width:760px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 184,
+    "text": ".ws-locked { font-size:12px; color:var(--wsmuted); margin-top:14px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 186,
+    "text": ".ws-projects h2 { font-size:15px; letter-spacing:0; margin-bottom:12px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 187,
+    "text": ".ws-project { display:grid; grid-template-columns:minmax(0,160px) 1fr 64px; gap:12px; align-items:center; font-size:12px; margin:7px 0; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 194,
+    "text": ".ws-metric label { font-size:12px; min-height:18px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 195,
+    "text": ".ws-metric strong { font:24px var(--mono); display:block; letter-spacing:-1px; margin-top:6px; font-weight:400; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 196,
+    "text": ".ws-metric small { font-size:12px; display:block; margin-top:7px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 200,
+    "text": ".ws-section-head h2 { font-size:15px; letter-spacing:0; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 201,
+    "text": ".ws-section-head select { font-size:11px; padding:7px 9px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 204,
+    "text": ".ws-compare th { white-space:normal; line-height:1.4; padding-left:12px; font-size:11px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 206,
+    "text": ".ws-compare td { padding:12px 0 12px 12px; font-size:12px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 208,
+    "text": ".ws-compare td.num { font-size:11px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 209,
+    "text": ".ws-compare button { padding:0; border:0; background:none; font-size:12px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 217,
+    "text": ".ws-heat-name { position:sticky; left:0; z-index:1; background:var(--bg) !important; font-size:11px !important; color:var(--wsmuted) !important; border:0 !important; padding:5px 6px 5px 0 !important; justify-content:flex-start !important; overflow:hidden; text-overflow:ellipsis; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 220,
+    "text": ".ws-heat-label { font:9px var(--mono); text-align:center; color:var(--wsmuted); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 224,
+    "text": ".ws-legend { display:flex; gap:6px; align-items:center; color:var(--wsmuted); font-size:10px; margin-top:16px; flex-wrap:wrap; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 236,
+    "text": ".ws-contributions .ws-section-head h2 { font-size:16px; font-weight:400; letter-spacing:0; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 239,
+    "text": ".ws-chart-footer { display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-top:12px; font-size:11px; color:var(--wsmuted); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 240,
+    "text": ".ws-recent-days h3 { margin-bottom:10px; color:var(--wsmuted); font-size:12px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 241,
+    "text": ".ws-recent-days button { width:100%; display:flex; justify-content:space-between; border:0; border-bottom:1px solid var(--border); border-radius:0; padding:12px 0; font-size:13px; background:none; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 247,
+    "text": ".ws-zoom button { min-height:36px; font-size:12px; padding:7px 10px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 248,
+    "text": ".ws-zoom-dates label { display:grid; gap:5px; font-size:11px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 249,
+    "text": ".ws-zoom-dates input { width:137px; padding:7px 8px; font-size:12px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 251,
+    "text": ".ws-range-axis { display:flex; flex-direction:column; justify-content:space-between; height:164px; width:32px; flex:none; font:11px var(--mono); color:var(--wsmuted); text-align:right; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 258,
+    "text": ".ws-range-label { position:absolute; top:calc(100% + 8px); left:0; font:11px var(--mono); color:var(--wsmuted); white-space:nowrap; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 261,
+    "text": ".ws-range-note { font-size:11px; color:var(--wsmuted); margin-top:12px !important; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 262,
+    "text": ".ws-cal-months { margin-bottom:8px; font-size:12px; color:var(--wsmuted); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 264,
+    "text": ".ws-cal-day { position:sticky; left:0; z-index:2; width:30px; background:var(--bg); font-size:11px; color:var(--wsmuted); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 265,
+    "text": ".ws-cal-head { font:11px var(--mono); color:var(--wsmuted); text-align:center; padding-bottom:5px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 269,
+    "text": ".ws-contributions .ws-legend { font-size:11px; margin:0; gap:4px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 283,
+    "text": ".ws-dialog-head .text-button { font-size:18px; padding:4px 8px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 284,
+    "text": ".ws-dialog > p, .ws-dialog .sub { font-size:12px; color:var(--wsmuted); margin:0 0 14px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 289,
+    "text": ".ws-feedback { font-size:12px; margin-top:14px; min-height:0; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 291,
+    "text": ".ws-day-summary, .ws-sheet-summary { display:flex; gap:24px; padding:4px 0 18px; border-bottom:1px solid var(--border); font-size:11px; color:var(--wsmuted); flex-wrap:wrap; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 292,
+    "text": ".ws-day-summary strong, .ws-sheet-summary strong { display:block; color:var(--fg); font:17px var(--mono); margin-top:5px; font-weight:400; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 293,
+    "text": ".ws-timeline { display:grid; grid-template-columns:100px minmax(0,1fr) 48px 86px; align-items:center; gap:12px; padding:14px 0; border-bottom:1px solid var(--border); font-size:12px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 294,
+    "text": ".ws-timeline .time, .ws-timeline .dur { font:11px var(--mono); color:var(--wsmuted); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 300,
+    "text": ".ws-timeline .source { display:block; font-size:10px; color:var(--wsmuted); margin:3px 0 0 15px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 302,
+    "text": ".ws-timeline .text-button { font-size:11px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 303,
+    "text": ".ws-timeline .ws-gap-work { justify-self:end; white-space:nowrap; padding:5px 8px; border:1px solid rgba(242,169,80,.22); border-radius:6px; background:rgba(242,169,80,.06); color:var(--amber); font-size:10px; font-weight:500; line-height:1.3; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 306,
+    "text": ".ws-check { display:flex !important; align-items:center; gap:9px; margin:14px 0 0 !important; font-size:12px; color:var(--fg) !important; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 308,
+    "text": ".ws-notice { padding:11px 12px; border:1px solid rgba(242,169,80,.2); border-radius:8px; color:var(--amber) !important; background:rgba(242,169,80,.03); font-size:12px; margin:0 0 14px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 309,
+    "text": ".ws-complete { font-size:12px; color:var(--ok) !important; margin:0 0 14px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 310,
+    "text": ".ws-recipients { font-size:12px; padding:12px 0; border-top:1px solid var(--border); display:flex; justify-content:space-between; gap:14px; flex-wrap:wrap; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 312,
+    "text": ".ws-recipients strong { font-weight:400; word-break:break-all; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 313,
+    "text": ".ws-select-head { display:flex; align-items:center; justify-content:space-between; font-size:11px; gap:12px; padding:14px 0 10px; border-top:1px solid var(--border); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 320,
+    "text": ".ws-send-member strong { font-size:12px; font-weight:400; display:block; color:var(--fg); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 321,
+    "text": ".ws-send-member small { display:block; font-size:10px; margin-top:3px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 323,
+    "text": ".ws-send-member .mono { font-size:11px; color:var(--fg); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 324,
+    "text": ".ws-send-total { display:flex; justify-content:space-between; color:var(--wsmuted); font-size:11px; gap:15px; margin-top:14px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 325,
+    "text": ".ws-send-total strong { color:var(--fg); font-weight:400; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 327,
+    "text": ".ws-results { font-size:11px; margin-top:10px; color:var(--err); }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 338,
+    "text": ".ws-settings details > summary { cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 0; list-style:none; font-size:13px; line-height:1.5; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 340,
+    "text": ".ws-settings details > summary::after { content:\"+\"; color:var(--wsmuted); font-family:var(--mono); flex:none; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 342,
+    "text": ".ws-settings summary small { display:block; margin-top:4px; font-size:11px; line-height:1.5; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 346,
+    "text": ".ws-settings .body .hint, .ws-settings .token-help { font-size:12px; color:var(--wsmuted); margin:0; line-height:1.6; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 354,
+    "text": ".ws-settings .check, .ws-settings fieldset label.check { display:flex; align-items:flex-start; gap:8px; margin:0; font-size:12px; line-height:1.6; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 371,
+    "text": ".ws-settings .tokenbox .token { font-size:12px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 377,
+    "text": ".ws-settings .msg, .ws-settings .ws-feedback { font-size:12px; margin:0; line-height:1.6; overflow-wrap:anywhere; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 383,
+    "text": ".ws-settings .ws-settings-help > button { width:24px; height:24px; padding:0; border-radius:50%; color:var(--wsmuted); font-size:12px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 384,
+    "text": ".ws-settings .ws-settings-help [role=tooltip] { position:absolute; z-index:5; right:0; top:calc(100% + 6px); width:240px; max-width:calc(100vw - 72px); padding:10px 12px; border:1px solid #485064; border-radius:8px; background:#1b1f2b; color:var(--fg); box-shadow:0 8px 24px rgba(0,0,0,.35); font-size:12px; line-height:1.6; visibility:hidden; opacity:0; pointer-events:none; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 393,
+    "text": ".ws-plan { border-top:1px solid var(--border); padding:15px 0; font-size:13px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 394,
+    "text": ".ws-plan small { display:block; margin-top:4px; font-size:11px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 395,
+    "text": ".ws-invite-row { display:flex; align-items:center; justify-content:space-between; gap:15px; padding:12px 0; border-top:1px solid var(--border); font-size:12px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 396,
+    "text": ".ws-invite-row small { display:block; font-size:10px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 409,
+    "text": ".ws-metric strong { font-size:21px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 421,
+    "text": ".ws h1 { font-size:24px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 425,
+    "text": ".ws-team-actions button { font-size:12px; padding:8px 10px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 438,
+    "text": ".ws-timeline { grid-template-columns:82px minmax(0,1fr) 38px 82px; gap:6px; font-size:11px; }"
+  },
+  {
+    "file": "workspace-style.ts",
+    "line": 439,
+    "text": ".ws-timeline .time, .ws-timeline .dur { font-size:10px; }"
+  }
+]

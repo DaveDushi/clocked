@@ -1,0 +1,1031 @@
+[
+  {
+    "page": "home",
+    "fontBytes": 51884,
+    "fonts": [
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1i8q1w.woff2",
+      "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2",
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3twJwlBFgg.woff2"
+    ],
+    "preloads": [],
+    "text": "clocked.\n13:51:36",
+    "runs": [
+      {
+        "text": "clocked",
+        "family": "\"Space Grotesk\", system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": ".",
+        "family": "\"Space Grotesk\", system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "13:51",
+        "family": "\"IBM Plex Mono\", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "tabular-nums",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": ":36",
+        "family": "\"IBM Plex Mono\", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+        "weight": "500",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "tabular-nums",
+        "axes": "normal",
+        "hyphens": "manual"
+      }
+    ]
+  },
+  {
+    "page": "press",
+    "fontBytes": 51884,
+    "fonts": [
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1i8q1w.woff2",
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3twJwlBFgg.woff2",
+      "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2"
+    ],
+    "preloads": [],
+    "text": "Home Download GitHub Brand image\nPress kit\n\nAutomatic Windows time tracking. No timers. Monthly timesheet by email.\n\nBOILERPLATE\n\nclocked is automatic time tracking for Windows. A lightweight tray app clocks you in and out from real machine events — unlock, lock, sleep, and idle — so freelancers and small teams get honest hours without babysitting a timer. Sessions store locally, sync to the cloud, and produce a monthly timesheet by email even if the laptop was asleep at month-end. The desktop app is open source; hosted cloud sync and reporting is free with an account (self-hosting is supported).\n\nONE-LINER\nAutomatic Windows time tracking. No timers. Monthly timesheet by email.\nFACTS\nPlatform: Windows desktop (tray) + web dashboard\nDesktop stack: Rust, local SQLite\nCloud stack: Cloudflare Workers, D1, better-auth, Resend\nLicense: MIT (desktop / repo)\nSite: https://clocked.easytomanage.com/\nDownload: https://clocked.easytomanage.com/download\nSource: github.com/DaveDushi/clocked\nWHAT IT IS NOT\n\nNot employee surveillance, keylogging, or screenshot spyware. It tracks presence from OS power and input events on the machine you install — for people who bill time, not for watching keystrokes.\n\nASSETS\nOpen Graph / social image: https://clocked.easytomanage.com/og.jpg\nFavicon: https://clocked.easytomanage.com/favicon.ico\nLaunch copy kit (repo): marketing/LAUNCH_KIT.md\nCONTACT\n\nProduct issues: GitHub Issues on the public repo.\n\nLarger teams: use Talk to us on the homepage pricing section.",
+    "runs": [
+      {
+        "text": "Home",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Download",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "GitHub",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Brand image",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Press kit",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Automatic Windows time tracking. No timers. Monthly timesheet by email.",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Boilerplate",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": " is automatic time tracking for Windows. A lightweight tray app clocks you in and out from real machine events — unlock, lock, sleep, and idle — so freelancers and small teams get honest hours without babysitting a timer. Sessions store locally, sync to the cloud, and produce a monthly timesheet by email even if the laptop was asleep at month-end. The desktop app is open source; hosted cloud sync and reporting is free with an account (self-hosting is supported).",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "clocked",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "One-liner",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Automatic Windows time tracking. No timers. Monthly timesheet by email.",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Facts",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": " Windows desktop (tray) + web dashboard",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Platform:",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": " Rust, local SQLite",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Desktop stack:",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": " Cloudflare Workers, D1, better-auth, Resend",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Cloud stack:",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": " MIT (desktop / repo)",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "License:",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Site:",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "https://clocked.easytomanage.com/",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Download:",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "https://clocked.easytomanage.com/download",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Source:",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "github.com/DaveDushi/clocked",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "What it is not",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Not employee surveillance, keylogging, or screenshot spyware. It tracks presence from OS power and input events on the machine you install — for people who bill time, not for watching keystrokes.",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Assets",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Open Graph / social image: ",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "https://clocked.easytomanage.com/og.jpg",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Favicon: ",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "https://clocked.easytomanage.com/favicon.ico",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Launch copy kit (repo): ",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "marketing/LAUNCH_KIT.md",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Contact",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Product issues: GitHub Issues on the public repo.",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Larger teams: use  on the homepage pricing section.",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Talk to us",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      }
+    ]
+  },
+  {
+    "page": "extension-privacy",
+    "fontBytes": 51884,
+    "fonts": [
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1i8q1w.woff2",
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3twJwlBFgg.woff2",
+      "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2"
+    ],
+    "preloads": [],
+    "text": "Home Download extension Product privacy policy Terms of service GitHub\nPrivacy policy — browser extension\n\nLast updated: 2026-07-16 · Applies to the clocked Chrome / Edge companion extension\n\nThe clocked browser extension is an optional companion to the open-source clocked desktop time tracker. It does not track time by itself. It only tells the desktop app which website is focused so site attribution is more accurate while you are already clocked in.\n\nDATA WE PROCESS\n\nWhile the extension is enabled and you have pasted a sync token, it may send to the desktop app on the same computer:\n\nThe active tab’s hostname (e.g. github.com) — never the full URL path or query string\nA short window title (capped length), when available\nYour sync token (clk_…) in an HTTP Authorization header so only your local bridge accepts the message\n\nThese messages go only to http://127.0.0.1 (localhost) on a port you configure (default 19532). The extension does not call clocked.easytomanage.com, Google, or any other remote server for tracking.\n\nWHERE DATA IS STORED\nToken, port, and enabled flag are stored in chrome.storage.local on this device only (not Chrome sync across machines).\nA short “last domain” status may be kept in session storage for the popup UI.\nThe desktop app may store aggregated app/site time locally (and optionally sync presence hours and project totals to your clocked cloud account if you use cloud sync). That cloud behavior is governed by your clocked account and the main product privacy practices on the website.\nWHAT WE DO NOT COLLECT\nPage content, form fields, passwords, or keystrokes\nScreenshots or screen recordings\nBrowsing history history dumps (only the currently active tab’s host, when reporting is on)\nAdvertising identifiers or analytics cookies from this extension\nPERMISSIONS\ntabs — read the active tab hostname and short title\nstorage — save your token and settings on this device\nalarms — keep reporting while you stay on one tab after the worker sleeps\nhttp://127.0.0.1/* — talk to the desktop bridge only\nYOUR CHOICES\nTurn off “Report active tab” in extension Options\nClear the token or uninstall the extension anytime\nDo not install the extension if you only want the desktop app\nCHILDREN\n\nThe extension is not directed at children under 13. Do not use it if you are under the age required by applicable law to consent to data processing.\n\nCHANGES\n\nWe may update this policy when the extension changes. The “Last updated” date at the top will change. Continued use after an update means you accept the revised policy.\n\nCONTACT\n\nQuestions: open an issue on github.com/DaveDushi/clocked or use Contact sales on https://clocked.easytomanage.com.",
+    "runs": [
+      {
+        "text": "Home",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Download extension",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Product privacy policy",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Terms of service",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "GitHub",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Privacy policy — browser extension",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Last updated: 2026-07-16 · Applies to the clocked Chrome / Edge companion extension",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "The clocked browser extension is an optional companion to the open-source  desktop time tracker. It does  track time by itself. It only tells the desktop app which website is focused so site attribution is more accurate while you are already clocked in.",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "clocked",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "not",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Data we process",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "While the extension is enabled and you have pasted a sync token, it may send to the :",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "desktop app on the same computer",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "The active tab’s  (e.g. ) — never the full URL path or query string",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "hostname",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "github.com",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "A short window  (capped length), when available",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "title",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Your  () in an HTTP Authorization header so only your local bridge accepts the message",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "sync token",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "clk_…",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "These messages go only to  (localhost) on a port you configure (default ). The extension does  call clocked.easytomanage.com, Google, or any other remote server for tracking.",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "http://127.0.0.1",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "19532",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "not",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Where data is stored",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Token, port, and enabled flag are stored in  on this device only (not Chrome sync across machines).",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "chrome.storage.local",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "A short “last domain” status may be kept in session storage for the popup UI.",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "The desktop app may store aggregated app/site time locally (and optionally sync presence hours and project totals to your clocked cloud account if you use cloud sync). That cloud behavior is governed by your clocked account and the main product privacy practices on the website.",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "What we do not collect",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Page content, form fields, passwords, or keystrokes",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Screenshots or screen recordings",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Browsing history history dumps (only the currently active tab’s host, when reporting is on)",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Advertising identifiers or analytics cookies from this extension",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Permissions",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": " — read the active tab hostname and short title",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "tabs",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": " — save your token and settings on this device",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "storage",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": " — keep reporting while you stay on one tab after the worker sleeps",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "alarms",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": " — talk to the desktop bridge only",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "http://127.0.0.1/*",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Your choices",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Turn off “Report active tab” in extension Options",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Clear the token or uninstall the extension anytime",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Do not install the extension if you only want the desktop app",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Children",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "The extension is not directed at children under 13. Do not use it if you are under the age required by applicable law to consent to data processing.",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Changes",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "We may update this policy when the extension changes. The “Last updated” date at the top will change. Continued use after an update means you accept the revised policy.",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Contact",
+        "family": "\"IBM Plex Mono\", ui-monospace, monospace",
+        "weight": "700",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "Questions: open an issue on  or use Contact sales on .",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "github.com/DaveDushi/clocked",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      },
+      {
+        "text": "https://clocked.easytomanage.com",
+        "family": "\"Space Grotesk\", system-ui, sans-serif",
+        "weight": "400",
+        "style": "normal",
+        "features": "normal",
+        "numeric": "normal",
+        "axes": "normal",
+        "hyphens": "manual"
+      }
+    ]
+  }
+]

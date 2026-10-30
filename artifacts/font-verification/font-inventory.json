@@ -1,0 +1,206 @@
+[
+  {
+    "face": "space",
+    "part": "core",
+    "file": "space-core-c08a312c3333.woff2",
+    "bytes": 18156,
+    "glyphs": 251,
+    "hinting": true,
+    "axes": [
+      {
+        "tag": "wght",
+        "min": 300.0,
+        "default": 300.0,
+        "max": 700.0
+      }
+    ],
+    "features": {
+      "GSUB": [
+        "liga",
+        "locl",
+        "tnum"
+      ],
+      "GPOS": [
+        "kern"
+      ]
+    },
+    "hintTables": {
+      "prep": 7,
+      "gasp": 8
+    },
+    "glyphInstructionBytes": 0,
+    "names": [
+      "ClockedSpace"
+    ]
+  },
+  {
+    "face": "space",
+    "part": "extended",
+    "file": "space-extended-2627bac148de.woff2",
+    "bytes": 8996,
+    "glyphs": 199,
+    "hinting": true,
+    "axes": [
+      {
+        "tag": "wght",
+        "min": 300.0,
+        "default": 300.0,
+        "max": 700.0
+      }
+    ],
+    "features": {
+      "GSUB": [
+        "locl"
+      ],
+      "GPOS": [
+        "kern"
+      ]
+    },
+    "hintTables": {
+      "prep": 7,
+      "gasp": 8
+    },
+    "glyphInstructionBytes": 0,
+    "names": [
+      "ClockedSpace"
+    ]
+  },
+  {
+    "face": "plex-400",
+    "part": "core",
+    "file": "plex-400-core-caeaf75e2521.woff2",
+    "bytes": 11864,
+    "glyphs": 220,
+    "hinting": true,
+    "axes": [],
+    "features": {
+      "GSUB": [],
+      "GPOS": []
+    },
+    "hintTables": {
+      "fpgm": 371,
+      "prep": 436,
+      "cvt ": 64,
+      "gasp": 16
+    },
+    "glyphInstructionBytes": 13356,
+    "names": [
+      "ClockedMono400"
+    ]
+  },
+  {
+    "face": "plex-400",
+    "part": "extended",
+    "file": "plex-400-extended-ddd64b67130f.woff2",
+    "bytes": 7516,
+    "glyphs": 186,
+    "hinting": true,
+    "axes": [],
+    "features": {
+      "GSUB": [],
+      "GPOS": []
+    },
+    "hintTables": {
+      "fpgm": 371,
+      "prep": 436,
+      "cvt ": 64,
+      "gasp": 16
+    },
+    "glyphInstructionBytes": 8645,
+    "names": [
+      "ClockedMono400"
+    ]
+  },
+  {
+    "face": "plex-500",
+    "part": "core",
+    "file": "plex-500-core-e783445d6b55.woff2",
+    "bytes": 12060,
+    "glyphs": 220,
+    "hinting": true,
+    "axes": [],
+    "features": {
+      "GSUB": [],
+      "GPOS": []
+    },
+    "hintTables": {
+      "fpgm": 371,
+      "prep": 480,
+      "cvt ": 68,
+      "gasp": 16
+    },
+    "glyphInstructionBytes": 13690,
+    "names": [
+      "ClockedMono500"
+    ]
+  },
+  {
+    "face": "plex-500",
+    "part": "extended",
+    "file": "plex-500-extended-099229651590.woff2",
+    "bytes": 7556,
+    "glyphs": 186,
+    "hinting": true,
+    "axes": [],
+    "features": {
+      "GSUB": [],
+      "GPOS": []
+    },
+    "hintTables": {
+      "fpgm": 371,
+      "prep": 480,
+      "cvt ": 68,
+      "gasp": 16
+    },
+    "glyphInstructionBytes": 8751,
+    "names": [
+      "ClockedMono500"
+    ]
+  },
+  {
+    "face": "plex-600",
+    "part": "core",
+    "file": "plex-600-core-e85ac7b7d598.woff2",
+    "bytes": 12796,
+    "glyphs": 220,
+    "hinting": true,
+    "axes": [],
+    "features": {
+      "GSUB": [],
+      "GPOS": []
+    },
+    "hintTables": {
+      "fpgm": 371,
+      "prep": 472,
+      "cvt ": 68,
+      "gasp": 16
+    },
+    "glyphInstructionBytes": 13778,
+    "names": [
+      "ClockedMono600"
+    ]
+  },
+  {
+    "face": "plex-600",
+    "part": "extended",
+    "file": "plex-600-extended-fffa76754a62.woff2",
+    "bytes": 8456,
+    "glyphs": 186,
+    "hinting": true,
+    "axes": [],
+    "features": {
+      "GSUB": [],
+      "GPOS": []
+    },
+    "hintTables": {
+      "fpgm": 371,
+      "prep": 472,
+      "cvt ": 68,
+      "gasp": 16
+    },
+    "glyphInstructionBytes": 8915,
+    "names": [
+      "ClockedMono600"
+    ]
+  }
+]

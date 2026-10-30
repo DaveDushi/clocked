@@ -14,6 +14,7 @@
  */
 
 import type { Env } from "./types";
+import { NEWS_FONT_HEAD } from "./font-head.js";
 
 const SITE = "https://clocked.easytomanage.com";
 const INDEXNOW_KEY_META = "indexnow_key";
@@ -422,7 +423,7 @@ export async function newsPageResponse(env: Env): Promise<Response> {
 <script type="application/ld+json">${jsonLd}</script>
 <meta property="og:image" content="${SITE}/og.jpg" />
 <link rel="icon" href="/favicon.ico" />
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+${NEWS_FONT_HEAD}
 <style>
   :root { color-scheme:dark; --bg:#0a0b10; --panel:#151823; --border:#242938; --fg:#e9eaf0; --muted:#8b91a0; --amber:#f2a950; --mono:"IBM Plex Mono",monospace; }
   body { margin:0; font:16px/1.55 "Space Grotesk",system-ui,sans-serif; color:var(--fg); background:var(--bg); }

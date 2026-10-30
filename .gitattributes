@@ -1,0 +1,3 @@
+worker/public/fonts/*.css text eol=lf
+worker/fonts/source/*.css text eol=lf
+artifacts/font-audit/*.css text eol=lf

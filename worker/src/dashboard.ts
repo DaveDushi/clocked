@@ -1,4 +1,5 @@
 import { createTimesheetView } from "./timesheet-view.js";
+import { FONT_HEAD } from "./font-head.js";
 import { WORKSPACE_MARKUP } from "./workspace-markup.js";
 import { WORKSPACE_SCRIPT } from "./workspace-script.js";
 import { WORKSPACE_STYLE } from "./workspace-style.js";
@@ -35,9 +36,7 @@ const HTML = /* html */ `<!doctype html>
 {"@context":"https://schema.org","@type":"SoftwareApplication","name":"clocked","applicationCategory":"BusinessApplication","operatingSystem":"Windows, macOS","description":"Automatic time tracking from power and session events. Local SQLite, optional project attribution, cloud sync, teams, and monthly timesheet email.","url":"https://clocked.easytomanage.com/","downloadUrl":"https://clocked.easytomanage.com/download","softwareVersion":"0.1.14","license":"https://opensource.org/licenses/MIT","codeRepository":"https://github.com/DaveDushi/clocked"}
 </script>
 <link rel="icon" type="image/png" href="/favicon.ico" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+${FONT_HEAD}
 <style>
   :root {
     color-scheme: dark;

@@ -1,0 +1,98 @@
+[
+  {
+    "case": "cjk-fixture-1440",
+    "pixelsChanged": 0,
+    "pixels": 1461600,
+    "bbox": null
+  },
+  {
+    "case": "cjk-fixture-390",
+    "pixelsChanged": 0,
+    "pixels": 395850,
+    "bbox": null
+  },
+  {
+    "case": "extension-privacy-1440",
+    "pixelsChanged": 0,
+    "pixels": 3303360,
+    "bbox": null
+  },
+  {
+    "case": "extension-privacy-390",
+    "pixelsChanged": 0,
+    "pixels": 1287780,
+    "bbox": null
+  },
+  {
+    "case": "home-1440",
+    "pixelsChanged": 0,
+    "pixels": 1666080,
+    "bbox": null
+  },
+  {
+    "case": "home-390",
+    "pixelsChanged": 0,
+    "pixels": 558090,
+    "bbox": null
+  },
+  {
+    "case": "news-1440",
+    "pixelsChanged": 0,
+    "pixels": 1440000,
+    "bbox": null
+  },
+  {
+    "case": "news-390",
+    "pixelsChanged": 0,
+    "pixels": 390000,
+    "bbox": null
+  },
+  {
+    "case": "press-1440",
+    "pixelsChanged": 0,
+    "pixels": 2112480,
+    "bbox": null
+  },
+  {
+    "case": "press-390",
+    "pixelsChanged": 0,
+    "pixels": 844900,
+    "bbox": null
+  },
+  {
+    "case": "privacy-1440",
+    "pixelsChanged": 0,
+    "pixels": 4779360,
+    "bbox": null
+  },
+  {
+    "case": "privacy-390",
+    "pixelsChanged": 0,
+    "pixels": 2222610,
+    "bbox": null
+  },
+  {
+    "case": "terms-1440",
+    "pixelsChanged": 0,
+    "pixels": 3409920,
+    "bbox": null
+  },
+  {
+    "case": "terms-390",
+    "pixelsChanged": 0,
+    "pixels": 1458210,
+    "bbox": null
+  },
+  {
+    "case": "typography-fixture-1440",
+    "pixelsChanged": 0,
+    "pixels": 2934720,
+    "bbox": null
+  },
+  {
+    "case": "typography-fixture-390",
+    "pixelsChanged": 0,
+    "pixels": 975000,
+    "bbox": null
+  }
+]

@@ -1,0 +1,90 @@
+[
+  {
+    "case": "extension-privacy-1440",
+    "pixelsChanged": 1671,
+    "pixels": 3303360,
+    "bbox": [
+      401,
+      46,
+      977,
+      2176
+    ]
+  },
+  {
+    "case": "extension-privacy-390",
+    "pixelsChanged": 1644,
+    "pixels": 1287780,
+    "bbox": [
+      21,
+      46,
+      339,
+      3184
+    ]
+  },
+  {
+    "case": "home-1440",
+    "pixelsChanged": 48,
+    "pixels": 1666080,
+    "bbox": [
+      396,
+      44,
+      1070,
+      1085
+    ]
+  },
+  {
+    "case": "home-390",
+    "pixelsChanged": 52,
+    "pixels": 558090,
+    "bbox": [
+      35,
+      41,
+      342,
+      1328
+    ]
+  },
+  {
+    "case": "press-1440",
+    "pixelsChanged": 343,
+    "pixels": 2112480,
+    "bbox": [
+      405,
+      99,
+      979,
+      1349
+    ]
+  },
+  {
+    "case": "press-390",
+    "pixelsChanged": 341,
+    "pixels": 844900,
+    "bbox": [
+      25,
+      99,
+      398,
+      1870
+    ]
+  },
+  {
+    "case": "typography-fixture-1440",
+    "pixelsChanged": 3793,
+    "pixels": 2934720,
+    "bbox": [
+      24,
+      44,
+      1070,
+      1993
+    ]
+  },
+  {
+    "case": "typography-fixture-390",
+    "pixelsChanged": 3764,
+    "pixels": 939900,
+    "bbox": [
+      24,
+      41,
+      367,
+      2366
+    ]
+  }
+]

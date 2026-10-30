@@ -3,6 +3,7 @@
   "name": "clocked",
   "account_id": "11b42dee5d79818e2232c6a4c86d13e9",
   "main": "src/index.ts",
+  "assets": { "directory": "./public" },
   "compatibility_date": "2026-07-01",
   // better-auth imports node:crypto / node:async_hooks at load, so enable Node compat.
   "compatibility_flags": ["nodejs_compat"],

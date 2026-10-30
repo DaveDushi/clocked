@@ -1,0 +1,27 @@
+{
+  "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap": {
+    "file": "aHR0cHM6Ly9mb250cy5nb29nbGVhcGlzLmNvbS9jc3MyP2ZhbWlseT1TcGFjZStHcm90ZXNrOndnaHRANDAwOzUwMDs3MDAmZmFtaWx5PUlCTStQbGV4K01vbm86d2dodEA0MDA7NTAwOzYwMCZkaXNwbGF5PXN3YXA.css",
+    "bytes": 9685,
+    "contentType": "text/css; charset=utf-8"
+  },
+  "https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1i8q1w.woff2": {
+    "file": "aHR0cHM6Ly9mb250cy5nc3RhdGljLmNvbS9zL2libXBsZXhtb25vL3YyMC8tRjYzZmpwdEFndDVWTS1rVmtxZHlVOG4xaThxMXcud29mZjI.woff2",
+    "bytes": 14708,
+    "contentType": "font/woff2"
+  },
+  "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2": {
+    "file": "aHR0cHM6Ly9mb250cy5nc3RhdGljLmNvbS9zL3NwYWNlZ3JvdGVzay92MjIvVjhtRG9RRGpRU2tGdG9NTTNUNnI4RTdtUGJGNEN3LndvZmYy.woff2",
+    "bytes": 22288,
+    "contentType": "font/woff2"
+  },
+  "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3twJwlBFgg.woff2": {
+    "file": "aHR0cHM6Ly9mb250cy5nc3RhdGljLmNvbS9zL2libXBsZXhtb25vL3YyMC8tRjZxZmpwdEFndDVWTS1rVmtxZHlVOG4zdHdKd2xCRmdnLndvZmYy.woff2",
+    "bytes": 14888,
+    "contentType": "font/woff2"
+  },
+  "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap": {
+    "file": "aHR0cHM6Ly9mb250cy5nb29nbGVhcGlzLmNvbS9jc3MyP2ZhbWlseT1TcGFjZStHcm90ZXNrOndnaHRANDAwOzUwMDs3MDAmZmFtaWx5PUlCTStQbGV4K01vbm86d2dodEA0MDA7NTAwJmRpc3BsYXk9c3dhcA.css",
+    "bytes": 7738,
+    "contentType": "text/css; charset=utf-8"
+  }
+}

@@ -1,0 +1,446 @@
+[
+  {
+    "page": "home",
+    "width": 1440,
+    "version": "before",
+    "bytes": 51884,
+    "fonts": {
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3twJwlBFgg.woff2": 14888,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1i8q1w.woff2": 14708,
+      "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2": 22288
+    },
+    "errors": []
+  },
+  {
+    "page": "home",
+    "width": 1440,
+    "version": "after",
+    "bytes": 42080,
+    "fonts": {
+      "https://font-audit.invalid/fonts/space-core-c08a312c3333.woff2": 18156,
+      "https://font-audit.invalid/fonts/plex-400-core-caeaf75e2521.woff2": 11864,
+      "https://font-audit.invalid/fonts/plex-500-core-e783445d6b55.woff2": 12060
+    },
+    "errors": []
+  },
+  {
+    "page": "home",
+    "width": 390,
+    "version": "before",
+    "bytes": 51884,
+    "fonts": {
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1i8q1w.woff2": 14708,
+      "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2": 22288,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3twJwlBFgg.woff2": 14888
+    },
+    "errors": []
+  },
+  {
+    "page": "home",
+    "width": 390,
+    "version": "after",
+    "bytes": 42080,
+    "fonts": {
+      "https://font-audit.invalid/fonts/plex-500-core-e783445d6b55.woff2": 12060,
+      "https://font-audit.invalid/fonts/space-core-c08a312c3333.woff2": 18156,
+      "https://font-audit.invalid/fonts/plex-400-core-caeaf75e2521.woff2": 11864
+    },
+    "errors": []
+  },
+  {
+    "page": "typography-fixture",
+    "width": 1440,
+    "version": "before",
+    "bytes": 127552,
+    "fonts": {
+      "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2": 22288,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1i8q1w.woff2": 14708,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3twJwlBFgg.woff2": 14888,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3vAOwlBFgg.woff2": 15620,
+      "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPb94C-s0.woff2": 18940,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1iEq129k.woff2": 13348,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3twJwl5FgtIU.woff2": 13432,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3vAOwl5FgtIU.woff2": 14328
+    },
+    "errors": []
+  },
+  {
+    "page": "typography-fixture",
+    "width": 1440,
+    "version": "after",
+    "bytes": 87400,
+    "fonts": {
+      "https://font-audit.invalid/fonts/space-core-c08a312c3333.woff2": 18156,
+      "https://font-audit.invalid/fonts/plex-500-core-e783445d6b55.woff2": 12060,
+      "https://font-audit.invalid/fonts/plex-400-core-caeaf75e2521.woff2": 11864,
+      "https://font-audit.invalid/fonts/plex-400-extended-ddd64b67130f.woff2": 7516,
+      "https://font-audit.invalid/fonts/plex-600-core-e85ac7b7d598.woff2": 12796,
+      "https://font-audit.invalid/fonts/space-extended-2627bac148de.woff2": 8996,
+      "https://font-audit.invalid/fonts/plex-500-extended-099229651590.woff2": 7556,
+      "https://font-audit.invalid/fonts/plex-600-extended-fffa76754a62.woff2": 8456
+    },
+    "errors": []
+  },
+  {
+    "page": "typography-fixture",
+    "width": 390,
+    "version": "before",
+    "bytes": 127552,
+    "fonts": {
+      "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2": 22288,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3twJwlBFgg.woff2": 14888,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1i8q1w.woff2": 14708,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3vAOwlBFgg.woff2": 15620,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1iEq129k.woff2": 13348,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3twJwl5FgtIU.woff2": 13432,
+      "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPb94C-s0.woff2": 18940,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3vAOwl5FgtIU.woff2": 14328
+    },
+    "errors": []
+  },
+  {
+    "page": "typography-fixture",
+    "width": 390,
+    "version": "after",
+    "bytes": 87400,
+    "fonts": {
+      "https://font-audit.invalid/fonts/space-core-c08a312c3333.woff2": 18156,
+      "https://font-audit.invalid/fonts/plex-500-core-e783445d6b55.woff2": 12060,
+      "https://font-audit.invalid/fonts/plex-400-core-caeaf75e2521.woff2": 11864,
+      "https://font-audit.invalid/fonts/plex-400-extended-ddd64b67130f.woff2": 7516,
+      "https://font-audit.invalid/fonts/space-extended-2627bac148de.woff2": 8996,
+      "https://font-audit.invalid/fonts/plex-600-core-e85ac7b7d598.woff2": 12796,
+      "https://font-audit.invalid/fonts/plex-600-extended-fffa76754a62.woff2": 8456,
+      "https://font-audit.invalid/fonts/plex-500-extended-099229651590.woff2": 7556
+    },
+    "errors": []
+  },
+  {
+    "page": "cjk-fixture",
+    "width": 1440,
+    "version": "before",
+    "bytes": 22288,
+    "fonts": {
+      "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2": 22288
+    },
+    "platformFonts": [
+      {
+        "familyName": "Space Grotesk Light",
+        "postScriptName": "Space-Grotesk-Light",
+        "isCustomFont": true,
+        "glyphCount": 2
+      },
+      {
+        "familyName": "Malgun Gothic",
+        "postScriptName": "MalgunGothic",
+        "isCustomFont": false,
+        "glyphCount": 3
+      },
+      {
+        "familyName": "Microsoft YaHei",
+        "postScriptName": "MicrosoftYaHei",
+        "isCustomFont": false,
+        "glyphCount": 5
+      }
+    ],
+    "errors": []
+  },
+  {
+    "page": "cjk-fixture",
+    "width": 1440,
+    "version": "after",
+    "bytes": 42080,
+    "fonts": {
+      "https://font-audit.invalid/fonts/space-core-c08a312c3333.woff2": 18156,
+      "https://font-audit.invalid/fonts/plex-500-core-e783445d6b55.woff2": 12060,
+      "https://font-audit.invalid/fonts/plex-400-core-caeaf75e2521.woff2": 11864
+    },
+    "platformFonts": [
+      {
+        "familyName": "ClockedSpace",
+        "postScriptName": "ClockedSpace",
+        "isCustomFont": true,
+        "glyphCount": 2
+      },
+      {
+        "familyName": "Malgun Gothic",
+        "postScriptName": "MalgunGothic",
+        "isCustomFont": false,
+        "glyphCount": 3
+      },
+      {
+        "familyName": "Microsoft YaHei",
+        "postScriptName": "MicrosoftYaHei",
+        "isCustomFont": false,
+        "glyphCount": 5
+      }
+    ],
+    "errors": []
+  },
+  {
+    "page": "cjk-fixture",
+    "width": 390,
+    "version": "before",
+    "bytes": 22288,
+    "fonts": {
+      "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2": 22288
+    },
+    "platformFonts": [
+      {
+        "familyName": "Space Grotesk Light",
+        "postScriptName": "Space-Grotesk-Light",
+        "isCustomFont": true,
+        "glyphCount": 2
+      },
+      {
+        "familyName": "Malgun Gothic",
+        "postScriptName": "MalgunGothic",
+        "isCustomFont": false,
+        "glyphCount": 3
+      },
+      {
+        "familyName": "Microsoft YaHei",
+        "postScriptName": "MicrosoftYaHei",
+        "isCustomFont": false,
+        "glyphCount": 5
+      }
+    ],
+    "errors": []
+  },
+  {
+    "page": "cjk-fixture",
+    "width": 390,
+    "version": "after",
+    "bytes": 42080,
+    "fonts": {
+      "https://font-audit.invalid/fonts/space-core-c08a312c3333.woff2": 18156,
+      "https://font-audit.invalid/fonts/plex-400-core-caeaf75e2521.woff2": 11864,
+      "https://font-audit.invalid/fonts/plex-500-core-e783445d6b55.woff2": 12060
+    },
+    "platformFonts": [
+      {
+        "familyName": "ClockedSpace",
+        "postScriptName": "ClockedSpace",
+        "isCustomFont": true,
+        "glyphCount": 2
+      },
+      {
+        "familyName": "Malgun Gothic",
+        "postScriptName": "MalgunGothic",
+        "isCustomFont": false,
+        "glyphCount": 3
+      },
+      {
+        "familyName": "Microsoft YaHei",
+        "postScriptName": "MicrosoftYaHei",
+        "isCustomFont": false,
+        "glyphCount": 5
+      }
+    ],
+    "errors": []
+  },
+  {
+    "page": "press",
+    "width": 1440,
+    "version": "before",
+    "bytes": 51884,
+    "fonts": {
+      "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2": 22288,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3twJwlBFgg.woff2": 14888,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1i8q1w.woff2": 14708
+    },
+    "errors": []
+  },
+  {
+    "page": "press",
+    "width": 1440,
+    "version": "after",
+    "bytes": 42080,
+    "fonts": {
+      "https://font-audit.invalid/fonts/space-core-c08a312c3333.woff2": 18156,
+      "https://font-audit.invalid/fonts/plex-500-core-e783445d6b55.woff2": 12060,
+      "https://font-audit.invalid/fonts/plex-400-core-caeaf75e2521.woff2": 11864
+    },
+    "errors": []
+  },
+  {
+    "page": "press",
+    "width": 390,
+    "version": "before",
+    "bytes": 51884,
+    "fonts": {
+      "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2": 22288,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3twJwlBFgg.woff2": 14888,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1i8q1w.woff2": 14708
+    },
+    "errors": []
+  },
+  {
+    "page": "press",
+    "width": 390,
+    "version": "after",
+    "bytes": 42080,
+    "fonts": {
+      "https://font-audit.invalid/fonts/space-core-c08a312c3333.woff2": 18156,
+      "https://font-audit.invalid/fonts/plex-400-core-caeaf75e2521.woff2": 11864,
+      "https://font-audit.invalid/fonts/plex-500-core-e783445d6b55.woff2": 12060
+    },
+    "errors": []
+  },
+  {
+    "page": "extension-privacy",
+    "width": 1440,
+    "version": "before",
+    "bytes": 51884,
+    "fonts": {
+      "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2": 22288,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3twJwlBFgg.woff2": 14888,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1i8q1w.woff2": 14708
+    },
+    "errors": []
+  },
+  {
+    "page": "extension-privacy",
+    "width": 1440,
+    "version": "after",
+    "bytes": 42080,
+    "fonts": {
+      "https://font-audit.invalid/fonts/space-core-c08a312c3333.woff2": 18156,
+      "https://font-audit.invalid/fonts/plex-500-core-e783445d6b55.woff2": 12060,
+      "https://font-audit.invalid/fonts/plex-400-core-caeaf75e2521.woff2": 11864
+    },
+    "errors": []
+  },
+  {
+    "page": "extension-privacy",
+    "width": 390,
+    "version": "before",
+    "bytes": 51884,
+    "fonts": {
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1i8q1w.woff2": 14708,
+      "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2": 22288,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3twJwlBFgg.woff2": 14888
+    },
+    "errors": []
+  },
+  {
+    "page": "extension-privacy",
+    "width": 390,
+    "version": "after",
+    "bytes": 42080,
+    "fonts": {
+      "https://font-audit.invalid/fonts/space-core-c08a312c3333.woff2": 18156,
+      "https://font-audit.invalid/fonts/plex-400-core-caeaf75e2521.woff2": 11864,
+      "https://font-audit.invalid/fonts/plex-500-core-e783445d6b55.woff2": 12060
+    },
+    "errors": []
+  },
+  {
+    "page": "news",
+    "width": 1440,
+    "version": "before",
+    "bytes": 36996,
+    "fonts": {
+      "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2": 22288,
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1i8q1w.woff2": 14708
+    },
+    "errors": []
+  },
+  {
+    "page": "news",
+    "width": 1440,
+    "version": "after",
+    "bytes": 30020,
+    "fonts": {
+      "https://font-audit.invalid/fonts/space-core-c08a312c3333.woff2": 18156,
+      "https://font-audit.invalid/fonts/plex-400-core-caeaf75e2521.woff2": 11864
+    },
+    "errors": []
+  },
+  {
+    "page": "news",
+    "width": 390,
+    "version": "before",
+    "bytes": 36996,
+    "fonts": {
+      "https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1i8q1w.woff2": 14708,
+      "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2": 22288
+    },
+    "errors": []
+  },
+  {
+    "page": "news",
+    "width": 390,
+    "version": "after",
+    "bytes": 30020,
+    "fonts": {
+      "https://font-audit.invalid/fonts/plex-400-core-caeaf75e2521.woff2": 11864,
+      "https://font-audit.invalid/fonts/space-core-c08a312c3333.woff2": 18156
+    },
+    "errors": []
+  },
+  {
+    "page": "privacy",
+    "width": 1440,
+    "version": "before",
+    "bytes": 0,
+    "fonts": {},
+    "errors": []
+  },
+  {
+    "page": "privacy",
+    "width": 1440,
+    "version": "after",
+    "bytes": 0,
+    "fonts": {},
+    "errors": []
+  },
+  {
+    "page": "privacy",
+    "width": 390,
+    "version": "before",
+    "bytes": 0,
+    "fonts": {},
+    "errors": []
+  },
+  {
+    "page": "privacy",
+    "width": 390,
+    "version": "after",
+    "bytes": 0,
+    "fonts": {},
+    "errors": []
+  },
+  {
+    "page": "terms",
+    "width": 1440,
+    "version": "before",
+    "bytes": 0,
+    "fonts": {},
+    "errors": []
+  },
+  {
+    "page": "terms",
+    "width": 1440,
+    "version": "after",
+    "bytes": 0,
+    "fonts": {},
+    "errors": []
+  },
+  {
+    "page": "terms",
+    "width": 390,
+    "version": "before",
+    "bytes": 0,
+    "fonts": {},
+    "errors": []
+  },
+  {
+    "page": "terms",
+    "width": 390,
+    "version": "after",
+    "bytes": 0,
+    "fonts": {},
+    "errors": []
+  }
+]
