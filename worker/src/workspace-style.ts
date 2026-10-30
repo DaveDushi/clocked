@@ -290,7 +290,7 @@ export const WORKSPACE_STYLE = /* css */ `
   .ws-feedback.ok { color:var(--ok); } .ws-feedback.err { color:var(--err); }
   .ws-day-summary, .ws-sheet-summary { display:flex; gap:24px; padding:4px 0 18px; border-bottom:1px solid var(--border); font-size:11px; color:var(--wsmuted); flex-wrap:wrap; }
   .ws-day-summary strong, .ws-sheet-summary strong { display:block; color:var(--fg); font:17px var(--mono); margin-top:5px; font-weight:400; }
-  .ws-timeline { display:grid; grid-template-columns:110px minmax(0,1fr) 62px 40px; align-items:center; gap:12px; padding:14px 0; border-bottom:1px solid var(--border); font-size:12px; }
+  .ws-timeline { display:grid; grid-template-columns:100px minmax(0,1fr) 48px 86px; align-items:center; gap:12px; padding:14px 0; border-bottom:1px solid var(--border); font-size:12px; }
   .ws-timeline .time, .ws-timeline .dur { font:11px var(--mono); color:var(--wsmuted); }
   .ws-timeline .dur { text-align:right; color:var(--fg); }
   .ws-timeline .what { display:flex; align-items:center; gap:9px; }
@@ -300,6 +300,8 @@ export const WORKSPACE_STYLE = /* css */ `
   .ws-timeline .source { display:block; font-size:10px; color:var(--wsmuted); margin:3px 0 0 15px; }
   .ws-timeline.edited .source { color:var(--amber); }
   .ws-timeline .text-button { font-size:11px; }
+  .ws-timeline .ws-gap-work { justify-self:end; white-space:nowrap; padding:5px 8px; border:1px solid rgba(242,169,80,.22); border-radius:6px; background:rgba(242,169,80,.06); color:var(--amber); font-size:10px; font-weight:500; line-height:1.3; }
+  .ws-timeline .ws-gap-work:hover { border-color:var(--amber); background:rgba(242,169,80,.12); }
   .ws-time-fields { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   .ws-check { display:flex !important; align-items:center; gap:9px; margin:14px 0 0 !important; font-size:12px; color:var(--fg) !important; }
   .ws-check input { width:15px !important; height:15px; accent-color:var(--amber); margin:0; }
@@ -433,7 +435,7 @@ export const WORKSPACE_STYLE = /* css */ `
     .ws-dialog.sheet { width:100vw; height:100dvh; max-height:100dvh; border-radius:0; padding:0 18px 20px; }
     .ws dialog { max-width:calc(100vw - 16px); }
     .ws-dialog { padding:0 18px 20px; }
-    .ws-timeline { grid-template-columns:88px minmax(0,1fr) 50px 30px; gap:6px; font-size:11px; }
+    .ws-timeline { grid-template-columns:82px minmax(0,1fr) 38px 82px; gap:6px; font-size:11px; }
     .ws-timeline .time, .ws-timeline .dur { font-size:10px; }
     .ws-contribution-frame { padding:16px; }
     .ws-time-fields { grid-template-columns:1fr; }

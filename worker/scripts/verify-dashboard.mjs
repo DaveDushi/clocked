@@ -265,7 +265,21 @@ try {
   assert.equal((await api("supervisor", "/api/team/manual-session?organizationId=management-a&userId=ben", { date: "2026-09-01", start: "09:00", end: "10:00" })).status, 403);
   assert.equal((await (await api("supervisor", "/api/hours?period=2026-09")).json()).totalMinutes, 0);
 
-  console.log("PASS: team overview, role boundaries, session edits, bulk send, history isolation, and management of two teams without recording personal time (mock email binding).");
+  const gapPath = "/api/team/hours?organizationId=team&userId=manager&period=2026-09";
+  const beforeGap = await (await api("manager", gapPath)).json();
+  const gapDay = beforeGap.recordedDays.find((day) => day.date === "2026-09-01");
+  assert.ok(gapDay.breaks.some((gap) => gap.start === "12:30" && gap.end === "13:00"));
+  const fillGap = await api("manager", "/api/team/manual-session?organizationId=team&userId=manager", {
+    date: "2026-09-01", start: "12:30", end: "13:00", overnight: false,
+  });
+  assert.equal(fillGap.status, 200, await fillGap.clone().text());
+  const afterGap = await (await api("manager", gapPath)).json();
+  const correctedDay = afterGap.recordedDays.find((day) => day.date === "2026-09-01");
+  assert.equal(correctedDay.breaks.length, 0, "marking a gap as work removes the inferred break");
+  assert.equal(correctedDay.breakMinutes, 0);
+  assert.ok(afterGap.sessions.some((session) => session.date === "2026-09-01" && session.start === "12:30" && session.end === "13:00"));
+
+  console.log("PASS: gap correction persists as work and removes the break; team overview, role boundaries, session edits, bulk send, history isolation, and management of two teams without recording personal time (mock email binding).");
   if (process.argv.includes("--serve")) {
     console.log(`Browser fixture: ${base}  supervisor@example.test (two teams, no tracked hours), manager@example.test (team owner), ana@example.test (worker), solo@example.test (personal), legacy@example.test (legacy personal owner), mixed@example.test (legacy personal owner who joined a team); password ${password}`);
     console.log(`Pending team invitation for legacy@example.test: ${base}/?invitation=${encodeURIComponent(invitation.id)}`);

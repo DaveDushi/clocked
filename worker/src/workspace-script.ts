@@ -589,7 +589,8 @@ function wsRefreshDay(force) {
     html += "<div class='ws-day-summary'><div>Worked time<strong>" + wsModel.duration(day.minutes) + "</strong></div><div>Break time<strong>" + wsModel.shortDuration(day.breakMinutes) + "</strong></div><div>Breaks<strong>" + day.breaks.length + "</strong></div></div>" +
       entries.map((e) => {
         if (e.kind === "break") {
-          return "<div class='ws-timeline gap'><span class='time'>" + e.gap.start + " – " + e.gap.end + "</span><div><span class='what'>" + (e.gap.lunch ? "Lunch (inferred)" : e.gap.flagged ? "Long break flagged" : "Break") + "</span><small class='source'>" + wsEsc(wsModel.causeLabel(e.gap.cause)) + "</small></div><span class='dur'>" + wsModel.shortDuration(e.gap.minutes) + "</span><span></span></div>";
+          return "<div class='ws-timeline gap'><span class='time'>" + e.gap.start + " – " + e.gap.end + "</span><div><span class='what'>" + (e.gap.lunch ? "Lunch (inferred)" : e.gap.flagged ? "Long break flagged" : "Break") + "</span><small class='source'>" + wsEsc(wsModel.causeLabel(e.gap.cause)) + "</small></div><span class='dur'>" + wsModel.shortDuration(e.gap.minutes) + "</span>" +
+            (wsCanAdd() ? "<button type='button' class='ws-gap-work' data-action='work-gap' data-start='" + e.gap.start + "' data-end='" + e.gap.end + "' data-key='work-gap:" + e.gap.start + "' data-edit-control aria-label='I was working from " + e.gap.start + " to " + e.gap.end + "' title='I was working during this time'>Was Working</button>" : "<span></span>") + "</div>";
         }
         const s = e.session;
         const notes = [wsSourceLabel(s, ownerName)];
@@ -619,7 +620,7 @@ async function wsOpenAddDay(userId, opener) {
   if (version !== ws.version || !wsDayData()) return;
   wsOpenEdit("", opener);
 }
-function wsOpenEdit(sessionId, opener) {
+function wsOpenEdit(sessionId, opener, gap = null) {
   if (sessionId ? !wsCanEdit() : !wsCanAdd()) return;
   const data = wsDayData();
   const segment = sessionId && data ? (data.sessions || []).find((s) => s.id === sessionId) : null;
@@ -632,6 +633,7 @@ function wsOpenEdit(sessionId, opener) {
     overnight = b.date !== a.date;
     tooLong = overnight && (!wsModel.isNextDay(a.date, b.date) || Date.parse(segment.sessionEndUtc) - Date.parse(segment.sessionStartUtc) > 86400000);
   }
+  if (!segment && gap) { start = gap.start; end = gap.end; }
   ws.edit = { id: sessionId || "", armed: false };
   const lastDate = ws.period === wsCurrentPeriod() ? wsDataToday() : ws.period + "-" + wsModel.pad(wsModel.daysInMonth(ws.period));
   const dateLimits = segment ? "" : ws.day.date ? " readonly" : " min='" + ws.period + "-01' max='" + lastDate + "'";
@@ -1233,6 +1235,7 @@ $("workspace").addEventListener("click", (event) => {
   }
   else if (action === "edit-session") wsOpenEdit(el.dataset.id, el);
   else if (action === "add-session") wsOpenEdit("", el);
+  else if (action === "work-gap") wsOpenEdit("", el, { start: el.dataset.start, end: el.dataset.end });
   else if (action === "add-day") wsOpenAddDay(el.dataset.user, el);
   else if (action === "remove-session") wsRemoveSession(el);
   else if (action === "settings-delivery") wsOpenSettings(el, "setDelivery");
