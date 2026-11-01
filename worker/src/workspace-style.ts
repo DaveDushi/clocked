@@ -1,5 +1,38 @@
 // Signed-in workspace styles. Scoped under .ws so the landing page keeps its own look.
 export const WORKSPACE_STYLE = /* css */ `
+  .ws-stats-untracked { margin-top:16px; font-size:12px; color:var(--wsmuted); }
+  .ws-stats-untracked summary { cursor:pointer; }
+  .ws-stats-untracked ul { padding-left:20px; line-height:1.8; }
+
+  .ws-tracking-summary { margin:0 0 22px; color:var(--wsmuted); font-size:12px; }
+  .ws-tracking-summary p { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+  .ws-tracking-summary small { display:block; margin-top:5px; font-size:11px; line-height:1.5; }
+  .ws .ws-tracking-summary .text-button { color:var(--fg); }
+  .ws-roster-section-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .ws .ws-roster-section-head .ws-roster-heading { margin:14px 0; }
+  .ws-roster-section-head .ws-roster-pager { padding:8px 0; }
+  .ws-inline-collapse { display:flex; justify-content:flex-end; padding:8px 20px; }
+  @media(max-width:600px) { .ws-roster-section-head { gap:0; } .ws-roster-section-head > div { flex-basis:100%; } .ws-inline-collapse { padding:8px 12px; } }
+
+  .ws-roster-pager { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 0; color:var(--wsmuted); font-size:12px; }
+  .ws-roster-pager > div { display:flex; gap:8px; }
+  .ws #wsTrackedHeading, .ws #wsUntracked { scroll-margin-top:20px; }
+  .ws #wsViewAll[hidden] { display:none; }
+  .ws-person-name { min-width:0; overflow-wrap:anywhere; }
+
+  .ws .ws-roster-heading { font-size:13px; font-weight:500; margin:24px 0 12px; color:var(--fg); }
+  .ws .ws-roster-heading span { color:var(--wsmuted); margin-left:6px; }
+  .ws-untracked { margin-top:28px; }
+  .ws-untracked .ws-note { margin:0 0 14px; }
+  .ws-untracked-list { border-top:1px solid var(--border); }
+  .ws-untracked-person { display:flex; align-items:center; gap:16px; padding:16px 20px; border-bottom:1px solid var(--border); }
+  .ws-untracked-person .ws-person-initials { background:var(--border); color:var(--wsmuted); }
+  .ws-untracked-person .ws-person-name small { color:var(--wsmuted); }
+  .ws-untracked-reason { color:var(--wsmuted); font-size:12px; }
+  @media(max-width:600px) { .ws-untracked-person { padding:16px 12px; gap:12px; flex-wrap:wrap; } .ws-untracked-person .ws-person-name { min-width:140px; } .ws-untracked-reason { margin-left:48px; } }
+
+  .ws [data-tracking="disabled"] .ws-person-initials, .ws [data-tracking="no_device"] .ws-person-initials { background:var(--border); color:var(--muted); }
+
   html:has(body.ws-mode), body.ws-mode, .ws, .ws * { scrollbar-width:thin; scrollbar-color:#41485b transparent; }
   html:has(body.ws-mode)::-webkit-scrollbar, body.ws-mode::-webkit-scrollbar, .ws::-webkit-scrollbar, .ws *::-webkit-scrollbar { width:8px; height:8px; }
   html:has(body.ws-mode)::-webkit-scrollbar-track, body.ws-mode::-webkit-scrollbar-track, .ws::-webkit-scrollbar-track, .ws *::-webkit-scrollbar-track { background:transparent; }

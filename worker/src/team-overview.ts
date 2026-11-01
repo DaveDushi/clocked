@@ -1,3 +1,4 @@
+import { trackingStatus, type TrackingStatus } from "./tracking.js";
 import { orgPlan } from "./plans.js";
 import { membershipSessionScope, sessionInScope } from "./team-scope.js";
 import { breakStats, teamBreakStats, type BreakStats } from "./break-stats.js";
@@ -30,6 +31,7 @@ export interface OverviewMember {
   name: string;
   email: string;
   role: string;
+  tracking?: TrackingStatus;
   stats: BreakStats;
   days: OverviewDay[];
   /** Sessions entered or edited in the dashboard this month. */
@@ -57,11 +59,11 @@ export async function buildTeamOverview(
 ): Promise<TeamOverview> {
   const policy = await getTimePolicy(env, organizationId);
   const members = await env.DB.prepare(
-    `SELECT u.id AS id, u.name AS name, u.email AS email, m.role AS role, m.createdAt, o.metadata
+    `SELECT u.id AS id, u.name AS name, u.email AS email, m.role AS role, m.createdAt, o.metadata, (SELECT COUNT(*) FROM api_token t WHERE t.userId = u.id AND EXISTS (SELECT 1 FROM settings WHERE key = 'device:' || t.id || ':connected')) AS devices, (SELECT value FROM settings WHERE key = 'user:' || u.id || ':tracking') AS tracking_preference
        FROM member m JOIN user u ON u.id = m.userId JOIN organization o ON o.id = m.organizationId
       WHERE m.organizationId = ?
       ORDER BY u.name, u.email`,
-  ).bind(organizationId).all<{ id: string; name: string; email: string; role: string; createdAt: string | number; metadata: string | null }>();
+  ).bind(organizationId).all<{ id: string; name: string; email: string; role: string; createdAt: string | number; metadata: string | null; devices: number; tracking_preference: string | null }>();
   const { start, end } = periodQueryBounds(period);
   if (policy.overtime.mode === "weekly") start.setUTCDate(start.getUTCDate() - 6);
   const sessions = await env.DB.prepare(
@@ -87,6 +89,7 @@ export async function buildTeamOverview(
     return {
       id: member.id, email: member.email, role: member.role,
       name: member.name || member.email,
+      tracking: trackingStatus(member.tracking_preference !== "off", member.devices > 0),
       stats: breakStats(month.recordedDays),
       days: month.recordedDays.map((day) => ({
         date: day.date, minutes: day.minutes, start: day.start, end: day.end,

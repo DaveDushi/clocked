@@ -36,6 +36,7 @@ function harness() {
     localStorage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value), removeItem: (key) => storage.delete(key) },
     wsModel: { lastCompleteMonth: () => "2026-09", initials: () => "MA" },
     personalView: { clear() {} }, memberView: { clear() {} },
+    async wsRefreshTracking() {},
     wsCloseDialog() {}, wsRender() {}, wsRefreshSheet() {}, wsRenderBottom() {}, wsRenderPending() {},
     wsToday: () => ({ y: 2026, m: 10, d: 22 }), wsCurrentPeriod: () => "2026-10",
     wsShow: (id, visible) => $(id).classList.toggle("hidden", !visible),
@@ -127,4 +128,28 @@ test("late overview, invitation and policy responses cannot overwrite a newly se
   assert.equal(h.context.ws.overview.members[0].id, "orchard-worker");
   assert.equal(h.context.ws.pending.length, 0);
   assert.equal(h.context.ws.policy, null);
+});
+
+
+test("the roster separates non-tracking managers without displaying zero hours", () => {
+  const elements = new Map();
+  const $ = id => { if (!elements.has(id)) elements.set(id, {innerHTML:"",textContent:"",setAttribute(){}}); return elements.get(id); };
+  const members = [
+    { id:"worker", name:"Ana Ruiz", role:"member", tracking:"tracking", days:[], stats:{recordedDays:2,workedMinutes:960} },
+    { id:"manager", name:"Morgan Hale", role:"owner", tracking:"disabled", days:[], stats:{recordedDays:0,workedMinutes:0} },
+    { id:"new", name:"Cy Lindqvist", role:"member", tracking:"no_device", days:[], stats:{recordedDays:0,workedMinutes:0} },
+  ];
+  const context = { $, ws:{expanded:new Set(),query:"",period:"2026-10"}, wsVisibleMembers:()=>members, wsMembers:()=>members, wsEsc:v=>String(v), wsRoleTag:r=>r==="owner"?"Owner":"", wsArrow:"", wsOvertimeLabel:()=>"Off", wsRenderBottom(){}, wsModel:{pad:n=>String(n).padStart(2,"0"),daysInMonth:()=>31,initials:()=>"AB",duration:()=>"16h 00m"} };
+  runInNewContext(between("function wsRosterPage(", "function wsRenderBottom()"), context);
+  context.wsRenderRoster();
+  assert.match($("wsRosterBody").innerHTML, /Ana Ruiz/);
+  assert.doesNotMatch($("wsRosterBody").innerHTML, /Morgan Hale|Cy Lindqvist|recorded days0/);
+  assert.match($("wsUntracked").innerHTML, /Morgan Hale/);
+  assert.match($("wsUntracked").innerHTML, /Tracking off/);
+  assert.match($("wsUntracked").innerHTML, /No device connected/);
+  assert.doesNotMatch($("wsUntracked").innerHTML, /Worked hours|0h|recorded days/);
+  members[1].tracking="tracking";
+  context.wsRenderRoster();
+  assert.match($("wsRosterBody").innerHTML, /Morgan Hale/);
+  assert.doesNotMatch($("wsUntracked").innerHTML, /Morgan Hale/);
 });

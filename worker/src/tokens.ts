@@ -1,3 +1,4 @@
+import { setSetting } from "./settings.js";
 import type { Env } from "./types";
 
 // Per-account Bearer tokens for desktop sync. The full secret is shown once at
@@ -166,11 +167,14 @@ export async function userIdForToken(env: Env, token: string): Promise<string | 
   const tokenHash = await hashToken(token);
 
   const byHash = await env.DB.prepare(
-    `SELECT userId FROM api_token WHERE token_hash = ? LIMIT 1`,
+    `SELECT userId, id FROM api_token WHERE token_hash = ? LIMIT 1`,
   )
     .bind(tokenHash)
-    .first<{ userId: string }>();
-  if (byHash?.userId) return byHash.userId;
+    .first<{ userId: string; id: string }>();
+  if (byHash?.userId) {
+    await setSetting(env, `device:${byHash.id}:connected`, "1");
+    return byHash.userId;
+  }
 
   // Legacy plaintext PK lookup.
   const byPlain = await env.DB.prepare(
@@ -193,5 +197,6 @@ export async function userIdForToken(env: Env, token: string): Promise<string | 
   } catch {
     /* concurrent upgrade — auth still succeeded */
   }
+  await setSetting(env, `device:${byPlain.id}:connected`, "1");
   return byPlain.userId;
 }

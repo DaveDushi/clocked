@@ -7,8 +7,8 @@ import { selectPrimaryMembership } from "./memberships.js";
 export const WORKSPACE_SCRIPT = "const wsModel = (" + createWorkspaceModel.toString() + ")();\n" +
   "const wsPrimaryMembership = (" + selectPrimaryMembership.toString() + ");\n" + String.raw`
 const ws = {
-  version: 0,
-  closedWeeks: new Set(), window: null, suppressClick: false, year: 0, annual: null, annualError: "", annualVersion: 0, annualLoading: false, annualKey: "",
+  version: 0, rosterPage: 0, untrackedPage: 0,
+  weekStates: new Map(), window: null, suppressClick: false, year: 0, annual: null, annualError: "", annualVersion: 0, annualLoading: false, annualKey: "",
   me: null, mode: "personal", page: "timesheets", period: "", query: "", expanded: new Set(),
   scope: "all", sort: "average", overview: null, overviewError: "", overviewVersion: 0,
   personal: null, personalError: "", memberData: null, memberKey: "", pending: null, policy: undefined,
@@ -25,6 +25,32 @@ function wsCanEdit() { return ws.mode !== "worker" || ws.me.editPermission === "
 function wsCanAdd() { return wsCanEdit() || ws.me.editPermission === "add_only"; }
 function wsMembers() { return ws.page === "stats" && ws.annual && wsIsTeam() ? ws.annual.members : ws.overview ? ws.overview.members : []; }
 function wsMember(id) { return wsMembers().find((m) => m.id === id) || null; }
+function wsTrackingLabel(status) {
+  return status === "tracking" ? "Cloud sync enabled" : status === "disabled" ? "Cloud sync paused" : "No device connected";
+}
+async function wsRefreshTracking() {
+  if (!ws.me || !ws.me.manager) return;
+  const r = await api("/api/tracking");
+  if (!r.ok) return;
+  ws.me.tracking = await r.json();
+  $("trackMyTime").checked = ws.me.tracking.status === "tracking";
+  $("trackMyTime").disabled = ws.me.tracking.status === "no_device";
+  $("trackingStatus").textContent = wsTrackingLabel(ws.me.tracking.status);
+}
+$("trackMyTime").addEventListener("change", async () => {
+  const input = $("trackMyTime"); input.disabled = true;
+  try {
+    const r = await api("/api/tracking", { method: "POST", body: JSON.stringify({ enabled: input.checked }) });
+    if (!r.ok) throw new Error("Could not save tracking preference.");
+    $("trackingMsg").textContent = "Saved.";
+    await wsRefreshTracking();
+    if (wsIsTeam()) await wsLoadOverview(true);
+  } catch (error) {
+    $("trackingMsg").textContent = error.message || "Could not save tracking preference.";
+    input.checked = ws.me.tracking && ws.me.tracking.status === "tracking";
+  } finally { input.disabled = ws.me.tracking && ws.me.tracking.status === "no_device"; }
+});
+new MutationObserver(() => { wsRefreshTracking().catch(() => {}); }).observe($("tokenList"), { childList: true });
 function wsRoleTag(role) {
   const roles = String(role || "").split(",").map((r) => r.trim());
   return roles.includes("owner") ? "Owner" : roles.includes("admin") ? "Manager" : "";
@@ -287,18 +313,44 @@ function wsTeamHtml() {
   return head + stale +
     "<div class='ws-toolbar'><div class='ws-toolbar-left'>" + wsMonthSelect() +
     "<input type='search' class='ws-search' data-role='search' placeholder='Find a member' aria-label='Find a member' value='" + wsEsc(ws.query) + "' /></div>" +
-    "<div class='ws-team-actions'><button type='button' data-action='toggle-all' id='wsViewAll' aria-pressed='false'>View all timesheets</button>" +
+    "<div class='ws-team-actions'><button type='button' data-action='toggle-all' id='wsViewAll' hidden>Collapse details</button>" +
     "<button type='button' class='primary' data-action='send-all' data-key='send-all'>Send all &#8599;</button></div></div>" +
-    "<div id='wsRosterBody' class='ws-person-ledgers' aria-label='Team timesheets'></div><div id='wsRosterFoot' class='ws-ledger-team-total'></div>" +
-    "<div class='ws-bottom' id='wsBottom'></div>";
+    "<div id='wsTrackingSummary' class='ws-tracking-summary'></div><div class='ws-roster-section-head'><h2 class='ws-roster-heading' id='wsTrackedHeading'>Tracking time</h2><div id='wsRosterPagerTop'></div></div><div id='wsRosterBody' class='ws-person-ledgers' aria-label='Team timesheets'></div><div id='wsRosterPager'></div><div id='wsRosterFoot' class='ws-ledger-team-total'></div>" +
+    "<section id='wsUntracked' class='ws-untracked' aria-label='Members not tracking'></section><div class='ws-bottom' id='wsBottom'></div>";
 }
 function wsVisibleMembers() {
   const q = ws.query.trim().toLowerCase();
   return wsMembers().filter((m) => !q || (m.name + " " + m.email).toLowerCase().includes(q));
 }
+function wsRosterPage(rows, page, size) {
+  const index = Math.max(0, Math.min(page || 0, Math.ceil(rows.length / size) - 1));
+  return { index, rows: rows.slice(index * size, (index + 1) * size), start: index * size + 1, end: Math.min((index + 1) * size, rows.length), total: rows.length };
+}
+function wsRosterPager(page, group) {
+  if (page.total <= (group === "tracked" ? 10 : 5)) return "";
+  return "<nav class='ws-roster-pager' aria-label='" + (group === "tracked" ? "Tracking members" : "Non-tracking members") + " pages'><span role='status'>Showing " + page.start + "-" + page.end + " of " + page.total + "</span><div><button type='button' data-action='roster-page' data-group='" + group + "' data-index='" + (page.index - 1) + "'" + (page.index === 0 ? " disabled" : "") + ">Previous</button><button type='button' data-action='roster-page' data-group='" + group + "' data-index='" + (page.index + 1) + "'" + (page.end === page.total ? " disabled" : "") + ">Next</button></div></nav>";
+}
 function wsRenderRoster() {
   const body = $("wsRosterBody"); if (!body) return;
-  const visible = wsVisibleMembers();
+  const matching = wsVisibleMembers();
+  const tracked = matching.filter((m) => m.tracking === "tracking" || !m.tracking);
+  const untracked = matching.filter((m) => m.tracking && m.tracking !== "tracking");
+  const trackedPage = wsRosterPage(tracked, ws.rosterPage, 10);
+  const otherPage = wsRosterPage(untracked, ws.untrackedPage, 5);
+  ws.rosterPage = trackedPage.index; ws.untrackedPage = otherPage.index;
+  const visible = trackedPage.rows;
+  $("wsRosterPager").innerHTML = wsRosterPager(trackedPage, "tracked");
+  $("wsRosterPagerTop").innerHTML = wsRosterPager(trackedPage, "tracked");
+  const teamTracked = tracked.length;
+  const teamUntracked = untracked.length;
+  $("wsTrackingSummary").innerHTML = "<p>" + (ws.query.trim() ? "Matching members by current tracking status" : "Current tracking status") + " <span aria-hidden='true'>/</span> <button type='button' class='text-button' data-action='roster-jump' data-group='tracked'>" + teamTracked + " tracking</button>" +
+    (teamUntracked ? " <span aria-hidden='true'>/</span> <button type='button' class='text-button' data-action='roster-jump' data-group='untracked'>" + teamUntracked + " not tracking</button>" : "") + "</p><small>Hours and reports use the selected month, including time recorded before tracking stopped.</small>";
+  $("wsTrackedHeading").textContent = "Tracking time" + (tracked.length ? " (" + tracked.length + ")" : "");
+  $("wsUntracked").hidden = !untracked.length;
+  $("wsUntracked").innerHTML = untracked.length ? "<div class='ws-roster-section-head'><h2 class='ws-roster-heading'>Not tracking <span>" + untracked.length + "</span></h2>" + wsRosterPager(otherPage, "untracked") + "</div><p class='ws-note'>Current status. Past timesheets remain available for the selected month.</p><div class='ws-untracked-list'>" + otherPage.rows.map((m) =>
+    "<div class='ws-untracked-person'><span class='ws-person-initials' aria-hidden='true'>" + wsEsc(wsModel.initials(m.name)) + "</span><span class='ws-person-name'>" + wsEsc(m.name) + "<small>" + wsEsc(wsRoleTag(m.role) || "Worker") + "</small></span><span class='ws-untracked-reason'>" + (m.tracking === "disabled" ? "Tracking off" : "No device connected") + "</span>" +
+    (m.stats.recordedDays ? "<button type='button' class='text-button' data-action='open-sheet' data-id='" + wsEsc(m.id) + "'>Past timesheets &#8599;</button>" : "") + "</div>"
+  ).join("") + "</div>" + wsRosterPager(otherPage, "untracked") : "";
   body.innerHTML = visible.length ? visible.map((m) => {
     const open = ws.expanded.has(m.id), tag = wsRoleTag(m.role);
     const byDate = new Map(m.days.map((day) => [day.date, day]));
@@ -306,13 +358,13 @@ function wsRenderRoster() {
       const day = byDate.get(ws.period + "-" + wsModel.pad(index + 1));
       return "<i style='background:" + (day ? wsModel.WORK_SHADES[wsModel.workedLevel(day.minutes)] : "var(--border)") + "'></i>";
     }).join("");
-    return "<article class='ws-person-ledger" + (open ? " open" : "") + "'><button type='button' class='ws-person-toggle' data-action='toggle-member' data-id='" + wsEsc(m.id) + "' data-key='member:" + wsEsc(m.id) + "' aria-expanded='" + open + "' aria-controls='detail-" + wsEsc(m.id) + "'><span class='ws-person-initials' aria-hidden='true'>" + wsEsc(wsModel.initials(m.name)) + "</span><span class='ws-person-name'>" + wsEsc(m.name) + "<small>" + m.stats.recordedDays + " recorded days" + (tag ? " / " + tag : "") + (m.days.some((day) => day.longBreakCount) ? " / " + m.days.reduce((sum, day) => sum + (day.longBreakCount || 0), 0) + " long breaks flagged" : "") + "</small></span><span class='ws-person-pulse' aria-hidden='true'>" + pulse + "</span><span class='ws-person-time mono'>" + wsModel.duration(m.stats.workedMinutes) + "<small>Worked hours</small></span><span class='ws-person-overtime mono'>" + wsOvertimeLabel(m.days) + "<small>Overtime</small></span>" + wsArrow + "</button>" +
+    return "<article data-tracking='" + wsEsc(m.tracking || "") + "' class='ws-person-ledger" + (open ? " open" : "") + "'><button type='button' class='ws-person-toggle' data-action='toggle-member' data-id='" + wsEsc(m.id) + "' data-key='member:" + wsEsc(m.id) + "' aria-expanded='" + open + "' aria-controls='detail-" + wsEsc(m.id) + "'><span class='ws-person-initials' aria-hidden='true'>" + wsEsc(wsModel.initials(m.name)) + "</span><span class='ws-person-name'>" + wsEsc(m.name) + "<small>" + m.stats.recordedDays + " recorded day" + (m.stats.recordedDays === 1 ? "" : "s") + (tag ? " / " + tag : "") + (m.days.some((day) => day.longBreakCount) ? " / " + m.days.reduce((sum, day) => sum + (day.longBreakCount || 0), 0) + " long breaks flagged" : "") + "</small></span><span class='ws-person-pulse' aria-hidden='true'>" + pulse + "</span><span class='ws-person-time mono'>" + wsModel.duration(m.stats.workedMinutes) + "<small>Worked hours</small></span><span class='ws-person-overtime mono'>" + wsOvertimeLabel(m.days) + "<small>Overtime</small></span>" + wsArrow + "</button>" +
       "<div id='detail-" + wsEsc(m.id) + "'" + (open ? "" : " hidden") + ">" + (open ? wsMemberDetail(m, false) : "") + "</div></article>";
-  }).join("") : "<p class='ws-empty'>" + (wsMembers().length ? "No members match your search." : "No members yet. Invite someone to get started.") + "</p>";
-  const total = visible.reduce((sum, m) => sum + m.stats.workedMinutes, 0);
-  $("wsRosterFoot").innerHTML = visible.length ? "<span>" + (ws.query.trim() ? "Matching members" : "Team total") + "</span><span class='ws-total-hours'><span><strong class='mono'>" + wsModel.duration(total) + "</strong><small>Worked hours</small></span><span><strong class='mono'>" + wsOvertimeLabel(visible.flatMap((m) => m.days)) + "</strong><small>Overtime</small></span></span>" : "";
-  const all = wsMembers().length > 0 && wsMembers().every((m) => ws.expanded.has(m.id));
-  $("wsViewAll").textContent = all ? "Collapse all" : "View all timesheets"; $("wsViewAll").setAttribute("aria-pressed", String(all)); wsRenderBottom();
+  }).join("") : "<p class='ws-empty'>" + (wsMembers().length ? (matching.length ? (ws.query.trim() ? "No tracking members match your search." : "No team members are currently tracking time.") : "No members match your search.") : "No members yet. Invite someone to get started.") + "</p>";
+  const total = matching.reduce((sum, m) => sum + m.stats.workedMinutes, 0);
+  $("wsRosterFoot").innerHTML = matching.some((m) => m.stats.recordedDays) ? "<span>" + (ws.query.trim() ? "Matching members" : "Team total") + "</span><span class='ws-total-hours'><span><strong class='mono'>" + wsModel.duration(total) + "</strong><small>Worked hours</small></span><span><strong class='mono'>" + wsOvertimeLabel(matching.flatMap((m) => m.days)) + "</strong><small>Overtime</small></span></span>" : "";
+  $("wsViewAll").hidden = ws.expanded.size === 0;
+  wsRenderBottom();
 }
 function wsRenderBottom() {
   const bottom = $("wsBottom");
@@ -324,9 +376,13 @@ function wsRenderBottom() {
 function wsLedgerHtml(days, userId, sessions) {
   if (!days.length) return "<p class='ws-empty'>No sessions recorded in this period.</p>";
   const max = Math.max(480, ...days.map((day) => day.minutes));
-  return "<div class='ws-ledger'>" + wsModel.weekGroups(days).map((week) => {
+  const weeks = wsModel.weekGroups(days);
+  if (!ws.weekStates) ws.weekStates = new Map();
+  return "<div class='ws-ledger'>" + weeks.map((week, index) => {
+    const weekKey = ws.period + ":" + userId + ":" + week.start;
+    const open = ws.weekStates.has(weekKey) ? ws.weekStates.get(weekKey) : !userId && index === weeks.length - 1;
     const label = (date) => new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(date + "T00:00:00Z"));
-    return "<details class='ws-week' data-week='" + wsEsc(userId + ":" + week.start) + "'" + (ws.closedWeeks.has(userId + ":" + week.start) ? "" : " open") + "><summary><span>" + label(week.days[0].date) + " - " + label(week.days.at(-1).date) + "<small>" + week.days.length + " recorded days</small></span><span class='mono'>" + wsModel.duration(week.minutes) + "<span class='ws-week-chevron' aria-hidden='true'>&#8964;</span></span></summary><div class='ws-week-days'>" + week.days.map((day) => {
+    return "<details class='ws-week' data-week='" + wsEsc(weekKey) + "'" + (open ? " open" : "") + "><summary><span>" + label(week.days[0].date) + " - " + label(week.days.at(-1).date) + "<small>" + week.days.length + " recorded days</small></span><span class='mono'>" + wsModel.duration(week.minutes) + "<span class='ws-week-chevron' aria-hidden='true'>&#8964;</span></span></summary><div class='ws-week-days'>" + week.days.map((day) => {
       const own = sessions ? sessions.filter((session) => session.date === day.date) : [];
       const marks = sessions ? own.map((session) => "<i class='ws-session-mark' style='left:" + session.startMin / 14.4 + "%;width:" + (session.endMin - session.startMin) / 14.4 + "%'></i>").join("") : "<i class='ws-session-mark' style='left:0;width:" + day.minutes / max * 100 + "%'></i>";
       const weekday = new Intl.DateTimeFormat("en", { weekday: "short", timeZone: "UTC" }).format(new Date(day.date + "T00:00:00Z"));
@@ -350,29 +406,44 @@ function wsOvertimeLabel(days) {
 }
 function wsMemberDetail(m, inSheet) {
   const days = ws.page === "stats" ? wsWindowDays(m.days) : m.days;
-  return "<section class='ws-member-ledger' aria-label='" + wsEsc(m.name) + " recorded days'>" +
+  const collapse = !inSheet && ws.page !== "stats" ? "<button type='button' class='text-button' data-action='collapse-member' data-id='" + wsEsc(m.id) + "'>Collapse timesheet</button>" : "";
+  return "<section class='ws-member-ledger' aria-label='" + wsEsc(m.name) + " recorded days'>" + (collapse ? "<div class='ws-inline-collapse'>" + collapse + "</div>" : "") +
     (wsTimeAccounting(days) ? "<p class='ws-note'>" + wsEsc(wsTimeAccounting(days)) + ". Select a day to review.</p>" : "") + wsLedgerHtml(days, m.id, null) + (ws.page === "stats" ? "" :
-      "<div class='ws-detail-actions'><button type='button' class='text-button' data-action='member-settings' data-id='" + wsEsc(m.id) + "'>Member settings</button><button type='button' class='text-button' data-action='add-day' data-user='" + wsEsc(m.id) + "'>+ Add time</button>" + (days.length ? "<button type='button' class='text-button' data-action='preview' data-user='" + wsEsc(m.id) + "'>Preview CSV</button>" : "") + "</div>") + "</section>";
+      "<div class='ws-detail-actions'><button type='button' class='text-button' data-action='member-settings' data-id='" + wsEsc(m.id) + "'>Member settings</button><button type='button' class='text-button' data-action='add-day' data-user='" + wsEsc(m.id) + "'>+ Add time</button>" + (days.length ? "<button type='button' class='text-button' data-action='preview' data-user='" + wsEsc(m.id) + "'>Preview CSV</button>" : "") + "</div>") + (collapse ? "<div class='ws-inline-collapse'>" + collapse + "</div>" : "") + "</section>";
 }
 
 // Personal and worker timesheet
+function wsPersonalTrackingHtml() {
+  const status = ws.me.tracking && ws.me.tracking.status;
+  const message = status === "no_device"
+    ? "No device connected. Connect the desktop app to sync your recorded time. Creating a device token alone does not connect the app."
+    : status === "disabled"
+      ? "Cloud sync is paused. The desktop app may still record locally; queued records upload when sync resumes. Existing timesheets stay available."
+      : status === "tracking"
+        ? "Device connected and cloud sync enabled. No sessions have synced for this month. Check the desktop app if you expected recorded time."
+        : "No sessions have synced for this month. Check your desktop app and device connection.";
+  return "<div class='ws-notice' role='status'><p>" + message + "</p><button type='button' class='text-button' data-action='settings-desktop' data-key='settings-desktop'>" + (status === "no_device" ? "Connect a device" : "Desktop app and devices") + " &#8599;</button></div>";
+}
 function wsPersonalHtml() {
   const worker = ws.mode === "worker";
   const head = "<div class='ws-title'><div><h1>My timesheet</h1><p>" + wsEsc(ws.me.user.email) + "</p></div></div>";
   const toolbar = "<div class='ws-toolbar'>" + wsMonthSelect() + (worker ? "" : "<button type='button' class='primary' data-action='personal-send' data-key='personal-send'>Send timesheet &#8599;</button>") + "</div>";
-  if (!ws.personal) return head + toolbar + wsState("Loading your timesheet…", ws.personalError, "reload");
+  if (!ws.personal) return head + toolbar + wsState("Loading your timesheet...", ws.personalError, "reload");
   const data = ws.personal;
   const days = data.recordedDays || [];
   const breaks = days.reduce((sum, d) => sum + d.breakMinutes, 0);
-  const table = "<div class='ws-month-summary'><div><small>" + wsEsc(wsModel.monthLabel(ws.period)) + "</small><strong class='mono'>" + wsModel.duration(data.totalMinutes) + "</strong></div><p>" + days.length + " recorded days <span aria-hidden='true'>/</span> " + wsModel.duration(breaks) + " breaks<small>Session bars follow a 24-hour clock.</small></p></div>" + wsLedgerHtml(days, "", data.sessions || []);
+  const permission = worker ? "<p class='ws-note'>" + (wsCanEdit()
+    ? "You can add missing time and edit existing sessions."
+    : wsCanAdd() ? "You can add missing time. Ask your team manager to change existing sessions."
+      : "Your team manager handles corrections to your timesheet.") + "</p>" : "";
+  const addTime = wsCanAdd() ? "<div class='ws-actions-row'><button type='button' class='text-button' data-action='add-day' data-user='' data-key='add-day:'>+ Add time to a day without sessions</button></div>" : "";
+  const table = "<div class='ws-month-summary'><div><small>" + wsEsc(wsModel.monthLabel(ws.period)) + "</small><strong class='mono'>" + wsModel.duration(data.totalMinutes) + "</strong></div><p>" + days.length + " recorded day" + (days.length === 1 ? "" : "s") + " <span aria-hidden='true'>/</span> " + wsModel.duration(breaks) + " breaks<small>Session bars follow a 24-hour clock.</small></p></div>" + permission + addTime + (!days.length ? wsPersonalTrackingHtml() : "") + wsLedgerHtml(days, "", data.sessions || []);
   const projects = (data.projects || []).length ? "<section class='ws-projects'><h2>By project</h2>" + (function () {
     const max = data.projects.reduce((a, p) => Math.max(a, p.minutes || 0), 0) || 1;
     return data.projects.slice(0, 12).map((p) => "<div class='ws-project'><span title='" + wsEsc(p.project) + "'>" + wsEsc(p.project) + "</span><i style='width:" + Math.max(4, Math.round((p.minutes / max) * 100)) + "%'></i><span class='mono' style='text-align:right'>" + wsModel.duration(p.minutes) + "</span></div>").join("");
   })() + "<p class='ws-note'>Project totals come from optional activity tracking on your computers and are separate from worked time.</p></section>" : "";
   return head + toolbar + table +
-    "<div class='ws-bottom'><span>" + wsEsc(wsRecordedThrough()) + "</span><span>" + (days.length ? (worker ? "Select a date to review it" : "Select a date to review or edit") : "") +
-    (worker ? "" : "</span><button type='button' class='text-button' data-action='add-day' data-user='' data-key='add-day:'>+ Add time to a day without sessions</button><span>") + "</span></div>" +
-    (worker ? "<p class='ws-locked'>Your team manager handles corrections to your timesheet.</p>" : "") +
+    "<div class='ws-bottom'><span>" + wsEsc(wsRecordedThrough()) + "</span><span>" + (days.length ? (wsCanEdit() ? "Select a date to review or edit" : wsCanAdd() ? "Select a date to review or add time" : "Select a date to review it") : "") + "</span></div>" +
     "<p class='ws-note'>" + BREAK_NOTE + "</p>" + projects;
 }
 
@@ -430,12 +501,14 @@ function wsStatsHtml() {
     const member = team && !all ? wsMember(ws.scope) : null;
     const days = wsWindowDays(all ? ws.annual.members.flatMap((m) => m.days) : member ? member.days : ws.annual.days);
     const stats = wsModel.statsForDays(days);
-    content = wsZoomControls() + wsWorkedCalendarHtml(days, all ? null : member ? member.id : "") + wsMetrics(stats, all, member ? member.name : "") + (all ? wsComparisonHtml() : "");
+    content = (member && member.tracking && member.tracking !== "tracking" ? "<p class='ws-note'>Not tracking now: " + (member.tracking === "disabled" ? "tracking off" : "no device connected") + ". This view shows recorded time for the selected dates.</p>" : "") + wsZoomControls() + wsWorkedCalendarHtml(days, all ? null : member ? member.id : "") + wsMetrics(stats, all, member ? member.name : "") + (all ? wsComparisonHtml() : "");
   }
   return head + (scope ? "<div class='ws-stats-filters'>" + scope + "</div>" : "") + "<div class='ws-year-layout'><div class='ws-year-content'>" + content + "</div>" + nav + "</div>";
 }
 function wsComparisonHtml() {
-  const members = wsStatsMembers();
+  const allMembers = wsStatsMembers();
+  const withoutRecords = allMembers.filter((member) => member.tracking && member.tracking !== "tracking" && member.stats.recordedDays === 0);
+  const members = allMembers.filter((member) => !withoutRecords.includes(member));
   const rows = wsModel.sortMembers(members, ws.sort);
   const max = members.reduce((a, m) => Math.max(a, m.stats.avgBreakMinutes), 0);
   const recorded = members.filter((m) => m.stats.recordedDays);
@@ -447,13 +520,14 @@ function wsComparisonHtml() {
     "<tr class='ws-ref'><th scope='row' style='font-weight:400;text-align:left;padding:12px 0;font-size:12px'>Team median <small>(" + median.members + " with recorded days)</small></th><td class='num'>—</td><td class='num'>—</td><td class='num'>" + (median.breaksPerDay == null ? "—" : wsModel.rate(median.breaksPerDay)) + "</td><td class='num'>" + (median.avgBreakMinutes == null ? "—" : wsModel.shortDuration(median.avgBreakMinutes)) + "</td></tr>" +
     rows.map((m) => {
       const recorded = m.stats.recordedDays > 0;
-      return "<tr><td><button type='button' data-action='open-sheet' data-id='" + wsEsc(m.id) + "' data-key='sheet:" + wsEsc(m.id) + "' aria-label='Review " + wsEsc(m.name) + " recorded days'>" + wsEsc(m.name) + " &#8599;</button>" + (recorded ? "" : " <small>No recorded days</small>") + "</td>" +
+      return "<tr><td><button type='button' data-action='open-sheet' data-id='" + wsEsc(m.id) + "' data-key='sheet:" + wsEsc(m.id) + "' aria-label='Review " + wsEsc(m.name) + " recorded days'>" + wsEsc(m.name) + " &#8599;</button>" + (m.tracking && m.tracking !== "tracking" ? " <small>Not tracking now: " + (m.tracking === "disabled" ? "tracking off" : "no device connected") + "</small>" : "") + (recorded ? "" : " <small>No recorded days</small>") + "</td>" +
         "<td class='num'>" + wsModel.duration(m.stats.workedMinutes) + "</td><td class='num break-value'>" + (recorded ? wsModel.duration(m.stats.breakMinutes) : "—") + "</td>" +
         "<td class='num'>" + (recorded ? wsModel.rate(m.stats.breaksPerDay) : "—") + "</td>" +
         "<td class='num ws-bar'>" + (recorded ? "<i style='width:" + (max ? (m.stats.avgBreakMinutes / max) * 100 : 0) + "%'></i>" + wsModel.shortDuration(m.stats.avgBreakMinutes) : "—") + "</td></tr>";
     }).join("") +
     "</tbody></table></div><p class='ws-note'>Averages include recorded days without breaks and leave out days without sessions, so people with different numbers of recorded days compare fairly. The team median is the middle of each member's own daily average.</p>" +
-    wsPolicyNote() + "</section>";
+    (withoutRecords.length ? "<details class='ws-stats-untracked'><summary>Not tracking now: " + withoutRecords.length + " member" + (withoutRecords.length === 1 ? "" : "s") + " with no recorded time in this view</summary><ul>" + withoutRecords.map((member) => "<li>" + wsEsc(member.name) + " <small>" + (member.tracking === "disabled" ? "Tracking off" : "No device connected") + "</small></li>").join("") + "</ul></details>" : "") +
+    "<p class='ws-note'>Tracking status is current. Recorded time follows the selected dates, including time from people who have since stopped tracking.</p>" + wsPolicyNote() + "</section>";
 }
 function wsPolicyNote() {
   if (ws.policy === undefined) return "";
@@ -699,34 +773,39 @@ async function wsLoadRecipients(teamEndpoint) {
   if (!response.ok) throw new Error(data.error || "Could not load recipients.");
   return data.recipients && data.recipients.length ? data.recipients : (data.defaultRecipients || []);
 }
+function wsReportMembers() {
+  return (ws.overview ? ws.overview.members : []).filter((member) => member.stats.recordedDays > 0);
+}
 function wsOpenSendAll(opener) {
   if (!ws.overview) return;
   const version = ws.version;
-  ws.send = { selected: new Set(wsMembers().map((m) => m.id)), recipients: null, error: "", done: false, period: ws.period };
+  ws.send = { selected: new Set(wsReportMembers().map((m) => m.id)), recipients: null, error: "", done: false, period: ws.period };
   wsRenderSendAll();
   wsOpenDialog("dlgSend", opener);
   wsLoadRecipients(true).then((list) => { if (version !== ws.version) return; ws.send.recipients = list; wsUpdateSend(); })
     .catch((error) => { if (version !== ws.version) return; ws.send.error = error.message; wsUpdateSend(); });
 }
 function wsRenderSendAll() {
-  const members = wsMembers();
+  const members = wsReportMembers();
+  const excluded = ws.overview.members.length - members.length;
   const reference = wsModel.median(members.filter((m) => m.stats.recordedDays > 0).map((m) => m.stats.recordedDays));
   $("dlgSendBody").innerHTML = wsDialogHead("dlgSendTitle", "Review team timesheets") + wsPeriodNotice() +
     "<form id='sendForm'><div class='ws-recipients'><span>Recipients</span><strong id='sendRecipients'>Loading…</strong><button type='button' class='text-button' data-action='settings-delivery'>Change in Settings</button></div>" +
-    "<div class='ws-select-head'><label class='ws-check' style='margin:0 !important'><input id='sendAll' type='checkbox' checked /> Select all members</label><span id='sendCount'></span></div>" +
-    "<div class='ws-send-list'>" + members.map((m) => {
+    "<div class='ws-select-head'><label class='ws-check' style='margin:0 !important'><input id='sendAll' type='checkbox'" + (members.length ? " checked" : " disabled") + " /> Select all timesheets</label><span id='sendCount'></span></div>" +
+    (excluded ? "<p class='sub'>" + excluded + " member" + (excluded === 1 ? " has" : "s have") + " no recorded time in this month and " + (excluded === 1 ? "is" : "are") + " excluded. Past time remains eligible even if tracking is off now.</p>" : "") +
+    "<div class='ws-send-list'>" + (members.length ? members.map((m) => {
       const facts = wsModel.sendFacts(m, reference == null ? null : Math.round(reference));
-      return "<div class='ws-send-row'><label class='ws-send-member'><input type='checkbox' data-send-member='" + wsEsc(m.id) + "' checked /><span><strong>" + wsEsc(m.name) + "</strong><small>" + m.stats.recordedDays + " recorded day" + (m.stats.recordedDays === 1 ? "" : "s") + "</small>" +
+      return "<div class='ws-send-row'><label class='ws-send-member'><input type='checkbox' data-send-member='" + wsEsc(m.id) + "'" + (ws.send.selected.has(m.id) ? " checked" : "") + " /><span><strong>" + wsEsc(m.name) + "</strong><small>" + m.stats.recordedDays + " recorded day" + (m.stats.recordedDays === 1 ? "" : "s") + "</small>" +
         facts.map((f) => "<small class='fact'>" + wsEsc(f) + "</small>").join("") + "</span><span class='mono'>" + wsModel.duration(m.stats.workedMinutes) + "</span></label>" +
         "<button type='button' class='text-button' data-action='preview' data-user='" + wsEsc(m.id) + "' aria-label='Preview CSV for " + wsEsc(m.name) + "'>Preview CSV</button></div>";
-    }).join("") + "</div>" +
+    }).join("") : "<p class='sub'>No timesheets with recorded time to send for this month.</p>") + "</div>" +
     "<div class='ws-send-total'><span>Selected worked time</span><strong id='sendTotal'></strong></div>" +
     "<p class='sub' style='margin-top:12px'>One email to each recipient above. Team delivery settings choose separate member CSVs or one Excel workbook with a summary and employee tabs. Preview the selected reports below before sending. Pending invitations are not included.</p>" +
     "<div id='sendMsg' class='ws-feedback' role='status'></div><div id='sendResults' class='ws-results'></div>" +
     "<div class='ws-send-footer'><div class='ws-actions-row split'><button type='button' id='teamPreviewConfirm' data-action='team-preview'>Preview email files</button><div style='display:flex;gap:10px'><button type='button' data-close>Cancel</button><button type='submit' id='sendConfirm' class='primary'></button></div></div></div></form>";
   $("sendForm").addEventListener("submit", wsSubmitSendAll);
   $("sendAll").addEventListener("change", (event) => {
-    ws.send.selected = event.target.checked ? new Set(wsMembers().map((m) => m.id)) : new Set();
+    ws.send.selected = event.target.checked ? new Set(wsReportMembers().map((m) => m.id)) : new Set();
     document.querySelectorAll("[data-send-member]").forEach((box) => { box.checked = event.target.checked; });
     wsUpdateSend();
   });
@@ -738,10 +817,10 @@ function wsRenderSendAll() {
 }
 function wsUpdateSend() {
   if (!ws.send || !$("sendConfirm")) return;
-  const total = wsMembers().length;
+  const total = wsReportMembers().length;
   const size = ws.send.selected.size;
   $("sendCount").textContent = size + " of " + total + " selected";
-  $("sendTotal").textContent = wsModel.duration(wsMembers().filter((m) => ws.send.selected.has(m.id)).reduce((sum, m) => sum + m.stats.workedMinutes, 0));
+  $("sendTotal").textContent = wsModel.duration(wsReportMembers().filter((m) => ws.send.selected.has(m.id)).reduce((sum, m) => sum + m.stats.workedMinutes, 0));
   const all = $("sendAll");
   all.checked = size === total && total > 0;
   all.indeterminate = size > 0 && size < total;
@@ -755,7 +834,7 @@ async function wsSubmitSendAll(event) {
   event.preventDefault();
   const version = ws.version;
   if (!ws.send || ws.send.sending || ws.send.selected.size === 0) return;
-  const userIds = wsMembers().filter((m) => ws.send.selected.has(m.id)).map((m) => m.id);
+  const userIds = wsReportMembers().filter((m) => ws.send.selected.has(m.id)).map((m) => m.id);
   ws.send.sending = true; wsUpdateSend();
   wsFeedback("sendMsg", "Sending one team email with " + userIds.length + " timesheet" + (userIds.length === 1 ? "" : "s") + "…", "ok");
   $("sendResults").textContent = "";
@@ -833,7 +912,7 @@ async function wsOpenTeamPreview(opener) {
   let html;
   try {
     const response = await api("/api/team/preview-bundle?organizationId=" + encodeURIComponent(orgId), {
-      method: "POST", body: JSON.stringify({ period: ws.send.period, userIds: wsMembers().filter((m) => ws.send.selected.has(m.id)).map((m) => m.id) }),
+      method: "POST", body: JSON.stringify({ period: ws.send.period, userIds: wsReportMembers().filter((m) => ws.send.selected.has(m.id)).map((m) => m.id) }),
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Could not load the preview.");
@@ -1188,7 +1267,8 @@ $("wsMain").addEventListener("keydown", (event) => {
 $("wsMain").addEventListener("toggle", (event) => {
   const week = event.target.dataset.week;
   if (!week) return;
-  if (event.target.open) ws.closedWeeks.delete(week); else ws.closedWeeks.add(week);
+  if (!ws.weekStates) ws.weekStates = new Map();
+  ws.weekStates.set(week, event.target.open);
 }, true);
 $("workspace").addEventListener("click", (event) => {
   const el = event.target.closest("[data-action], [data-page]");
@@ -1211,14 +1291,31 @@ $("workspace").addEventListener("click", (event) => {
   else if (action === "reload-year") wsLoadYear(true);
   else if (action === "year-team-day") wsOpenYearTeamDay(el.dataset.date, el);
   else if (action === "toggle-member") {
-    if (ws.expanded.has(el.dataset.id)) ws.expanded.delete(el.dataset.id); else ws.expanded.add(el.dataset.id);
+    const wasOpen = ws.expanded.has(el.dataset.id);
+    ws.expanded.clear();
+    if (!wasOpen) ws.expanded.add(el.dataset.id);
     wsRenderRoster();
     const again = document.querySelector("#wsRosterBody [data-key='member:" + el.dataset.id + "']");
     if (again && el.classList.contains("ws-person-toggle")) again.focus({ preventScroll: true });
+  } else if (action === "collapse-member") {
+    ws.expanded.delete(el.dataset.id);
+    wsRenderRoster();
+    const target = document.querySelector("#wsRosterBody [data-key='member:" + el.dataset.id + "']");
+    if (target) { target.focus({ preventScroll: true }); target.scrollIntoView({ block: "nearest" }); }
+  } else if (action === "roster-jump") {
+    const target = $(el.dataset.group === "tracked" ? "wsTrackedHeading" : "wsUntracked");
+    if (target && !target.hidden) { target.tabIndex = -1; target.focus({ preventScroll: true }); target.scrollIntoView({ block: "start" }); }
+  } else if (action === "roster-page") {
+    const group = el.dataset.group;
+    if (group === "tracked") { ws.rosterPage = Number(el.dataset.index); ws.expanded.clear(); }
+    else ws.untrackedPage = Number(el.dataset.index);
+    wsRenderRoster();
+    const target = $(group === "tracked" ? "wsTrackedHeading" : "wsUntracked");
+    target.tabIndex = -1;
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({ block: "start" });
   } else if (action === "toggle-all") {
-    const all = wsMembers().every((m) => ws.expanded.has(m.id));
-    if (all) ws.expanded.clear();
-    else { ws.query = ""; const search = document.querySelector("[data-role='search']"); if (search) search.value = ""; ws.expanded = new Set(wsMembers().map((m) => m.id)); }
+    ws.expanded.clear();
     wsRenderRoster();
   } else if (action === "send-all") wsOpenSendAll(el);
   else if (action === "personal-send") wsOpenPersonalSend(el);
@@ -1239,6 +1336,7 @@ $("workspace").addEventListener("click", (event) => {
   else if (action === "add-day") wsOpenAddDay(el.dataset.user, el);
   else if (action === "remove-session") wsRemoveSession(el);
   else if (action === "settings-delivery") wsOpenSettings(el, "setDelivery");
+  else if (action === "settings-desktop") wsOpenSettings(el, "setDesktop");
   else if (action === "reload") wsLoadPage();
   else if (action === "signout") $("signout").click();
 });
@@ -1254,7 +1352,7 @@ $("wsMain").addEventListener("change", (event) => {
   else if (role === "sort") { ws.sort = event.target.value; wsRender(); }
 });
 $("wsMain").addEventListener("input", (event) => {
-  if (event.target.dataset.role === "search") { ws.query = event.target.value; wsRenderRoster(); }
+  if (event.target.dataset.role === "search") { ws.query = event.target.value; ws.rosterPage = 0; ws.untrackedPage = 0; ws.expanded.clear(); wsRenderRoster(); }
 });
 $("wsSettings").onclick = (event) => wsOpenSettings(event.currentTarget);
 $("wsAccount").onclick = (event) => wsOpenAccount(event.currentTarget);
@@ -1276,6 +1374,8 @@ async function startWorkspace(me, selectedTeam) {
   ws.day = null; ws.edit = null; ws.send = null; ws.sheetId = ""; ws.sheetDay = "";
   ws.settingsMember = ""; ws.messageTarget = ""; ws.busy = false;
   ws.me = me;
+  $("managerTracking").hidden = !me.manager;
+  wsRefreshTracking().catch(() => {});
   meEmail = (me.user && me.user.email) || "";
   orgId = ""; orgName = ""; orgRole = ""; orgPlanKey = ""; orgCap = 0; memberCount = 0;
   const params = new URLSearchParams(location.search);
@@ -1306,9 +1406,9 @@ async function startWorkspace(me, selectedTeam) {
   ws.page = params.get("view") === "stats" ? "stats" : "timesheets";
   const year = Number(params.get("year"));
   ws.year = Number.isInteger(year) && year >= 2000 && year <= t.y ? year : t.y;
-  ws.window = null; ws.closedWeeks = new Set();
+  ws.window = null; ws.weekStates = new Map();
   ++ws.annualVersion; ws.annual = null; ws.annualError = ""; ws.annualKey = ""; ws.annualLoading = false;
-  ws.query = ""; ws.expanded = new Set(); ws.scope = "all"; ws.overview = null; ws.overviewError = ""; ws.personal = null; ws.personalError = "";
+  ws.query = ""; ws.rosterPage = 0; ws.untrackedPage = 0; ws.expanded = new Set(); ws.scope = "all"; ws.overview = null; ws.overviewError = ""; ws.personal = null; ws.personalError = "";
   ws.pending = []; ws.policy = undefined; ws.memberData = null; ws.memberKey = "";
   personalView.clear(true); memberView.clear(true);
   $("wsName").textContent = ws.mode === "personal" ? "Personal account" : orgName;

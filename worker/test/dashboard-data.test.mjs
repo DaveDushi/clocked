@@ -1,3 +1,4 @@
+import { getTracking, handleTracking } from "../.tmp-test/tracking.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildTimesheet } from "../.tmp-test/report.js";
@@ -272,4 +273,26 @@ test("an entirely empty team still has a summary and every selected employee tab
   assert.deepEqual(book.SheetNames, ['Summary', 'Alice', 'Bob']);
   assert.equal(book.Sheets.Alice.A6.v, 'No sessions recorded');
   assert.equal(book.Sheets.Summary.C7.v, 0);
+});
+
+
+test("manager tracking persists, requires a device and cannot be changed by a worker", async (t) => {
+  const { env, sqlite } = fixture(t);
+  assert.deepEqual(await getTracking(env, "alice"), { enabled: true, status: "no_device" });
+  sqlite.exec("INSERT INTO api_token (token, userId, createdAt, id, name) VALUES ('test-token', 'alice', '2026-01-01', 'device', 'Laptop')");
+  assert.equal((await getTracking(env, "alice")).status, "no_device");
+  sqlite.exec("INSERT INTO settings (key, value) VALUES ('device:device:connected', '1')");
+  assert.equal((await getTracking(env, "alice")).status, "tracking");
+  const request = (enabled) => new Request("https://clocked.test/api/tracking", { method: "POST", body: JSON.stringify({ enabled }) });
+  assert.equal((await handleTracking(request(false), env, "bob")).status, 403);
+  assert.equal((await handleTracking(request("false"), env, "alice")).status, 400);
+  assert.equal((await handleTracking(request(false), env, "alice")).status, 200);
+  assert.deepEqual(await getTracking(env, "alice"), { enabled: false, status: "disabled" });
+  let overview = await buildTeamOverview(env, "team", "2026-09", "UTC");
+  assert.equal(overview.members.find(m => m.id === "alice").tracking, "disabled");
+  assert.equal(overview.members.find(m => m.id === "bob").tracking, "no_device");
+  await handleTracking(request(true), env, "alice");
+  assert.equal((await getTracking(env, "alice")).status, "tracking");
+  sqlite.exec("DELETE FROM api_token WHERE userId = 'alice'");
+  assert.equal((await getTracking(env, "alice")).status, "no_device");
 });

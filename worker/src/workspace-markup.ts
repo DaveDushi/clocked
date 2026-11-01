@@ -70,6 +70,13 @@ export const WORKSPACE_MARKUP = /* html */ `
       </div>
       <div id="settingsPersonalPanel" role="tabpanel" aria-labelledby="settingsPersonalTab"><div id="personalDeliverySlot"></div></div>
       <div id="settingsTeamPanel" role="tabpanel" aria-labelledby="settingsTeamTab" hidden><div id="teamDeliverySlot"></div></div>
+      <section id="managerTracking" hidden style="margin:20px 0">
+        <h3>My time tracking</h3>
+        <p id="trackingStatus" role="status"></p>
+        <label class="check"><input type="checkbox" id="trackMyTime"> Sync my recorded time</label>
+        <p class="hint">Requires a connected device. Turning this off pauses cloud sync for your time and project activity. The desktop app keeps local records; queued records sync when you turn tracking back on. Existing timesheets stay available.</p>
+        <p id="trackingMsg" role="status" class="hint"></p>
+      </section>
       <details id="setDelivery">
         <summary><span id="emailTitle">Timesheet delivery</span></summary>
         <div class="body">

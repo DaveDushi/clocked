@@ -1,3 +1,4 @@
+import { getTracking, handleTracking } from "./tracking.js";
 import { getTeamSessionScope } from "./team-scope";
 import { effectiveInactivity, handleManagerInactivity } from "./inactivity";
 import { checkAuth } from "./auth";
@@ -245,6 +246,11 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
     return json({ ...report, projects, sessions, recordedDays, stats: breakStats(recordedDays) });
   }
 
+  if (url.pathname === "/api/tracking") {
+    const user = await requireActiveUser(req, env);
+    if (user instanceof Response) return user;
+    return handleTracking(req, env, user.id);
+  }
   // ---- Team (manager) API.
   if (url.pathname === "/api/me" && req.method === "GET") {
     const user = await sessionUser(req, env);
@@ -260,6 +266,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
       operator: approved && isOperator(user),
       orgs,
       manager,
+      tracking: approved ? await getTracking(env, user.id) : null,
       canEditTimes,
       canAddTimes: editPermission !== "none",
       editPermission,
@@ -557,6 +564,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
         return json({ error: "too many requests" }, 429);
       }
       if (!(await isApproved(env, userId))) return json({ error: "account pending approval" }, 403);
+      if ((await getTracking(env, userId)).status !== "tracking") return json({ error: "Tracking is turned off. Resume tracking in the dashboard to sync." }, 409);
       return handleIngest(req, env, userId);
     }
     // Legacy global token: opt-in only (ALLOW_LEGACY_BEARER_TOKEN=true). Off by default.
@@ -578,6 +586,7 @@ async function handleFetch(req: Request, env: Env): Promise<Response> {
       return json({ error: "too many requests" }, 429);
     }
     if (!(await isApproved(env, userId))) return json({ error: "account pending approval" }, 403);
+    if ((await getTracking(env, userId)).status !== "tracking") return json({ error: "Tracking is turned off. Resume tracking in the dashboard to sync." }, 409);
     return handleActivityIngest(req, env, userId);
   }
 
