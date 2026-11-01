@@ -108,7 +108,7 @@ pub fn spawn(hwnd_raw: isize, done_msg: u32, config: Config, manual: bool) {
             manual,
             result: None,
         };
-        done.result = Some(match run(&config, DEFAULT_TIMEOUT) {
+        done.result = Some(match run(&config, DEFAULT_TIMEOUT, manual) {
             Ok(n) => {
                 if n > 0 {
                     crate::logln!("synced {n} item(s)");
@@ -137,8 +137,12 @@ pub fn spawn(hwnd_raw: isize, done_msg: u32, config: Config, manual: bool) {
 
 /// Sync on the calling thread, blocking until it finishes or `timeout` elapses.
 /// Returns the number of items pushed (sessions + activity day rows + pref updates).
-pub fn run_blocking(cfg: &Config, timeout: Duration) -> Result<usize, Box<dyn std::error::Error>> {
-    run(cfg, timeout)
+pub fn run_blocking(
+    cfg: &Config,
+    timeout: Duration,
+    force_policy: bool,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    run(cfg, timeout, force_policy)
 }
 
 /// Exchange the desktop Bearer sync token for a one-time browser-login URL, so
@@ -177,7 +181,52 @@ pub fn desktop_login_url(cfg: &Config) -> Option<String> {
     }
 }
 
-fn run(cfg: &Config, timeout: Duration) -> Result<usize, Box<dyn std::error::Error>> {
+pub const SYNC_INTERVAL: Duration = Duration::from_secs(60);
+const POLICY_INTERVAL: Duration = Duration::from_secs(15 * 60);
+
+#[derive(Default)]
+struct SyncState {
+    policy_refresh: Option<(String, std::time::Instant)>,
+}
+
+impl SyncState {
+    fn policy_due(&self, account: &str, now: std::time::Instant) -> bool {
+        self.policy_refresh.as_ref().is_none_or(|(previous, at)| {
+            previous != account || now.duration_since(*at) >= POLICY_INTERVAL
+        })
+    }
+}
+
+static SYNC_LOCK: std::sync::Mutex<SyncState> = std::sync::Mutex::new(SyncState {
+    policy_refresh: None,
+});
+
+/// Spend the suspend budget on uploading time, without policy downloads.
+pub fn before_suspend(cfg: &Config) -> Result<usize, Box<dyn std::error::Error>> {
+    let _guard = SYNC_LOCK
+        .try_lock()
+        .map_err(|_| "sync already in progress")?;
+    let path = crate::paths::db_file().ok_or("no data dir")?;
+    let conn = rusqlite::Connection::open(path)?;
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_millis(1500))
+        .build()?;
+    push_sessions(
+        &client,
+        &conn,
+        cfg,
+        cfg.effective_worker_url().trim_end_matches('/'),
+    )
+}
+
+fn run(
+    cfg: &Config,
+    timeout: Duration,
+    force_policy: bool,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let mut state = SYNC_LOCK
+        .try_lock()
+        .map_err(|_| "sync already in progress")?;
     let path = crate::paths::db_file().ok_or("no data dir")?;
     let conn = rusqlite::Connection::open(path)?;
 
@@ -202,11 +251,23 @@ fn run(cfg: &Config, timeout: Duration) -> Result<usize, Box<dyn std::error::Err
         .timeout(timeout)
         .build()?;
 
-    // Pull policy even when uploads fail, so a backlog cannot strand an old schedule.
-    let policy = crate::working_hours::pull(&client, &conn, cfg);
-    let inactivity = crate::inactivity::pull(&client, &conn, cfg);
+    // Upload presence before spending time on policy downloads.
+    let sessions = push_sessions(&client, &conn, cfg, endpoint);
+    // Refresh settings independently of the frequent time uploads, including when uploads fail.
+    let account = crate::working_hours::account_key(cfg);
+    let refresh_at = std::time::Instant::now();
+    let (policy, inactivity) = if force_policy || state.policy_due(&account, refresh_at) {
+        let policy = crate::working_hours::pull(&client, &conn, cfg);
+        let inactivity = crate::inactivity::pull(&client, &conn, cfg);
+        if policy.is_ok() && inactivity.is_ok() {
+            state.policy_refresh = Some((account, refresh_at));
+        }
+        (policy, inactivity)
+    } else {
+        (Ok(0), Ok(0))
+    };
     let mut total = 0usize;
-    total += push_sessions(&client, &conn, cfg, endpoint)?;
+    total += sessions?;
     // Always consider track_projects so the Worker can hide dashboard/CSV project
     // rollups when the feature is off (even with no pending activity rows).
     total += push_activity(&client, &conn, cfg, endpoint)?;
@@ -258,8 +319,97 @@ fn push_sessions(
     if ids.is_empty() {
         return Ok(0);
     }
-    crate::db::mark_synced(conn, &ids)?;
+    crate::db::mark_uploaded(conn, &pending, &ids)?;
     Ok(ids.len())
+}
+
+#[cfg(test)]
+mod session_tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    #[test]
+    fn frequent_uploads_do_not_refresh_settings_until_due_or_account_changes() {
+        let now = std::time::Instant::now();
+        let mut state = SyncState::default();
+        assert!(state.policy_due("account-a", now));
+        state.policy_refresh = Some(("account-a".into(), now));
+        assert!(!state.policy_due("account-a", now + Duration::from_secs(60)));
+        assert!(!state.policy_due("account-a", now + Duration::from_secs(899)));
+        assert!(state.policy_due("account-a", now + Duration::from_secs(900)));
+        assert!(state.policy_due("account-b", now + Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn uploads_live_work_before_lid_close_and_then_final_end() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::init_schema(&conn).unwrap();
+        let start = chrono::DateTime::parse_from_rfc3339("2026-10-29T09:18:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        crate::db::clock_in(&conn, "unlock", start).unwrap();
+        crate::db::heartbeat(&conn, start + chrono::Duration::hours(7)).unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let mut ends = Vec::new();
+            let mut session_ids = Vec::new();
+            for _ in 0..2 {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut bytes = Vec::new();
+                let mut byte = [0u8; 1];
+                while !bytes.ends_with(b"\r\n\r\n") {
+                    stream.read_exact(&mut byte).unwrap();
+                    bytes.push(byte[0]);
+                }
+                let headers = String::from_utf8(bytes).unwrap();
+                assert!(headers.starts_with("POST /sessions "));
+                let length: usize = headers
+                    .lines()
+                    .find_map(|line| {
+                        let (key, value) = line.split_once(':')?;
+                        key.eq_ignore_ascii_case("content-length")
+                            .then(|| value.trim().parse().unwrap())
+                    })
+                    .unwrap();
+                let mut body = vec![0; length];
+                stream.read_exact(&mut body).unwrap();
+                let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                let session = &body["sessions"][0];
+                ends.push(session["end_utc"].as_str().unwrap().to_owned());
+                session_ids.push(session["id"].as_str().unwrap().to_owned());
+                let response =
+                    serde_json::json!({"accepted":[session["id"]],"upserted":1}).to_string();
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    response.len(),
+                    response
+                )
+                .unwrap();
+            }
+            assert_eq!(session_ids[0], session_ids[1]);
+            ends
+        });
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(3))
+            .build()
+            .unwrap();
+        let cfg = Config::default();
+        assert_eq!(push_sessions(&client, &conn, &cfg, &endpoint).unwrap(), 1);
+        crate::db::clock_out(&conn, "suspend", start + chrono::Duration::minutes(421)).unwrap();
+        assert_eq!(push_sessions(&client, &conn, &cfg, &endpoint).unwrap(), 1);
+        assert!(crate::db::unsynced(&conn).unwrap().is_empty());
+        let ends = server.join().unwrap();
+        assert_eq!(
+            ends,
+            vec!["2026-10-29T16:18:00+00:00", "2026-10-29T16:19:00+00:00"]
+        );
+    }
 }
 
 /// Push the track_projects preference (when it changed) and, when the feature

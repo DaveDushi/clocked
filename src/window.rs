@@ -139,7 +139,7 @@ impl AppState {
         if !self.core.shutdown(reason) || !self.core.config.is_configured() {
             return;
         }
-        match crate::sync::run_blocking(&self.core.config, SHUTDOWN_SYNC_TIMEOUT) {
+        match crate::sync::run_blocking(&self.core.config, SHUTDOWN_SYNC_TIMEOUT, false) {
             Ok(n) if n > 0 => crate::logln!("synced {n} item(s) before exit"),
             Ok(_) => {}
             Err(e) => crate::logln!("shutdown sync error: {e}"),
@@ -524,6 +524,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 
     match msg {
         WM_POWERBROADCAST => {
+            if matches!(map_power(wparam.0 as u32), Action::Close("suspend")) {
+                (*ptr).core.prepare_for_suspend();
+                return LRESULT(1);
+            }
             let effects = match map_power(wparam.0 as u32) {
                 Action::ClockIn(r) => (*ptr).core.open_event(r),
                 Action::Close(r) => (*ptr).core.close_event(r),
@@ -696,7 +700,12 @@ pub fn run() -> windows::core::Result<()> {
         let _ = SetTimer(Some(hwnd), TIMER_HEARTBEAT, 60_000, None);
         // 5s focus poll — segment tracker attributes exact elapsed times.
         let _ = SetTimer(Some(hwnd), TIMER_ACTIVITY, 5_000, None);
-        let _ = SetTimer(Some(hwnd), TIMER_SYNC, 3_600_000, None);
+        let _ = SetTimer(
+            Some(hwnd),
+            TIMER_SYNC,
+            crate::sync::SYNC_INTERVAL.as_millis() as u32,
+            None,
+        );
         let _ = SetTimer(Some(hwnd), TIMER_UPDATE_CHECK, 21_600_000, None);
         (*ptr).check_for_updates(false);
 

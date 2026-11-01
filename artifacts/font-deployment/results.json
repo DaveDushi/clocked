@@ -1,0 +1,121 @@
+{
+  "version": "8ffc0a2e-0999-4a51-830d-fbb29de27f7a",
+  "commit": "1edb21e",
+  "fontBodiesVerified": 8,
+  "pages": [
+    {
+      "page": "home",
+      "width": 1440,
+      "status": 200,
+      "fonts": [
+        "space-core-c08a312c3333.woff2",
+        "plex-400-core-caeaf75e2521.woff2",
+        "plex-500-core-e783445d6b55.woff2"
+      ],
+      "issues": []
+    },
+    {
+      "page": "press",
+      "width": 1440,
+      "status": 200,
+      "fonts": [
+        "space-core-c08a312c3333.woff2",
+        "plex-400-core-caeaf75e2521.woff2",
+        "plex-500-core-e783445d6b55.woff2"
+      ],
+      "issues": []
+    },
+    {
+      "page": "extension-privacy",
+      "width": 1440,
+      "status": 200,
+      "fonts": [
+        "space-core-c08a312c3333.woff2",
+        "plex-400-core-caeaf75e2521.woff2",
+        "plex-500-core-e783445d6b55.woff2"
+      ],
+      "issues": []
+    },
+    {
+      "page": "news",
+      "width": 1440,
+      "status": 200,
+      "fonts": [
+        "space-core-c08a312c3333.woff2",
+        "plex-400-core-caeaf75e2521.woff2"
+      ],
+      "issues": []
+    },
+    {
+      "page": "privacy",
+      "width": 1440,
+      "status": 200,
+      "fonts": [],
+      "issues": []
+    },
+    {
+      "page": "terms",
+      "width": 1440,
+      "status": 200,
+      "fonts": [],
+      "issues": []
+    },
+    {
+      "page": "home",
+      "width": 390,
+      "status": 200,
+      "fonts": [
+        "space-core-c08a312c3333.woff2",
+        "plex-400-core-caeaf75e2521.woff2",
+        "plex-500-core-e783445d6b55.woff2"
+      ],
+      "issues": []
+    },
+    {
+      "page": "press",
+      "width": 390,
+      "status": 200,
+      "fonts": [
+        "space-core-c08a312c3333.woff2",
+        "plex-400-core-caeaf75e2521.woff2",
+        "plex-500-core-e783445d6b55.woff2"
+      ],
+      "issues": []
+    },
+    {
+      "page": "extension-privacy",
+      "width": 390,
+      "status": 200,
+      "fonts": [
+        "space-core-c08a312c3333.woff2",
+        "plex-400-core-caeaf75e2521.woff2",
+        "plex-500-core-e783445d6b55.woff2"
+      ],
+      "issues": []
+    },
+    {
+      "page": "news",
+      "width": 390,
+      "status": 200,
+      "fonts": [
+        "space-core-c08a312c3333.woff2",
+        "plex-400-core-caeaf75e2521.woff2"
+      ],
+      "issues": []
+    },
+    {
+      "page": "privacy",
+      "width": 390,
+      "status": 200,
+      "fonts": [],
+      "issues": []
+    },
+    {
+      "page": "terms",
+      "width": 390,
+      "status": 200,
+      "fonts": [],
+      "issues": []
+    }
+  ]
+}

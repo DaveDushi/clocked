@@ -80,6 +80,10 @@ impl AppState {
     }
 
     pub(crate) fn close_cmd(&mut self, reason: &'static str) {
+        if reason == "suspend" {
+            self.core.prepare_for_suspend();
+            return;
+        }
         let effects = self.core.close_event(reason);
         self.apply_effects(effects);
     }
@@ -95,7 +99,7 @@ impl AppState {
 
     pub(crate) fn quit(&mut self) {
         if self.core.shutdown("quit") && self.core.config.is_configured() {
-            match crate::sync::run_blocking(&self.core.config, SHUTDOWN_SYNC_TIMEOUT) {
+            match crate::sync::run_blocking(&self.core.config, SHUTDOWN_SYNC_TIMEOUT, false) {
                 Ok(n) if n > 0 => crate::logln!("synced {n} item(s) before exit"),
                 Ok(_) => {}
                 Err(e) => crate::logln!("shutdown sync error: {e}"),

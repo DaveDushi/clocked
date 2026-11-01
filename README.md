@@ -178,7 +178,13 @@ work_end   = "17:00"
 work_days  = ["Mon", "Tue", "Wed", "Thu", "Fri"]
 ```
 
-The app pushes unsynced sessions on startup, on resume, hourly, and via **Sync now**.
+The app uploads recorded time every minute, on startup and resume, and via **Sync now**.
+While a session is open, uploads update the same session through its latest
+heartbeat. Windows and macOS attempt a final upload before sleep. Linux uses
+logind's sleep notification and a brief delay inhibitor for the same attempt.
+If logind is unavailable, periodic uploads and resume detection remain active.
+Failed uploads stay pending for retry. Time that has never uploaded cannot appear
+in a cloud report while the computer is offline.
 
 ---
 
@@ -355,8 +361,8 @@ Hours use each computer's local timezone. Selected days name the day a shift
 starts: Friday 22:00 to 06:00 includes Saturday morning. These settings control
 the after-hours prompt; tracking does not stop automatically at shift end.
 
-Updated desktop apps fetch assignments on sync, including startup, wake and the
-hourly sync. Use **Sync now** to fetch a change immediately. The next tracking
+Updated desktop apps fetch assignments on their first sync and refresh them every
+15 minutes. Use **Sync now** to fetch a change immediately. The next tracking
 decision or heartbeat applies it without a restart. Offline computers retain
 their last assignment. Personal config.toml hours remain intact and apply again
 after an assignment ends. If a person belongs to multiple teams, their earliest

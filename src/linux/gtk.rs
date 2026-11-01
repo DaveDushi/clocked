@@ -136,6 +136,7 @@ unsafe extern "C" {
 
 #[link(name = "glib-2.0")]
 unsafe extern "C" {
+    fn g_idle_add(function: TimerCallback, data: *mut c_void) -> c_uint;
     fn g_timeout_add_seconds(
         interval: c_uint,
         function: TimerCallback,
@@ -163,6 +164,13 @@ pub fn quit() {
 pub fn timer(seconds: u32, callback: TimerCallback, data: *mut c_void) {
     unsafe {
         g_timeout_add_seconds(seconds, callback, data);
+    }
+}
+
+/// Queue a one-shot callback on the GTK thread, including from a worker thread.
+pub fn post(callback: TimerCallback, data: *mut c_void) {
+    unsafe {
+        g_idle_add(callback, data);
     }
 }
 

@@ -1,0 +1,52 @@
+[
+  {
+    "page": "home",
+    "width": 1440,
+    "pixelsChanged": 0
+  },
+  {
+    "page": "home",
+    "width": 390,
+    "pixelsChanged": 0
+  },
+  {
+    "page": "press",
+    "width": 1440,
+    "pixelsChanged": 0
+  },
+  {
+    "page": "press",
+    "width": 390,
+    "pixelsChanged": 0
+  },
+  {
+    "page": "extension-privacy",
+    "width": 1440,
+    "pixelsChanged": 0
+  },
+  {
+    "page": "extension-privacy",
+    "width": 390,
+    "pixelsChanged": 0
+  },
+  {
+    "page": "privacy",
+    "width": 1440,
+    "pixelsChanged": 0
+  },
+  {
+    "page": "privacy",
+    "width": 390,
+    "pixelsChanged": 0
+  },
+  {
+    "page": "terms",
+    "width": 1440,
+    "pixelsChanged": 0
+  },
+  {
+    "page": "terms",
+    "width": 390,
+    "pixelsChanged": 0
+  }
+]

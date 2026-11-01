@@ -190,6 +190,17 @@ impl DesktopState {
         self.close_event_at(reason, Utc::now())
     }
 
+    /// All native sleep notifications use the same close-and-upload sequence.
+    pub fn prepare_for_suspend(&mut self) {
+        self.close_event("suspend");
+        if self.config.is_configured() {
+            match crate::sync::before_suspend(&self.config) {
+                Ok(n) => crate::logln!("synced {n} session(s) before suspend"),
+                Err(e) => crate::logln!("suspend sync pending: {e}"),
+            }
+        }
+    }
+
     pub fn close_event_at(&mut self, reason: &'static str, at: DateTime<Utc>) -> Vec<Effect> {
         self.after_hours_answer = None;
         self.after_hours_date = None;
@@ -523,6 +534,20 @@ mod tests {
         };
         let bridge = BridgeState::new(String::new());
         DesktopState::from_parts(conn, config, Rules::default(), bridge)
+    }
+
+    #[test]
+    fn suspend_closes_local_session_without_needing_network() {
+        let mut state = state_outside_working_hours();
+        let start = Utc::now() - chrono::Duration::hours(7);
+        crate::db::clock_in(&state.conn, "unlock", start).unwrap();
+        state.prepare_for_suspend();
+        assert!(!state.is_clocked_in());
+        let pending = crate::db::unsynced(&state.conn).unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].end_reason, "suspend");
+        state.prepare_for_suspend();
+        assert_eq!(crate::db::unsynced(&state.conn).unwrap().len(), 1);
     }
 
     #[test]

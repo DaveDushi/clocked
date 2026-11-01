@@ -90,7 +90,7 @@ pub(super) fn spawn_sync(config: Config, flag: Arc<AtomicBool>, manual: bool) {
 
     std::thread::spawn(move || {
         let _guard = ClearOnDrop(flag);
-        let result = match crate::sync::run_blocking(&config, Duration::from_secs(30)) {
+        let result = match crate::sync::run_blocking(&config, Duration::from_secs(30), manual) {
             Ok(n) => {
                 if n > 0 {
                     crate::logln!("synced {n} item(s)");
@@ -533,7 +533,7 @@ mod imp {
                 true,
             );
             NSTimer::scheduledTimerWithTimeInterval_target_selector_userInfo_repeats(
-                3600.0,
+                crate::sync::SYNC_INTERVAL.as_secs_f64(),
                 target,
                 sel!(syncTick:),
                 None,

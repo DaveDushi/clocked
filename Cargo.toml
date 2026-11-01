@@ -85,6 +85,7 @@ security-framework = "3"
 # system GTK/AppIndicator/Wayland libraries directly (see src/linux + build.rs).
 [target.'cfg(target_os = "linux")'.dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+zbus = "5.19"
 
 [build-dependencies]
 cc = "1"

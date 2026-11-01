@@ -1,0 +1,9 @@
+[package]
+name = "clocked-linux-sleep-check"
+version = "0.0.0"
+edition = "2021"
+[[bin]]
+name = "sleep-check"
+path = "check.rs"
+[dependencies]
+zbus = "5.19"

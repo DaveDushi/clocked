@@ -10,7 +10,7 @@
 use chrono::{DateTime, Datelike, Local, TimeZone, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 
-/// A completed session ready to sync to the Worker.
+/// A closed session or bounded snapshot ready to sync to the Worker.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Session {
     pub id: String,
@@ -491,12 +491,15 @@ pub fn apps_seen(conn: &Connection, limit: usize) -> rusqlite::Result<Vec<String
     rows.collect()
 }
 
-/// Completed sessions not yet acknowledged by the Worker.
+/// Closed sessions and a snapshot of live presence through the last heartbeat.
 pub fn unsynced(conn: &Connection) -> rusqlite::Result<Vec<Session>> {
     let mut stmt = conn.prepare(
-        "SELECT id, start_utc, end_utc, start_reason, end_reason, timezone
+        "SELECT id, start_utc,
+                COALESCE(end_utc, (SELECT value FROM meta WHERE key = 'last_alive')),
+                start_reason, COALESCE(end_reason, 'checkpoint'), timezone
            FROM sessions
-          WHERE end_utc IS NOT NULL AND synced = 0
+          WHERE synced = 0 AND (end_utc IS NOT NULL OR
+                julianday((SELECT value FROM meta WHERE key = 'last_alive')) > julianday(start_utc))
           ORDER BY start_utc",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -512,11 +515,18 @@ pub fn unsynced(conn: &Connection) -> rusqlite::Result<Vec<Session>> {
     rows.collect()
 }
 
-/// Mark the given session ids as synced (called only after an HTTP 2xx).
-pub fn mark_synced(conn: &Connection, ids: &[String]) -> rusqlite::Result<()> {
+/// Acknowledge only the exact closed version uploaded. Live snapshots stay pending.
+pub fn mark_uploaded(
+    conn: &Connection,
+    uploaded: &[Session],
+    ids: &[String],
+) -> rusqlite::Result<()> {
     let tx = conn.unchecked_transaction()?;
-    for id in ids {
-        tx.execute("UPDATE sessions SET synced = 1 WHERE id = ?1", params![id])?;
+    for session in uploaded.iter().filter(|session| ids.contains(&session.id)) {
+        tx.execute(
+            "UPDATE sessions SET synced = 1 WHERE id = ?1 AND end_utc = ?2",
+            params![session.id, session.end_utc],
+        )?;
     }
     tx.commit()
 }
@@ -659,6 +669,30 @@ mod tests {
     }
 
     #[test]
+    fn checkpoint_survives_weekend_without_final_upload() {
+        let c = mem();
+        clock_in(&c, "unlock", t("2026-10-29T09:18:00Z")).unwrap();
+        heartbeat(&c, t("2026-10-29T16:18:00Z")).unwrap();
+        let snapshot = unsynced(&c).unwrap();
+        assert_eq!(snapshot.len(), 1);
+        assert_eq!(parse(&snapshot[0].end_utc), t("2026-10-29T16:18:00Z"));
+        let ids = vec![snapshot[0].id.clone()];
+        mark_uploaded(&c, &snapshot, &ids).unwrap();
+        assert_eq!(unsynced(&c).unwrap().len(), 1);
+        clock_out(&c, "suspend", t("2026-10-29T16:19:00Z")).unwrap();
+        mark_uploaded(&c, &snapshot, &ids).unwrap();
+        let final_upload = unsynced(&c).unwrap();
+        assert_eq!(
+            final_upload.len(),
+            1,
+            "old acknowledgement must not clear the final close"
+        );
+        assert_eq!(parse(&final_upload[0].end_utc), t("2026-10-29T16:19:00Z"));
+        mark_uploaded(&c, &final_upload, &ids).unwrap();
+        assert!(unsynced(&c).unwrap().is_empty());
+    }
+
+    #[test]
     fn unsynced_lists_only_completed_and_mark_clears() {
         let c = mem();
         clock_in(&c, "resume", t("2026-06-29T10:00:00Z")).unwrap();
@@ -667,7 +701,7 @@ mod tests {
         let pending = unsynced(&c).unwrap();
         assert_eq!(pending.len(), 1);
         let ids: Vec<String> = pending.iter().map(|s| s.id.clone()).collect();
-        mark_synced(&c, &ids).unwrap();
+        mark_uploaded(&c, &pending, &ids).unwrap();
         assert_eq!(unsynced(&c).unwrap().len(), 0);
     }
 
@@ -680,7 +714,8 @@ mod tests {
         clock_in(&c, "unlock", t("2026-06-29T12:00:00Z")).unwrap();
         clock_out(&c, "lock", t("2026-06-29T13:00:00Z")).unwrap();
         let ids: Vec<String> = unsynced(&c).unwrap().iter().map(|s| s.id.clone()).collect();
-        mark_synced(&c, &ids).unwrap();
+        let pending = unsynced(&c).unwrap();
+        mark_uploaded(&c, &pending, &ids).unwrap();
         assert_eq!(unsynced(&c).unwrap().len(), 0);
 
         // Switching endpoints re-queues both for the new Worker.

@@ -3,6 +3,7 @@
 
 mod gtk;
 mod settings;
+mod sleep;
 
 use std::fs::{File, OpenOptions};
 use std::ops::{Deref, DerefMut};
@@ -33,6 +34,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut app = Box::new(AppState::new());
     let app_ptr = (&mut *app) as *mut AppState;
+    let app_address = app_ptr as usize;
+    app.sleep_requests = Some(sleep::start(move || {
+        gtk::post(sleep_callback, app_address as *mut std::ffi::c_void)
+    }));
     app.ui = Some(Ui::new(app_ptr));
     let startup_effects = app.on_startup();
     app.refresh_ui();
@@ -55,6 +60,7 @@ struct AppState {
     last_locked: Option<bool>,
     sleep_clock: SleepClock,
     shut_down: bool,
+    sleep_requests: Option<std::sync::mpsc::Receiver<sleep::Request>>,
 }
 
 impl Deref for AppState {
@@ -81,6 +87,7 @@ impl AppState {
             last_locked: session_locked(),
             sleep_clock: SleepClock::new(),
             shut_down: false,
+            sleep_requests: None,
         }
     }
 
@@ -122,7 +129,10 @@ impl AppState {
         if self.ticks.is_multiple_of(60 / TICK_SECS as u64) {
             effects.extend(self.core.heartbeat());
         }
-        if self.ticks.is_multiple_of(3600 / TICK_SECS as u64) {
+        if self
+            .ticks
+            .is_multiple_of(crate::sync::SYNC_INTERVAL.as_secs() / TICK_SECS as u64)
+        {
             effects.push(Effect::Sync);
         }
         if self.ticks.is_multiple_of(6 * 3600 / TICK_SECS as u64) {
@@ -173,7 +183,7 @@ impl AppState {
                 }
             }
             let _clear = ClearOnDrop(Arc::clone(&syncing));
-            let result = crate::sync::run_blocking(&config, Duration::from_secs(30));
+            let result = crate::sync::run_blocking(&config, Duration::from_secs(30), manual);
             match result {
                 Ok(n) => {
                     if n > 0 {
@@ -272,7 +282,7 @@ impl AppState {
         }
         self.shut_down = true;
         if self.core.shutdown(reason) && self.config.is_configured() {
-            match crate::sync::run_blocking(&self.config, SHUTDOWN_SYNC_TIMEOUT) {
+            match crate::sync::run_blocking(&self.config, SHUTDOWN_SYNC_TIMEOUT, false) {
                 Ok(n) if n > 0 => crate::logln!("synced {n} item(s) before exit"),
                 Ok(_) => {}
                 Err(e) => crate::logln!("shutdown sync error: {e}"),
@@ -383,6 +393,23 @@ fn apply_effects(app: *mut AppState, effects: Vec<Effect>) {
         }
     }
     unsafe { (&*app).refresh_ui() };
+}
+
+unsafe extern "C" fn sleep_callback(data: *mut std::ffi::c_void) -> i32 {
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let app = &mut *data.cast::<AppState>();
+        while let Some(Ok(request)) = app
+            .sleep_requests
+            .as_ref()
+            .map(|receiver| receiver.try_recv())
+        {
+            if std::time::Instant::now() < request.deadline && !app.shut_down {
+                app.core.prepare_for_suspend();
+            }
+            let _ = request.done.send(());
+        }
+    }));
+    0
 }
 
 unsafe extern "C" fn tick_callback(data: *mut std::ffi::c_void) -> i32 {
