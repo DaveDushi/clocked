@@ -323,6 +323,94 @@ fn push_sessions(
     Ok(ids.len())
 }
 
+/// Push the track_projects preference (when it changed) and, when the feature
+/// is on, daily app/project aggregates (never window titles). Soft-fails if the
+/// Worker is older and doesn't know `/activity` yet.
+fn push_activity(
+    client: &reqwest::blocking::Client,
+    conn: &rusqlite::Connection,
+    cfg: &Config,
+    endpoint: &str,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    // Only send day rows when the feature is on.
+    let pending = if cfg.track_projects {
+        crate::db::unsynced_activity(conn)?
+    } else {
+        Vec::new()
+    };
+
+    // Also POST when the local flag differs from what we last told the Worker,
+    // so turning the feature off hides dashboard/CSV projects without waiting
+    // for new activity rows.
+    let flag_s = if cfg.track_projects { "1" } else { "0" };
+    let flag_dirty = crate::db::meta_get(conn, "synced_track_projects")?.as_deref() != Some(flag_s);
+
+    if pending.is_empty() && !flag_dirty {
+        return Ok(0);
+    }
+
+    let url = format!("{endpoint}/activity");
+    let resp = client
+        .post(url)
+        .bearer_auth(&cfg.bearer_token)
+        .json(&serde_json::json!({
+            "days": pending,
+            "track_projects": cfg.track_projects,
+        }))
+        .send()?;
+
+    // Older Workers return 404 — leave rows unsynced; next release will catch up.
+    if resp.status().as_u16() == 404 {
+        crate::logln!("activity sync skipped (Worker has no /activity yet)");
+        return Ok(0);
+    }
+    // Older Workers that require non-empty days return 400 for pref-only pushes.
+    // Leave the flag dirty so a future Worker upgrade (or pending rows) retries.
+    if !resp.status().is_success() {
+        if pending.is_empty() {
+            crate::logln!(
+                "activity pref sync skipped (Worker HTTP {}); project flag may be stale on cloud",
+                resp.status()
+            );
+            return Ok(0);
+        }
+        return Err(format!("worker returned HTTP {} on /activity", resp.status()).into());
+    }
+
+    let mut count = 0usize;
+    if flag_dirty {
+        let _ = crate::db::meta_set(conn, "synced_track_projects", flag_s);
+        // Count a successful preference push so manual Sync now isn't a no-op
+        // after toggling track_projects with no pending day rows.
+        count += 1;
+    }
+
+    if pending.is_empty() {
+        return Ok(count);
+    }
+
+    #[derive(serde::Deserialize)]
+    struct ActResp {
+        accepted: Option<usize>,
+        upserted: Option<usize>,
+    }
+    let body: ActResp = resp.json().unwrap_or(ActResp {
+        accepted: None,
+        upserted: None,
+    });
+    let n = body.accepted.or(body.upserted).unwrap_or(pending.len());
+    if n == 0 {
+        return Ok(count);
+    }
+    // Mark everything we sent; the Worker replaces aggregates by primary key.
+    let keys: Vec<(String, String, String)> = pending
+        .iter()
+        .map(|r| (r.day.clone(), r.app.clone(), r.project.clone()))
+        .collect();
+    crate::db::mark_activity_synced(conn, &keys)?;
+    Ok(count + keys.len())
+}
+
 #[cfg(test)]
 mod session_tests {
     use super::*;
@@ -410,92 +498,4 @@ mod session_tests {
             vec!["2026-10-29T16:18:00+00:00", "2026-10-29T16:19:00+00:00"]
         );
     }
-}
-
-/// Push the track_projects preference (when it changed) and, when the feature
-/// is on, daily app/project aggregates (never window titles). Soft-fails if the
-/// Worker is older and doesn't know `/activity` yet.
-fn push_activity(
-    client: &reqwest::blocking::Client,
-    conn: &rusqlite::Connection,
-    cfg: &Config,
-    endpoint: &str,
-) -> Result<usize, Box<dyn std::error::Error>> {
-    // Only send day rows when the feature is on.
-    let pending = if cfg.track_projects {
-        crate::db::unsynced_activity(conn)?
-    } else {
-        Vec::new()
-    };
-
-    // Also POST when the local flag differs from what we last told the Worker,
-    // so turning the feature off hides dashboard/CSV projects without waiting
-    // for new activity rows.
-    let flag_s = if cfg.track_projects { "1" } else { "0" };
-    let flag_dirty = crate::db::meta_get(conn, "synced_track_projects")?.as_deref() != Some(flag_s);
-
-    if pending.is_empty() && !flag_dirty {
-        return Ok(0);
-    }
-
-    let url = format!("{endpoint}/activity");
-    let resp = client
-        .post(url)
-        .bearer_auth(&cfg.bearer_token)
-        .json(&serde_json::json!({
-            "days": pending,
-            "track_projects": cfg.track_projects,
-        }))
-        .send()?;
-
-    // Older Workers return 404 — leave rows unsynced; next release will catch up.
-    if resp.status().as_u16() == 404 {
-        crate::logln!("activity sync skipped (Worker has no /activity yet)");
-        return Ok(0);
-    }
-    // Older Workers that require non-empty days return 400 for pref-only pushes.
-    // Leave the flag dirty so a future Worker upgrade (or pending rows) retries.
-    if !resp.status().is_success() {
-        if pending.is_empty() {
-            crate::logln!(
-                "activity pref sync skipped (Worker HTTP {}); project flag may be stale on cloud",
-                resp.status()
-            );
-            return Ok(0);
-        }
-        return Err(format!("worker returned HTTP {} on /activity", resp.status()).into());
-    }
-
-    let mut count = 0usize;
-    if flag_dirty {
-        let _ = crate::db::meta_set(conn, "synced_track_projects", flag_s);
-        // Count a successful preference push so manual Sync now isn't a no-op
-        // after toggling track_projects with no pending day rows.
-        count += 1;
-    }
-
-    if pending.is_empty() {
-        return Ok(count);
-    }
-
-    #[derive(serde::Deserialize)]
-    struct ActResp {
-        accepted: Option<usize>,
-        upserted: Option<usize>,
-    }
-    let body: ActResp = resp.json().unwrap_or(ActResp {
-        accepted: None,
-        upserted: None,
-    });
-    let n = body.accepted.or(body.upserted).unwrap_or(pending.len());
-    if n == 0 {
-        return Ok(count);
-    }
-    // Mark everything we sent; the Worker replaces aggregates by primary key.
-    let keys: Vec<(String, String, String)> = pending
-        .iter()
-        .map(|r| (r.day.clone(), r.app.clone(), r.project.clone()))
-        .collect();
-    crate::db::mark_activity_synced(conn, &keys)?;
-    Ok(count + keys.len())
 }
