@@ -119,17 +119,26 @@ jobs:
         run: cargo test --locked
       - name: Build installer
         shell: pwsh
-        run: ./build-installer.ps1
+        run: |
+          ./build-installer.ps1
+          Copy-Item installer/dist/clocked-setup-*.exe installer/dist/clocked-setup.exe
       - name: Upload Windows artifact to release
         uses: softprops/action-gh-release@v2
         with:
-          files: installer/dist/clocked-setup-*.exe
+          files: installer/dist/clocked-setup*.exe
           draft: true
 
   publish:
     needs: [linux, macos, windows]
     runs-on: ubuntu-latest
     steps:
+      - name: Keep the current browser extension available
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release download --pattern clocked-chrome.zip --dir extension-asset
+          gh release upload "$GITHUB_REF_NAME" extension-asset/clocked-chrome.zip --clobber
       - name: Publish completed release
         env:
           GH_TOKEN: ${{ github.token }}
