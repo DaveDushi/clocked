@@ -36,6 +36,8 @@ jobs:
             libwayland-dev \
             wayland-protocols \
             libsecret-tools
+      - name: Test
+        run: cargo test --locked
       - name: Build archive
         run: |
           cargo build --release
@@ -53,6 +55,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/clocked-linux-x86_64-ubuntu-24.04.tar.gz
+          draft: true
 
   macos:
     runs-on: macos-14
@@ -96,10 +99,14 @@ jobs:
           NOTARY_PROFILE: clocked-notary
         run: bash packaging/macos/build-app.sh
 
+      - name: Test
+        run: cargo test --locked
+
       - name: Upload macOS artifact to release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/clocked-*.dmg
+          draft: true
 
   windows:
     runs-on: windows-latest
@@ -108,6 +115,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
+      - name: Test
+        run: cargo test --locked
       - name: Build installer
         shell: pwsh
         run: ./build-installer.ps1
@@ -115,3 +124,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: installer/dist/clocked-setup-*.exe
+          draft: true
+
+  publish:
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish completed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest

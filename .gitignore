@@ -7,3 +7,5 @@ assets/_*_preview.png
 /extension/_pack_stage/
 /extension/store/*.zip
 /extension/store/_stage/
+/artifacts/dsalem-report-check/
+/artifacts/suspend-sync/
