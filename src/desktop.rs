@@ -25,6 +25,14 @@ pub enum Effect {
     DismissAfterHoursPrompt,
 }
 
+/// Answers to the after-hours prompt shown when returning from idle with away time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AwayAnswer {
+    CountAway,
+    FromNow,
+    Done,
+}
+
 pub struct DesktopState {
     pub conn: Connection,
     pub config: Config,
@@ -42,6 +50,8 @@ pub struct DesktopState {
     managed_hours: Option<crate::working_hours::WorkingHours>,
     managed_inactivity: Option<crate::inactivity::InactivityPolicy>,
     pending_open: Option<&'static str>,
+    /// Start of the away gap the pending after-hours prompt offers to count.
+    pending_away: Option<DateTime<Utc>>,
 }
 
 impl DesktopState {
@@ -81,6 +91,7 @@ impl DesktopState {
             managed_hours,
             managed_inactivity,
             pending_open: None,
+            pending_away: None,
         }
     }
 
@@ -152,6 +163,7 @@ impl DesktopState {
         match engine::decide_open(self.within_working_hours(now), self.after_hours_answer) {
             OpenDecision::ClockIn => {
                 self.pending_open = None;
+                self.pending_away = None;
                 self.after_hours_answer = None;
                 self.after_hours_date = None;
                 self.clock_in(reason);
@@ -222,20 +234,44 @@ impl DesktopState {
         (true, Vec::new())
     }
 
+    /// Minutes the pending after-hours prompt offers to count, when it came from idle.
+    pub fn pending_away_minutes(&self) -> Option<i64> {
+        self.pending_away
+            .map(|since| ((Utc::now() - since).num_seconds().max(0) + 30) / 60)
+    }
+
     pub fn answer_after_hours(&mut self, working: bool) -> Vec<Effect> {
+        self.resolve_after_hours(working, false)
+    }
+
+    pub fn answer_away_after_hours(&mut self, answer: AwayAnswer) -> Vec<Effect> {
+        self.resolve_after_hours(answer != AwayAnswer::Done, answer == AwayAnswer::CountAway)
+    }
+
+    fn resolve_after_hours(&mut self, working: bool, count_away: bool) -> Vec<Effect> {
         let Some(reason) = self.pending_open else {
             return Vec::new();
         };
         if engine::should_auto_accept_after_hours(self.within_working_hours(Local::now())) {
             return self.accept_after_hours(reason);
         }
+        let since = self.pending_away.take().filter(|_| count_away);
         self.pending_open = None;
         self.after_hours_answer = Some(working);
         self.after_hours_date = Some(Local::now().date_naive());
         if working {
-            self.clock_in(reason);
+            match since {
+                Some(since) => {
+                    self.clock_in_at("reclaimed", since);
+                    crate::logln!("after-hours: counted away time");
+                }
+                None => self.clock_in(reason),
+            }
             vec![Effect::Sync]
         } else {
+            // An idle-out latched before the open would otherwise resume on the next input.
+            self.idle_out = false;
+            self.idle_since = None;
             crate::logln!("after-hours: user not working");
             Vec::new()
         }
@@ -263,6 +299,7 @@ impl DesktopState {
 
     fn accept_after_hours(&mut self, reason: &'static str) -> Vec<Effect> {
         self.pending_open = None;
+        self.pending_away = None;
         self.after_hours_answer = None;
         self.after_hours_date = None;
         crate::logln!("after-hours: auto clock-in ({reason}; now within working hours)");
@@ -283,7 +320,13 @@ impl DesktopState {
     }
 
     pub fn check_idle(&mut self) -> Vec<Effect> {
-        let idle_secs = crate::idle::idle_duration().as_secs();
+        self.check_idle_with(
+            crate::idle::idle_duration().as_secs(),
+            crate::media::in_use(),
+        )
+    }
+
+    fn check_idle_with(&mut self, idle_secs: u64, in_call: bool) -> Vec<Effect> {
         let managed = crate::inactivity::cached(&self.conn, &self.config);
         if managed != self.managed_inactivity {
             self.idle_warned = false;
@@ -298,16 +341,28 @@ impl DesktopState {
             timeout_secs: policy.timeout_secs,
             warning_secs: policy.warning_secs,
             idle_secs,
-            in_call: crate::media::in_use(),
+            in_call,
             clocked_in: self.is_clocked_in(),
-            idle_out: self.idle_out,
+            // The after-hours answer decides whether input resumes tracking.
+            idle_out: self.idle_out && self.pending_open.is_none(),
             reclaim_pending: self.pending_reclaim.is_some(),
             idle_warned: self.idle_warned,
             idle_since_secs_ago: self
                 .idle_since
                 .map(|since| (Utc::now() - since).num_seconds()),
         };
-        match engine::decide_idle(&params) {
+        let decision = engine::decide_idle(&params);
+        if matches!(
+            decision,
+            IdleDecision::ResumeFromCall
+                | IdleDecision::PromptReclaim { .. }
+                | IdleDecision::ResumeActive
+        ) {
+            if let Some(effects) = self.hold_resume_after_hours(decision) {
+                return effects;
+            }
+        }
+        match decision {
             IdleDecision::Nothing => {
                 let warn_at = params.timeout_secs.saturating_sub(params.warning_secs);
                 if idle_secs < warn_at {
@@ -365,6 +420,37 @@ impl DesktopState {
                 vec![Effect::Notify(format!(
                     "No activity — clocking out in ~{minutes_left} min unless you return."
                 ))]
+            }
+        }
+    }
+
+    /// Returning from idle outside working hours asks "are you working?" like an open does,
+    /// offering to count the away gap when it is in the reclaim range.
+    fn hold_resume_after_hours(&mut self, decision: IdleDecision) -> Option<Vec<Effect>> {
+        let now = Local::now();
+        if self.after_hours_date != Some(now.date_naive()) {
+            self.after_hours_answer = None;
+        }
+        match engine::decide_open(self.within_working_hours(now), self.after_hours_answer) {
+            OpenDecision::ClockIn | OpenDecision::ClockInAfterHours => None,
+            OpenDecision::Skip => {
+                self.idle_out = false;
+                self.idle_since = None;
+                Some(Vec::new())
+            }
+            OpenDecision::Prompt => {
+                self.idle_warned = false;
+                self.pending_open = Some(match decision {
+                    IdleDecision::ResumeFromCall => "call",
+                    _ => "active",
+                });
+                self.pending_away = match decision {
+                    IdleDecision::PromptReclaim {
+                        idle_since_secs_ago,
+                    } => Some(Utc::now() - chrono::Duration::seconds(idle_since_secs_ago)),
+                    _ => None,
+                };
+                Some(vec![Effect::PromptAfterHours])
             }
         }
     }
@@ -569,6 +655,93 @@ mod tests {
         assert!(state.answer_after_hours(false).is_empty());
         assert!(!state.is_clocked_in());
         assert!(state.open_event("unlock").is_empty());
+    }
+
+    #[test]
+    fn input_after_an_overnight_idle_out_respects_the_after_hours_answer() {
+        let mut state = state_outside_working_hours();
+        crate::db::clock_in(
+            &state.conn,
+            "active",
+            Utc::now() - chrono::Duration::hours(1),
+        )
+        .unwrap();
+        state.check_idle_with(3600, false);
+        assert!(!state.is_clocked_in());
+
+        assert_eq!(state.open_event("unlock"), vec![Effect::PromptAfterHours]);
+        assert!(state.check_idle_with(1, false).is_empty());
+        assert!(!state.is_clocked_in());
+
+        state.answer_after_hours(false);
+        assert!(state.check_idle_with(1, false).is_empty());
+        assert!(!state.is_clocked_in());
+    }
+
+    fn away_after_hours(answer: AwayAnswer) -> DesktopState {
+        let mut state = state_outside_working_hours();
+        crate::db::clock_in(
+            &state.conn,
+            "active",
+            Utc::now() - chrono::Duration::hours(1),
+        )
+        .unwrap();
+        state.check_idle_with(1200, false);
+        assert_eq!(
+            state.check_idle_with(1, false),
+            vec![Effect::PromptAfterHours]
+        );
+        assert_eq!(state.begin_after_hours_prompt(), (true, Vec::new()));
+        assert_eq!(state.pending_away_minutes(), Some(20));
+        state.answer_away_after_hours(answer);
+        assert_eq!(state.pending_away_minutes(), None);
+        state
+    }
+
+    #[test]
+    fn away_prompt_after_hours_can_count_the_gap_resume_now_or_stop() {
+        let start = |state: &DesktopState| {
+            let start = crate::db::open_session_start(&state.conn).unwrap().unwrap();
+            (Utc::now() - start).num_minutes()
+        };
+        let state = away_after_hours(AwayAnswer::CountAway);
+        assert_eq!(start(&state), 20);
+
+        let state = away_after_hours(AwayAnswer::FromNow);
+        assert_eq!(start(&state), 0);
+
+        let mut state = away_after_hours(AwayAnswer::Done);
+        assert!(!state.is_clocked_in());
+        assert!(state.check_idle_with(1, false).is_empty());
+        assert!(!state.is_clocked_in());
+    }
+
+    #[test]
+    fn returning_from_idle_after_hours_asks_before_resuming() {
+        let mut state = state_outside_working_hours();
+        crate::db::clock_in(
+            &state.conn,
+            "active",
+            Utc::now() - chrono::Duration::hours(1),
+        )
+        .unwrap();
+        state.check_idle_with(1000, false);
+        assert!(!state.is_clocked_in());
+
+        assert_eq!(
+            state.check_idle_with(1, false),
+            vec![Effect::PromptAfterHours]
+        );
+        assert!(state.check_idle_with(1, false).is_empty());
+        assert!(!state.is_clocked_in());
+        assert_eq!(state.begin_after_hours_prompt(), (true, Vec::new()));
+        assert_eq!(state.answer_after_hours(true), vec![Effect::Sync]);
+        assert!(state.is_clocked_in());
+
+        state.check_idle_with(1000, false);
+        assert!(!state.is_clocked_in());
+        assert_eq!(state.check_idle_with(1, false), vec![Effect::Sync]);
+        assert!(state.is_clocked_in());
     }
 
     #[test]

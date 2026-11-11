@@ -545,6 +545,34 @@ fn prepare_prompt(dialog: Widget) {
     }
 }
 
+/// Modal with one button per choice; returns the clicked index, or `None` if closed.
+pub fn choose(title: &str, body: &str, choices: &[&str], default: usize) -> Option<usize> {
+    unsafe {
+        let dialog = gtk_dialog_new();
+        let title = c(title);
+        gtk_window_set_title(dialog, title.as_ptr());
+        prepare_prompt(dialog);
+        let area = gtk_dialog_get_content_area(dialog);
+        gtk_container_set_border_width(area, 18);
+        let body = c(body);
+        let label = gtk_label_new(body.as_ptr());
+        gtk_label_set_line_wrap(label, 1);
+        gtk_label_set_max_width_chars(label, 42);
+        gtk_box_pack_start(area, label, 1, 1, 8);
+        for (i, choice) in choices.iter().enumerate() {
+            let choice = c(choice);
+            gtk_dialog_add_button(dialog, choice.as_ptr(), i as c_int);
+        }
+        gtk_dialog_set_default_response(dialog, default as c_int);
+        gtk_widget_show_all(dialog);
+        let response = gtk_dialog_run(dialog);
+        gtk_widget_destroy(dialog);
+        usize::try_from(response)
+            .ok()
+            .filter(|i| *i < choices.len())
+    }
+}
+
 pub fn ask(title: &str, body: &str, yes: &str, no: &str) -> bool {
     unsafe {
         let dialog = gtk_dialog_new();

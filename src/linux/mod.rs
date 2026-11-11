@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use chrono::Utc;
 
-use crate::desktop::{DesktopState, Effect};
+use crate::desktop::{AwayAnswer, DesktopState, Effect};
 
 const TICK_SECS: u32 = 5;
 const SHUTDOWN_SYNC_TIMEOUT: Duration = Duration::from_secs(3);
@@ -364,13 +364,38 @@ fn apply_effects(app: *mut AppState, effects: Vec<Effect>) {
                 let (show, follow_up) = unsafe { (&mut *app).core.begin_after_hours_prompt() };
                 apply_effects(app, follow_up);
                 if show {
-                    let working = gtk::ask(
-                        "clocked",
-                        "This is outside your configured working hours. Are you working?",
-                        "Yes, start tracking",
-                        "No",
-                    );
-                    let follow_up = unsafe { (&mut *app).core.answer_after_hours(working) };
+                    let away = unsafe { (&*app).core.pending_away_minutes() };
+                    let follow_up = match away {
+                        Some(minutes) => {
+                            let answer = match gtk::choose(
+                                "clocked",
+                                &format!(
+                                    "You were away for about {minutes} minutes, and it's \
+                                     outside your configured working hours."
+                                ),
+                                &[
+                                    "I'm done",
+                                    "Count it and keep working",
+                                    "Keep working from now",
+                                ],
+                                2,
+                            ) {
+                                Some(0) => AwayAnswer::Done,
+                                Some(1) => AwayAnswer::CountAway,
+                                _ => AwayAnswer::FromNow,
+                            };
+                            unsafe { (&mut *app).core.answer_away_after_hours(answer) }
+                        }
+                        None => {
+                            let working = gtk::ask(
+                                "clocked",
+                                "This is outside your configured working hours. Are you working?",
+                                "Yes, start tracking",
+                                "No",
+                            );
+                            unsafe { (&mut *app).core.answer_after_hours(working) }
+                        }
+                    };
                     apply_effects(app, follow_up);
                 }
             }

@@ -216,6 +216,12 @@ fn resolve_after_hours(working: bool) {
 fn begin_after_hours_prompt() -> bool {
     with_state(|app| app.begin_after_hours_prompt()).unwrap_or(false)
 }
+fn pending_away_minutes() -> Option<i64> {
+    with_state(|app| app.pending_away_minutes()).flatten()
+}
+fn resolve_away_after_hours(answer: crate::desktop::AwayAnswer) {
+    with_state(|app| app.away_after_hours_answered(answer));
+}
 fn resolve_reclaim(reclaim: bool) {
     with_state(|app| app.reclaim_answered(reclaim));
 }
@@ -336,8 +342,12 @@ mod imp {
                 if !super::begin_after_hours_prompt() {
                     return;
                 }
-                let working = run_after_hours_yes_no();
-                super::resolve_after_hours(working);
+                match super::pending_away_minutes() {
+                    Some(minutes) => {
+                        super::resolve_away_after_hours(run_away_after_hours(minutes))
+                    }
+                    None => super::resolve_after_hours(run_after_hours_yes_no()),
+                }
             }
             #[unsafe(method(reclaimPrompt:))]
             fn reclaim_prompt(&self, _s: Option<&AnyObject>) {
@@ -567,6 +577,31 @@ mod imp {
         let working = run_yes_no("It's outside your working hours.", "Are you working?");
         AFTER_HOURS_ALERT_UP.store(false, Ordering::SeqCst);
         working
+    }
+
+    /// The three-way after-hours prompt shown when returning from idle. The first
+    /// button is what `dismiss_after_hours_alert_if_showing` simulates.
+    fn run_away_after_hours(minutes: i64) -> crate::desktop::AwayAnswer {
+        use crate::desktop::AwayAnswer;
+        let mtm = MainThreadMarker::new().expect("prompt on the main thread");
+        let alert = NSAlert::new(mtm);
+        alert.setMessageText(&NSString::from_str(&format!(
+            "You were away for about {minutes} min, and it's outside your working hours."
+        )));
+        alert.setInformativeText(&NSString::from_str(
+            "Count that time and keep working, keep working from now, or stop for today?",
+        ));
+        alert.addButtonWithTitle(&NSString::from_str("Keep working from now"));
+        alert.addButtonWithTitle(&NSString::from_str(&format!("Count the {minutes} min")));
+        alert.addButtonWithTitle(&NSString::from_str("I'm done"));
+        AFTER_HOURS_ALERT_UP.store(true, Ordering::SeqCst);
+        let response = alert.runModal();
+        AFTER_HOURS_ALERT_UP.store(false, Ordering::SeqCst);
+        match response - ALERT_FIRST_BUTTON {
+            1 => AwayAnswer::CountAway,
+            2 => AwayAnswer::Done,
+            _ => AwayAnswer::FromNow,
+        }
     }
 
     pub(super) fn dismiss_after_hours_alert_if_showing() {

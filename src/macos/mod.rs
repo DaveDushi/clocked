@@ -118,6 +118,15 @@ impl AppState {
         self.apply_effects(effects);
     }
 
+    pub(crate) fn pending_away_minutes(&self) -> Option<i64> {
+        self.core.pending_away_minutes()
+    }
+
+    pub(crate) fn away_after_hours_answered(&mut self, answer: crate::desktop::AwayAnswer) {
+        let effects = self.core.answer_away_after_hours(answer);
+        self.apply_effects(effects);
+    }
+
     pub(crate) fn reclaim_answered(&mut self, reclaim: bool) {
         let effects = self.core.answer_reclaim(reclaim);
         self.apply_effects(effects);

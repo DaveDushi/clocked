@@ -14,12 +14,16 @@ use windows::Win32::Foundation::{
     GetLastError, ERROR_ALREADY_EXISTS, FALSE, HANDLE, HINSTANCE, HWND, LPARAM, LRESULT, POINT,
     TRUE, WPARAM,
 };
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
 use windows::Win32::System::Power::RegisterSuspendResumeNotification;
 use windows::Win32::System::RemoteDesktop::{
     WTSRegisterSessionNotification, WTSUnRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION,
 };
 use windows::Win32::System::Threading::{CreateMutexW, GetCurrentThreadId};
+use windows::Win32::UI::Controls::{
+    TASKDIALOGCONFIG, TASKDIALOG_BUTTON, TASKDIALOG_NOTIFICATIONS, TDF_USE_COMMAND_LINKS,
+    TDM_CLICK_BUTTON, TDN_CREATED, TDN_DESTROYED,
+};
 use windows::Win32::UI::Shell::{ShellExecuteW, NOTIFYICONDATAW};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -208,6 +212,123 @@ fn prompt_after_hours(hwnd: HWND) -> bool {
     }
 }
 
+const AWAY_COUNT: i32 = 100;
+const AWAY_FROM_NOW: i32 = 101;
+const AWAY_DONE: i32 = 102;
+
+thread_local! {
+    /// The open after-hours away task dialog, so work-hours start can click it closed.
+    static AWAY_DIALOG: std::cell::Cell<isize> = const { std::cell::Cell::new(0) };
+}
+
+type TaskDialogIndirectFn = unsafe extern "system" fn(
+    *const TASKDIALOGCONFIG,
+    *mut i32,
+    *mut i32,
+    *mut windows::core::BOOL,
+) -> windows::core::HRESULT;
+
+/// Resolved at runtime: only Common-Controls v6 exports it, and a missing manifest
+/// must not stop the app from launching.
+fn task_dialog_indirect() -> Option<TaskDialogIndirectFn> {
+    unsafe {
+        let module = LoadLibraryW(w!("comctl32.dll")).ok()?;
+        let proc = GetProcAddress(module, windows::core::s!("TaskDialogIndirect"))?;
+        Some(std::mem::transmute::<
+            unsafe extern "system" fn() -> isize,
+            TaskDialogIndirectFn,
+        >(proc))
+    }
+}
+
+unsafe extern "system" fn away_dialog_callback(
+    hwnd: HWND,
+    msg: TASKDIALOG_NOTIFICATIONS,
+    _wparam: WPARAM,
+    _lparam: LPARAM,
+    _data: isize,
+) -> windows::core::HRESULT {
+    if msg == TDN_CREATED {
+        AWAY_DIALOG.with(|d| d.set(hwnd.0 as isize));
+        let _ = SetWindowPos(
+            hwnd,
+            Some(HWND_TOPMOST),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE,
+        );
+        let _ = SetForegroundWindow(hwnd);
+    } else if msg == TDN_DESTROYED {
+        AWAY_DIALOG.with(|d| d.set(0));
+    }
+    windows::core::HRESULT(0)
+}
+
+fn prompt_away_after_hours(hwnd: HWND, minutes: i64) -> crate::desktop::AwayAnswer {
+    use crate::desktop::AwayAnswer;
+    let Some(task_dialog) = task_dialog_indirect() else {
+        return if prompt_after_hours(hwnd) {
+            AwayAnswer::FromNow
+        } else {
+            AwayAnswer::Done
+        };
+    };
+    let title = to_wide("clocked");
+    let main = to_wide(&format!(
+        "You were away for about {minutes} min, and it's outside your working hours."
+    ));
+    let count = to_wide(&format!(
+        "Count it and keep working\nAdds the {minutes} min you were away"
+    ));
+    let from_now = to_wide("Keep working from now\nThe away time isn't counted");
+    let done = to_wide("I'm done\nStay clocked out for the rest of the day");
+    let buttons = [
+        TASKDIALOG_BUTTON {
+            nButtonID: AWAY_COUNT,
+            pszButtonText: PCWSTR(count.as_ptr()),
+        },
+        TASKDIALOG_BUTTON {
+            nButtonID: AWAY_FROM_NOW,
+            pszButtonText: PCWSTR(from_now.as_ptr()),
+        },
+        TASKDIALOG_BUTTON {
+            nButtonID: AWAY_DONE,
+            pszButtonText: PCWSTR(done.as_ptr()),
+        },
+    ];
+    let config = TASKDIALOGCONFIG {
+        cbSize: std::mem::size_of::<TASKDIALOGCONFIG>() as u32,
+        hwndParent: hwnd,
+        dwFlags: TDF_USE_COMMAND_LINKS,
+        pszWindowTitle: PCWSTR(title.as_ptr()),
+        pszMainInstruction: PCWSTR(main.as_ptr()),
+        cButtons: buttons.len() as u32,
+        pButtons: buttons.as_ptr(),
+        nDefaultButton: AWAY_FROM_NOW,
+        pfCallback: Some(away_dialog_callback),
+        ..Default::default()
+    };
+    let mut clicked = 0;
+    let result = unsafe {
+        task_dialog(
+            &config,
+            &mut clicked,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    if result.is_err() {
+        crate::logln!("away prompt failed: {result:?}");
+    }
+    match clicked {
+        AWAY_COUNT => AwayAnswer::CountAway,
+        AWAY_DONE => AwayAnswer::Done,
+        _ => AwayAnswer::FromNow,
+    }
+}
+
 fn prompt_reclaim(hwnd: HWND, minutes: i64) -> bool {
     let text = to_wide(&format!(
         "You were away for about {minutes} min with no keyboard or mouse activity.\n\n\
@@ -249,7 +370,15 @@ unsafe fn apply_effects(ptr: *mut AppState, effects: Vec<crate::desktop::Effect>
                 );
             }
             crate::desktop::Effect::DismissAfterHoursPrompt => {
-                if (*ptr).after_hours_dialog_up {
+                let away = AWAY_DIALOG.with(|d| d.get());
+                if away != 0 {
+                    let _ = SendMessageW(
+                        HWND(away as *mut core::ffi::c_void),
+                        TDM_CLICK_BUTTON.0 as u32,
+                        Some(WPARAM(AWAY_FROM_NOW as usize)),
+                        None,
+                    );
+                } else if (*ptr).after_hours_dialog_up {
                     dismiss_owned_message_box((*ptr).hwnd);
                 }
             }
@@ -550,9 +679,18 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             apply_effects(ptr, effects);
             if show {
                 (*ptr).after_hours_dialog_up = true;
-                let working = prompt_after_hours(hwnd);
-                (*ptr).after_hours_dialog_up = false;
-                let effects = (*ptr).core.answer_after_hours(working);
+                let effects = match (*ptr).core.pending_away_minutes() {
+                    Some(minutes) => {
+                        let answer = prompt_away_after_hours(hwnd, minutes);
+                        (*ptr).after_hours_dialog_up = false;
+                        (*ptr).core.answer_away_after_hours(answer)
+                    }
+                    None => {
+                        let working = prompt_after_hours(hwnd);
+                        (*ptr).after_hours_dialog_up = false;
+                        (*ptr).core.answer_after_hours(working)
+                    }
+                };
                 apply_effects(ptr, effects);
             }
             LRESULT(0)
