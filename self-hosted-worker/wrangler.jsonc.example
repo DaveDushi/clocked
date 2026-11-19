@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "clocked-self-hosted",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "triggers": {
+    "crons": ["0 6 1 * *"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "clocked-self-hosted",
+      "database_id": "PASTE_YOUR_D1_DATABASE_ID_HERE"
+    }
+  ],
+  "vars": {
+    "REPORT_TZ": "America/New_York",
+    "MAIL_FROM": "Clocked <timesheet@your-verified-domain.example>",
+    "MAIL_TO": "you@example.com"
+  }
+}
